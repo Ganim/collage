@@ -63,6 +63,14 @@ let worker: Worker | undefined
 let nextId = 0
 const pending = new Map<number, Pending>()
 
+function failAll(message: string): void {
+  const error = new Error(message || 'packing worker failed')
+  for (const entry of pending.values()) entry.reject(error)
+  pending.clear()
+  worker?.terminate()
+  worker = undefined
+}
+
 function getWorker(): Worker {
   if (worker) return worker
   const created = new Worker(new URL('./pack.worker.ts', import.meta.url), { type: 'module' })
@@ -74,13 +82,10 @@ function getWorker(): Worker {
     if (!entry) return
     pending.delete(id)
     if (layout) entry.resolve(layout)
-    else entry.reject(new Error(error ?? 'packing failed'))
+    else entry.reject(new Error(error || 'packing failed'))
   }
-  created.onerror = (event) => {
-    for (const entry of pending.values()) entry.reject(new Error(event.message))
-    pending.clear()
-    worker = undefined
-  }
+  created.onerror = (event) => failAll(event.message || 'packing worker failed to load')
+  created.onmessageerror = () => failAll('packing worker sent an unreadable message')
   worker = created
   return created
 }
@@ -88,8 +93,9 @@ function getWorker(): Worker {
 /** Lays frames out on sheets in a Web Worker; replies are matched to calls by id. */
 export function packFrames(request: PackRequest): Promise<SheetLayout> {
   return new Promise((resolve, reject) => {
+    const target = getWorker()
     const id = nextId++
     pending.set(id, { resolve, reject })
-    getWorker().postMessage({ id, request })
+    target.postMessage({ id, request })
   })
 }
