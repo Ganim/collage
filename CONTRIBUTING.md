@@ -11,7 +11,7 @@ npm run dev
 
 ## Before opening a pull request
 
-Run the same checks as CI:
+Run the same checks as CI. `npm run build:wasm` must run before `npm test`, because the unit tests load the generated wasm module:
 
 ```sh
 npm run build:wasm

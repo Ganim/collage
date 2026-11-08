@@ -6,7 +6,7 @@ Collage arranges them to fit the page.
 
 It is a static site: everything runs in your browser and your photos never leave your device.
 
-Live at https://collage.guilhermeganim.com.br/
+Live at https://collage.guilhermeganim.com/
 
 ## Running locally
 
