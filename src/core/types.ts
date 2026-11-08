@@ -40,3 +40,5 @@ export interface Collection {
   paper: Paper
   updatedAt: number
 }
+
+export type SavedSize = Size & { id: string; name: string }
