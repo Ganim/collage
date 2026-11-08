@@ -12,7 +12,7 @@
     "format": "prettier --write src",
     "format:check": "prettier --check src",
     "build:wasm": "wasm-pack build crates/packing --target web --out-dir ../../src/packing/wasm --no-pack -- --features wasm",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p e2e",
     "e2e": "playwright test"
   },
   "dependencies": {

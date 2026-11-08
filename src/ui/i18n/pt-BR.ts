@@ -26,6 +26,7 @@ export const ptBR = {
   'sizeSheet.height': 'Altura (cm)',
   'sizeSheet.name': 'Nome (opcional)',
   'sizeSheet.use': 'Usar este tamanho',
+  'sizeSheet.invalid': 'Use medidas de 1 a 100 cm',
   'banner.saveFailed':
     'Não foi possível salvar. Libere espaço no aparelho para não perder o que você fez.',
   'notice.failedOne': '1 foto não pôde ser lida',

@@ -88,6 +88,11 @@ p {
   font-weight: 600;
 }
 
+.primary-button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
 /* Header */
 
 .header {
@@ -449,10 +454,13 @@ p {
   color: var(--ink);
 }
 
-.custom-size input::-webkit-inner-spin-button,
-.custom-size input::-webkit-outer-spin-button {
-  appearance: none;
-  margin: 0;
+.custom-size input[aria-invalid='true'] {
+  border-color: var(--warning-ink);
+}
+
+.custom-size-error {
+  font-size: 13px;
+  color: var(--warning-ink);
 }
 
 .custom-size-wide {

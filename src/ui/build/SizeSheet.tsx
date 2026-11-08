@@ -5,7 +5,7 @@ import type { Size } from '../../core/types'
 import { useEditor } from '../../state/editor'
 import { BottomSheet } from '../components/BottomSheet'
 import { t } from '../i18n'
-import { sizeListText } from './sizeText'
+import { parseCm, sizeListText } from './sizeText'
 
 interface SizeSheetProps {
   /** 'change' resizes the active frame; 'new' picks the size of a frame to create. */
@@ -45,9 +45,15 @@ export function SizeSheet({ mode, onClose, onSizeNotSaved }: SizeSheetProps) {
     }
   }
 
+  const widthMm = parseCm(width)
+  const heightMm = parseCm(height)
+  const invalid =
+    (width.trim() !== '' && widthMm === null) || (height.trim() !== '' && heightMm === null)
+
   const submitCustom = async (e: FormEvent) => {
     e.preventDefault()
-    const size: Size = { widthMm: Number(width) * 10, heightMm: Number(height) * 10 }
+    if (widthMm === null || heightMm === null) return
+    const size: Size = { widthMm, heightMm }
     const label = name.trim()
     if (label) {
       try {
@@ -113,11 +119,10 @@ export function SizeSheet({ mode, onClose, onSizeNotSaved }: SizeSheetProps) {
         <label>
           {t('sizeSheet.width')}
           <input
-            type="number"
+            type="text"
             inputMode="decimal"
-            min="1"
-            step="0.1"
-            required
+            autoComplete="off"
+            aria-invalid={width.trim() !== '' && widthMm === null}
             value={width}
             onChange={(e) => setWidth(e.target.value)}
           />
@@ -125,20 +130,28 @@ export function SizeSheet({ mode, onClose, onSizeNotSaved }: SizeSheetProps) {
         <label>
           {t('sizeSheet.height')}
           <input
-            type="number"
+            type="text"
             inputMode="decimal"
-            min="1"
-            step="0.1"
-            required
+            autoComplete="off"
+            aria-invalid={height.trim() !== '' && heightMm === null}
             value={height}
             onChange={(e) => setHeight(e.target.value)}
           />
         </label>
+        {invalid && (
+          <p className="custom-size-error custom-size-wide" role="status">
+            {t('sizeSheet.invalid')}
+          </p>
+        )}
         <label className="custom-size-wide">
           {t('sizeSheet.name')}
           <input type="text" value={name} onChange={(e) => setName(e.target.value)} />
         </label>
-        <button type="submit" className="primary-button custom-size-wide">
+        <button
+          type="submit"
+          className="primary-button custom-size-wide"
+          disabled={widthMm === null || heightMm === null}
+        >
           {t('sizeSheet.use')}
         </button>
       </form>

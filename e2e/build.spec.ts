@@ -146,6 +146,24 @@ test('a named custom size is created and still listed after reloading', async ({
   await expect(page.getByRole('button', { name: /Quadrado/ })).toBeVisible()
 })
 
+test('a custom size takes a decimal comma and refuses impossible values', async ({ page }) => {
+  await page.getByRole('button', { name: 'Adicionar frame', exact: true }).click()
+  const submit = page.getByRole('button', { name: 'Usar este tamanho' })
+  const message = page.getByText('Use medidas de 1 a 100 cm')
+  await expect(submit).toBeDisabled()
+  await expect(message).toBeHidden()
+
+  await page.getByLabel('Largura (cm)').fill('999')
+  await page.getByLabel('Altura (cm)').fill('15')
+  await expect(message).toBeVisible()
+  await expect(submit).toBeDisabled()
+
+  await page.getByLabel('Largura (cm)').fill('10,5')
+  await expect(message).toBeHidden()
+  await submit.click()
+  await expect(page.getByRole('button', { name: '10,5 × 15 cm' })).toBeVisible()
+})
+
 test('frames and photos survive a reload', async ({ page }) => {
   await uploadPhotos(page, [
     await makeJpeg(page, 600, 400, '#7a3f8f'),
