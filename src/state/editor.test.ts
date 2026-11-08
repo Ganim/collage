@@ -3,7 +3,8 @@ import 'fake-indexeddb/auto'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createIdbStore } from '../storage/indexeddb'
 import { StorageFullError, type Store } from '../storage/store'
-import type { Photo } from '../core/types'
+import { defaultPaper } from '../core/presets'
+import type { Collection, Photo } from '../core/types'
 import { createEditorStore } from './editor'
 
 let n = 0
@@ -203,5 +204,143 @@ describe('bootstrap', () => {
     expect(second.getState().collection.name).toBe('Minha')
     expect(second.getState().photos['p1']?.width).toBe(800)
     expect(second.getState().savedSizes).toHaveLength(1)
+  })
+})
+
+const stored = (id: string, photoIds: string[] = []): Collection => ({
+  schemaVersion: 1,
+  id,
+  name: id,
+  photoIds,
+  frames: [],
+  paper: defaultPaper(),
+  updatedAt: 1,
+})
+
+describe('never losing the latest edit', () => {
+  it('saves an edit made during an in-flight save even if that save ends before the debounce', async () => {
+    const editor = await setup()
+    await advance(600)
+    const names: string[] = []
+    let release!: () => void
+    const gate = new Promise<void>((r) => (release = r))
+    const real = store.saveCollection.bind(store)
+    vi.spyOn(store, 'saveCollection').mockImplementation(async (c) => {
+      if (names.length === 0) await gate
+      names.push(c.name)
+      await real(c)
+    })
+    editor.getState().renameCollection('primeira')
+    await advance(500)
+    editor.getState().renameCollection('segunda')
+    await advance(100)
+    release()
+    await advance(0)
+    expect(editor.getState().saveStatus).toBe('saving')
+    await advance(400)
+    expect(names).toEqual(['primeira', 'segunda'])
+    expect((await store.getCollection(editor.getState().collection.id))?.name).toBe('segunda')
+    expect(editor.getState().saveStatus).toBe('saved')
+  })
+
+  it('flush writes before the debounce', async () => {
+    const editor = await setup()
+    await advance(600)
+    editor.getState().renameCollection('agora')
+    await editor.getState().flush()
+    expect((await store.getCollection(editor.getState().collection.id))?.name).toBe('agora')
+    expect(editor.getState().saveStatus).toBe('saved')
+  })
+
+  it('does not switch collections when the current one cannot be saved', async () => {
+    const editor = await setup()
+    await advance(600)
+    await store.saveCollection(stored('outra'))
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const spy = vi.spyOn(store, 'saveCollection').mockRejectedValue(new Error('boom'))
+    const id = editor.getState().collection.id
+    editor.getState().renameCollection('pendente')
+
+    await editor.getState().openCollection('outra')
+    expect(editor.getState().collection.id).toBe(id)
+    expect(editor.getState().saveStatus).toBe('full')
+
+    await editor.getState().newCollection()
+    expect(editor.getState().collection.id).toBe(id)
+    expect(editor.getState().collection.name).toBe('pendente')
+    expect(log).toHaveBeenCalled()
+
+    spy.mockRestore()
+    await editor.getState().openCollection('outra')
+    expect(editor.getState().collection.id).toBe('outra')
+    expect((await store.getCollection(id))?.name).toBe('pendente')
+  })
+
+  it('puts photos imported into a collection that is no longer open on the original one', async () => {
+    let finish!: () => void
+    const gate = new Promise<void>((r) => (finish = r))
+    const editor = createEditorStore(store, {
+      importPhotos: async () => {
+        await gate
+        return { photos: [photo('novo')], failed: ['ruim.jpg'] }
+      },
+    })
+    await editor.getState().bootstrap()
+    await advance(600)
+    const originalId = editor.getState().collection.id
+    await store.saveCollection(stored('outra'))
+
+    const pending = editor.getState().addPhotos([])
+    await editor.getState().openCollection('outra')
+    finish()
+    expect(await pending).toEqual({ failed: ['ruim.jpg'] })
+
+    expect(editor.getState().collection.id).toBe('outra')
+    expect(editor.getState().collection.photoIds).toEqual([])
+    expect(editor.getState().photos['novo']).toBeUndefined()
+    expect((await store.getCollection(originalId))?.photoIds).toEqual(['novo'])
+  })
+
+  it('adds imported photos to the open collection', async () => {
+    const editor = createEditorStore(store, {
+      importPhotos: async () => ({ photos: [photo('novo')], failed: [] }),
+    })
+    await editor.getState().bootstrap()
+    await editor.getState().addPhotos([])
+    expect(editor.getState().collection.photoIds).toEqual(['novo'])
+    expect(editor.getState().photos['novo']).toBeDefined()
+  })
+
+  it('drops a stale open when an edit happens while it loads', async () => {
+    const editor = await setup()
+    await advance(600)
+    await store.saveCollection(stored('outra', ['p']))
+    let release!: () => void
+    const gate = new Promise<void>((r) => (release = r))
+    const real = store.getPhotosMeta.bind(store)
+    vi.spyOn(store, 'getPhotosMeta').mockImplementation(async (ids) => {
+      await gate
+      return real(ids)
+    })
+    const opening = editor.getState().openCollection('outra')
+    await advance(0)
+    editor.getState().renameCollection('minha edicao')
+    release()
+    await opening
+    expect(editor.getState().collection.name).toBe('minha edicao')
+    await advance(500)
+    expect((await store.getCollection(editor.getState().collection.id))?.name).toBe('minha edicao')
+  })
+
+  it('falls back to a usable, saved empty collection when bootstrap fails', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.spyOn(store, 'listSizes').mockRejectedValue(new Error('corrupt'))
+    const editor = createEditorStore(store)
+    await editor.getState().bootstrap()
+    expect(log).toHaveBeenCalled()
+    expect(editor.getState().collection.frames).toEqual([])
+    await advance(500)
+    expect(editor.getState().saveStatus).toBe('saved')
+    expect(await store.getCollection(editor.getState().collection.id)).toBeDefined()
   })
 })

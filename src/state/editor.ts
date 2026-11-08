@@ -37,9 +37,10 @@ export interface EditorState {
   selectedLayerId: string | null
   replacing: boolean
   saveStatus: SaveStatus
+  flush(): Promise<void>
   bootstrap(): Promise<void>
   openCollection(id: string): Promise<void>
-  newCollection(): void
+  newCollection(): Promise<void>
   renameCollection(name: string): void
   addPhotos(files: File[]): Promise<{ failed: string[] }>
   tapPhoto(photoId: string): void
@@ -76,11 +77,22 @@ function emptyCollection(): Collection {
   }
 }
 
-export function createEditorStore(store: Store): StoreApi<EditorState> {
+export interface EditorDeps {
+  importPhotos: typeof importPhotos
+}
+
+export function createEditorStore(
+  store: Store,
+  deps: EditorDeps = { importPhotos },
+): StoreApi<EditorState> {
   let timer: ReturnType<typeof setTimeout> | undefined
   // Saves run strictly one after another, so the newest snapshot is always written last.
   let queue: Promise<void> = Promise.resolve()
-  let saveSeq = 0
+  // Counts changes to the collection; queuedRevision is the last one handed to a save.
+  let revision = 0
+  let queuedRevision = 0
+  // Invalidates loads that were started before a newer open, new collection or edit.
+  let loadToken = 0
   let loading = false
 
   const editor = createStore<EditorState>()((set, get) => {
@@ -129,10 +141,9 @@ export function createEditorStore(store: Store): StoreApi<EditorState> {
     const setFrames = (frames: Frame[], activeFrameId: string | null) =>
       commit({ collection: { ...get().collection, frames }, activeFrameId })
 
-    const load = async (c: Collection) => {
-      const photos = c.photoIds.length > 0 ? await store.getPhotosMeta(c.photoIds) : {}
-      await store.setLastCollectionId(c.id)
-      loading = true
+    /** Replaces the open collection with a clean one, without counting as an edit. */
+    const swap = (c: Collection, photos: Record<string, Photo>, dirty: boolean) => {
+      loading = !dirty
       try {
         commit({
           collection: c,
@@ -146,6 +157,27 @@ export function createEditorStore(store: Store): StoreApi<EditorState> {
       } finally {
         loading = false
       }
+      if (!dirty) queuedRevision = revision
+      loadToken++
+    }
+
+    const startFresh = () => {
+      const c = emptyCollection()
+      swap(c, {}, true)
+      void store.setLastCollectionId(c.id).catch((e: unknown) => console.error(e))
+    }
+
+    /** Reads first and swaps only if nothing newer (open, new collection, edit) happened meanwhile. */
+    const load = async (read: () => Promise<Collection | undefined>) => {
+      const token = loadToken
+      const rev = revision
+      const c = await read()
+      if (!c) return
+      const photos = c.photoIds.length > 0 ? await store.getPhotosMeta(c.photoIds) : {}
+      if (token !== loadToken || rev !== revision) return
+      await store.setLastCollectionId(c.id)
+      if (token !== loadToken || rev !== revision) return
+      swap(c, photos, false)
     }
 
     return {
@@ -159,32 +191,35 @@ export function createEditorStore(store: Store): StoreApi<EditorState> {
       savedSizes: [],
 
       async bootstrap() {
-        const [sizes, lastId] = await Promise.all([store.listSizes(), store.getLastCollectionId()])
-        set({ savedSizes: sizes })
-        const last = lastId ? await store.getCollection(lastId) : undefined
-        if (last) await load(last)
-        else get().newCollection()
+        try {
+          const [sizes, lastId] = await Promise.all([
+            store.listSizes(),
+            store.getLastCollectionId(),
+          ])
+          set({ savedSizes: sizes })
+          const token = loadToken
+          if (lastId) await load(() => store.getCollection(lastId))
+          // Nothing opened (no last collection, or it is gone): start empty unless something newer took over.
+          if (token === loadToken && revision === queuedRevision) startFresh()
+        } catch (e) {
+          console.error(e)
+          startFresh()
+        }
       },
 
       async openCollection(id) {
-        await flush()
-        const c = await store.getCollection(id)
-        if (c) await load(c)
+        if (!(await flushSave())) return
+        await load(() => store.getCollection(id))
       },
 
-      newCollection() {
-        const c = emptyCollection()
-        // Anything still pending belongs to the collection being left.
-        void flush()
-        commit({
-          collection: c,
-          photos: {},
-          activeFrameId: null,
-          selectedLayerId: null,
-          mode: 'browse',
-          replacing: false,
-        })
-        void store.setLastCollectionId(c.id).catch((e: unknown) => console.error(e))
+      async newCollection() {
+        // Leaving a collection that could not be saved would lose it.
+        if (!(await flushSave())) return
+        startFresh()
+      },
+
+      flush: async () => {
+        await flushSave()
       },
 
       renameCollection(name) {
@@ -192,14 +227,26 @@ export function createEditorStore(store: Store): StoreApi<EditorState> {
       },
 
       async addPhotos(files) {
-        const { photos: imported, failed } = await importPhotos(files, store)
+        const targetId = get().collection.id
+        const { photos: imported, failed } = await deps.importPhotos(files, store)
+        const addIds = (ids: string[]) => [...new Set([...ids, ...imported.map((p) => p.id)])]
         const { collection, photos } = get()
-        const ids = new Set(collection.photoIds)
-        imported.forEach((p) => ids.add(p.id))
-        commit({
-          collection: { ...collection, photoIds: [...ids] },
-          photos: { ...photos, ...Object.fromEntries(imported.map((p) => [p.id, p])) },
-        })
+        if (collection.id === targetId) {
+          commit({
+            collection: { ...collection, photoIds: addIds(collection.photoIds) },
+            photos: { ...photos, ...Object.fromEntries(imported.map((p) => [p.id, p])) },
+          })
+        } else {
+          // The user moved on while importing: the photos belong to the collection they were added to.
+          const original = await store.getCollection(targetId)
+          if (original) {
+            await store.saveCollection({
+              ...original,
+              photoIds: addIds(original.photoIds),
+              updatedAt: Date.now(),
+            })
+          }
+        }
         return { failed }
       },
 
@@ -320,36 +367,47 @@ export function createEditorStore(store: Store): StoreApi<EditorState> {
     }
   })
 
-  /** Writes the current collection now, after any save already in flight. */
-  function flush(): Promise<void> {
+  /**
+   * Saves the current collection now, after any save already in flight, if it changed
+   * since the last save was queued. Resolves true when the current collection is safely
+   * stored (a failed save is retried by the next call, since it stays dirty).
+   */
+  async function flushSave(): Promise<boolean> {
     clearTimeout(timer)
     timer = undefined
-    if (editor.getState().saveStatus !== 'saving') return queue
-    const snapshot: Collection = { ...editor.getState().collection, updatedAt: Date.now() }
-    // Stamping updatedAt must not look like a new change.
-    loading = true
-    editor.setState({ collection: snapshot })
-    loading = false
-    const seq = ++saveSeq
-    queue = queue.then(async () => {
-      let status: SaveStatus = 'saved'
-      try {
-        await store.saveCollection(snapshot)
-      } catch (e) {
-        status = 'full'
-        if (!(e instanceof StorageFullError)) console.error(e)
-      }
-      // Only the newest save decides the status; an older one finishing late must not.
-      if (seq === saveSeq) editor.setState({ saveStatus: status })
-    })
-    return queue
+    if (revision !== queuedRevision) {
+      const r = revision
+      queuedRevision = r
+      const snapshot: Collection = { ...editor.getState().collection, updatedAt: Date.now() }
+      // Stamping updatedAt must not look like a new change.
+      loading = true
+      editor.setState({ collection: snapshot })
+      loading = false
+      queue = queue.then(async () => {
+        let status: SaveStatus = 'saved'
+        try {
+          await store.saveCollection(snapshot)
+        } catch (e) {
+          status = 'full'
+          if (!(e instanceof StorageFullError)) console.error(e)
+          if (queuedRevision === r) queuedRevision = -1
+        }
+        // A newer change owns the status (it is still 'saving' and will be saved after this one).
+        if (editor.getState().collection.id === snapshot.id && revision === r) {
+          editor.setState({ saveStatus: status })
+        }
+      })
+    }
+    await queue
+    return editor.getState().saveStatus !== 'full'
   }
 
   editor.subscribe((s, prev) => {
     if (loading || s.collection === prev.collection) return
+    revision++
     editor.setState({ saveStatus: 'saving' })
     clearTimeout(timer)
-    timer = setTimeout(() => void flush(), AUTOSAVE_DELAY_MS)
+    timer = setTimeout(() => void flushSave(), AUTOSAVE_DELAY_MS)
   })
 
   return editor
@@ -360,16 +418,31 @@ function lazyIdbStore(): Store {
   let opened: Promise<Store> | undefined
   const open = () => (opened ??= createIdbStore())
   return new Proxy({} as Store, {
-    get:
-      (_target, key: keyof Store) =>
-      (...args: unknown[]) =>
-        open().then((s) => (s[key] as (...a: unknown[]) => unknown)(...args)),
+    get: (_target, key: string) => {
+      // Not a thenable: awaiting the store must not call into IndexedDB.
+      if (key === 'then') return undefined
+      return (...args: unknown[]) =>
+        open().then((s) => (s[key as keyof Store] as (...a: unknown[]) => unknown)(...args))
+    },
   })
 }
 
 let appStore: StoreApi<EditorState> | undefined
 
+function getAppStore(): StoreApi<EditorState> {
+  if (!appStore) {
+    const created = createEditorStore(lazyIdbStore())
+    // iOS can suspend a hidden page before the debounce fires.
+    const save = () => void created.getState().flush()
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') save()
+    })
+    window.addEventListener('pagehide', save)
+    appStore = created
+  }
+  return appStore
+}
+
 export function useEditor<T>(selector: (state: EditorState) => T): T {
-  appStore ??= createEditorStore(lazyIdbStore())
-  return useStore(appStore, selector)
+  return useStore(getAppStore(), selector)
 }
