@@ -6,3 +6,5 @@ coverage
 target
 pkg
 src/packing/wasm
+test-results
+playwright-report

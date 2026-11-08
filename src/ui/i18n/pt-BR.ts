@@ -1,6 +1,38 @@
 /** Flat dictionary. Placeholders look like {name}. */
 export const ptBR = {
   'collection.defaultName': 'Fotos de {month}',
+  'size.chip': '{w} × {h} cm',
+  'size.list': '{w}×{h} cm',
+  'header.more': 'Mais opções',
+  'header.download': 'Baixar',
+  'empty.title': 'Seu primeiro frame',
+  'empty.body': 'Escolha um tamanho e comece a montar com as suas fotos.',
+  'empty.action': 'Adicionar primeiro frame',
+  'carousel.label': 'Frames',
+  'frame.label': 'Frame {position} de {total}',
+  'dots.label': 'Navegação entre frames',
+  'dots.goTo': 'Ir para o frame {position}',
+  'dots.add': 'Adicionar frame',
+  'tray.add': 'Adicionar fotos',
+  'tray.place': 'Colocar {name} no frame',
+  'sheet.close': 'Fechar',
+  'sizeSheet.titleChange': 'Tamanho do frame',
+  'sizeSheet.titleNew': 'Novo frame',
+  'sizeSheet.flip': 'Inverter orientação',
+  'sizeSheet.presets': 'Tamanhos prontos',
+  'sizeSheet.saved': 'Salvos',
+  'sizeSheet.custom': 'Personalizado',
+  'sizeSheet.width': 'Largura (cm)',
+  'sizeSheet.height': 'Altura (cm)',
+  'sizeSheet.name': 'Nome (opcional)',
+  'sizeSheet.use': 'Usar este tamanho',
+  'banner.saveFailed':
+    'Não foi possível salvar. Libere espaço no aparelho para não perder o que você fez.',
+  'notice.failedOne': '1 foto não pôde ser lida',
+  'notice.failedMany': '{count} fotos não puderam ser lidas',
+  'notice.importing': 'Lendo fotos…',
+  'notice.importFailed': 'Não foi possível guardar as fotos',
+  'notice.sizeNotSaved': 'Não foi possível guardar esse tamanho na lista',
 } as const
 
 export type MessageKey = keyof typeof ptBR

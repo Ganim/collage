@@ -1,0 +1,460 @@
+:root {
+  --paper: #f3efe6;
+  --surface: #fbf8f2;
+  --ink: #2b2824;
+  --muted: #6e665b;
+  --line: #ddd5c6;
+  --dot: #c9c0af;
+  --accent: #2f6f4f;
+  --warning-bg: #f6e3c9;
+  --warning-ink: #6b3f10;
+  --touch: 44px;
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  color: var(--ink);
+  -webkit-text-size-adjust: 100%;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+  background: var(--paper);
+}
+
+button,
+input {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  border: 0;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
+    env(safe-area-inset-left);
+}
+
+.banner {
+  padding: 10px 16px;
+  background: var(--warning-bg);
+  color: var(--warning-ink);
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.icon-button {
+  display: grid;
+  place-items: center;
+  width: var(--touch);
+  height: var(--touch);
+  border-radius: 50%;
+}
+
+.primary-button {
+  min-height: var(--touch);
+  padding: 0 20px;
+  border-radius: 10px;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+
+/* Header */
+
+.header {
+  display: flex;
+  align-items: center;
+  padding: 6px 8px 6px 16px;
+}
+
+.size-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: var(--touch);
+  padding: 0 12px 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  background: var(--surface);
+  font-size: 15px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.size-chip svg {
+  color: var(--muted);
+}
+
+.header-actions {
+  display: flex;
+  margin-left: auto;
+}
+
+/* Stage */
+
+.stage {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+}
+
+.empty-stage {
+  margin: auto;
+  padding: 0 32px;
+  text-align: center;
+}
+
+.empty-stage h1 {
+  font-size: 24px;
+  font-weight: 600;
+}
+
+.empty-stage p {
+  margin: 8px 0 24px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.carousel {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+}
+
+.carousel::-webkit-scrollbar {
+  display: none;
+}
+
+/* Together with the 78% slides, these let the first and last frame reach the centre. */
+.carousel::before,
+.carousel::after {
+  content: '';
+  flex: 0 0 11%;
+}
+
+.slide {
+  flex: 0 0 78%;
+  height: 100%;
+  padding: 10px 6px;
+  display: grid;
+  place-items: center;
+  container-type: size;
+  scroll-snap-align: center;
+  scroll-snap-stop: always;
+  opacity: 0.55;
+  transition: opacity 0.2s;
+}
+
+.slide--active {
+  opacity: 1;
+}
+
+.frame {
+  position: relative;
+  width: min(100cqw, calc(100cqh * var(--frame-ratio)));
+  aspect-ratio: var(--frame-ratio);
+  overflow: hidden;
+  background: #fff;
+  box-shadow: 0 2px 14px rgba(70, 58, 40, 0.2);
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.frame--interactive {
+  pointer-events: auto;
+}
+
+.frame-layer {
+  position: absolute;
+  height: auto;
+  max-width: none;
+}
+
+/* Dots */
+
+.dots {
+  display: flex;
+  justify-content: safe center;
+  margin: 0;
+  padding: 0 8px;
+  list-style: none;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.dots::-webkit-scrollbar {
+  display: none;
+}
+
+.dots-add {
+  position: sticky;
+  right: 0;
+  background: var(--paper);
+  color: var(--accent);
+}
+
+.dot {
+  display: grid;
+  place-items: center;
+  width: var(--touch);
+  height: var(--touch);
+}
+
+.dot::before {
+  content: '';
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--dot);
+}
+
+.dot[aria-current='true']::before {
+  background: var(--accent);
+  transform: scale(1.25);
+}
+
+/* Tray */
+
+.tray-area {
+  position: relative;
+}
+
+.notice {
+  position: absolute;
+  z-index: 1;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: calc(100vw - 32px);
+  margin-bottom: 8px;
+  padding: 8px 14px;
+  border-radius: 10px;
+  background: var(--ink);
+  color: var(--surface);
+  font-size: 14px;
+  pointer-events: none;
+}
+
+.tray {
+  display: flex;
+  gap: 8px;
+  padding: 8px 16px 12px;
+  border-top: 1px solid var(--line);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.tray::-webkit-scrollbar {
+  display: none;
+}
+
+.tray-add,
+.tray-photo {
+  flex: 0 0 72px;
+  height: 72px;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.tray-add {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1.5px dashed var(--accent);
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.tray-add:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.tray-add--empty {
+  flex: 1 1 auto;
+  border: 0;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+
+.tray-add input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.tray-photo {
+  background: var(--line);
+}
+
+.tray-photo img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Bottom sheet */
+
+.sheet {
+  position: fixed;
+  inset: auto 0 0;
+  width: 100%;
+  max-width: 560px;
+  max-height: 85dvh;
+  margin: 0 auto;
+  padding: 0;
+  border: 0;
+  border-radius: 16px 16px 0 0;
+  background: var(--surface);
+  color: var(--ink);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.sheet:focus-visible {
+  outline: none;
+}
+
+.sheet::backdrop {
+  background: rgba(43, 40, 36, 0.4);
+}
+
+.sheet-content {
+  padding: 8px 16px calc(20px + env(safe-area-inset-bottom));
+}
+
+.sheet-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-right: -8px;
+}
+
+.sheet-header h2 {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.sheet h3 {
+  margin: 18px 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.flip-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--touch);
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  font-size: 15px;
+}
+
+.flip-button[aria-pressed='true'] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.size-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.size-option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 52px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+
+.size-option small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.custom-size {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.custom-size label {
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.custom-size input {
+  width: 100%;
+  min-height: var(--touch);
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  /* Below 16px, iOS zooms the page on focus. */
+  font-size: 16px;
+  color: var(--ink);
+}
+
+.custom-size input::-webkit-inner-spin-button,
+.custom-size input::-webkit-outer-spin-button {
+  appearance: none;
+  margin: 0;
+}
+
+.custom-size-wide {
+  grid-column: 1 / -1;
+}

@@ -427,11 +427,18 @@ function lazyIdbStore(): Store {
   })
 }
 
+let storage: Store | undefined
+
+/** The app's storage, for reading photo images that the editor state does not hold. */
+export function appStorage(): Store {
+  return (storage ??= lazyIdbStore())
+}
+
 let appStore: StoreApi<EditorState> | undefined
 
 function getAppStore(): StoreApi<EditorState> {
   if (!appStore) {
-    const created = createEditorStore(lazyIdbStore())
+    const created = createEditorStore(appStorage())
     // iOS can suspend a hidden page before the debounce fires.
     const save = () => void created.getState().flush()
     document.addEventListener('visibilitychange', () => {

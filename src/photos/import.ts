@@ -4,6 +4,7 @@ import type { Store } from '../storage/store'
 export const ACCEPT = 'image/jpeg,image/png,image/webp'
 const PREVIEW_SIDE = 1600
 const THUMB_SIDE = 256
+const JPEG_QUALITY = 0.9
 
 export interface Decoded {
   width: number
@@ -19,15 +20,34 @@ async function sha256Hex(file: Blob): Promise<string> {
   return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('')
 }
 
+function draw(canvas: OffscreenCanvas | HTMLCanvasElement, bitmap: ImageBitmap): void {
+  const ctx = canvas.getContext('2d') as
+    OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D | null
+  if (!ctx) throw new Error('Canvas unavailable')
+  ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
+}
+
 async function scaledJpeg(bitmap: ImageBitmap, maxSide: number): Promise<Blob> {
   const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height))
   const w = Math.max(1, Math.round(bitmap.width * scale))
   const h = Math.max(1, Math.round(bitmap.height * scale))
-  const canvas = new OffscreenCanvas(w, h)
-  const ctx = canvas.getContext('2d')
-  if (!ctx) throw new Error('Canvas unavailable')
-  ctx.drawImage(bitmap, 0, 0, w, h)
-  return canvas.convertToBlob({ type: 'image/jpeg', quality: 0.9 })
+  if (typeof OffscreenCanvas !== 'undefined') {
+    const canvas = new OffscreenCanvas(w, h)
+    draw(canvas, bitmap)
+    return canvas.convertToBlob({ type: 'image/jpeg', quality: JPEG_QUALITY })
+  }
+  // Not every WebKit build has OffscreenCanvas.
+  const canvas = document.createElement('canvas')
+  canvas.width = w
+  canvas.height = h
+  draw(canvas, bitmap)
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => (blob ? resolve(blob) : reject(new Error('Canvas export failed'))),
+      'image/jpeg',
+      JPEG_QUALITY,
+    )
+  })
 }
 
 /** Browser decoder. createImageBitmap applies the EXIF orientation. */

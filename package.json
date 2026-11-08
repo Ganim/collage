@@ -8,16 +8,17 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "test": "vitest run",
-    "lint": "eslint src eslint.config.js vite.config.ts",
+    "lint": "eslint src e2e eslint.config.js vite.config.ts playwright.config.ts",
     "format": "prettier --write src",
     "format:check": "prettier --check src",
     "build:wasm": "wasm-pack build crates/packing --target web --out-dir ../../src/packing/wasm --no-pack -- --features wasm",
     "typecheck": "tsc --noEmit",
-    "e2e": "echo \"no e2e tests yet\""
+    "e2e": "playwright test"
   },
   "dependencies": {
     "fflate": "^0.8.3",
     "idb": "^8.0.4",
+    "lucide-react": "^1.70.0",
     "pdf-lib": "^1.17.1",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
@@ -25,6 +26,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.65.0",
     "@testing-library/dom": "^10.4.2",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",

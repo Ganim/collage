@@ -19,6 +19,8 @@ npm run lint
 npm run typecheck
 npm test
 npm run build
+npx playwright install webkit
+npm run e2e
 ```
 
 ## Standards
