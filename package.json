@@ -20,7 +20,8 @@
     "idb": "^8.0.4",
     "pdf-lib": "^1.17.1",
     "react": "^19.3.1",
-    "react-dom": "^19.3.1"
+    "react-dom": "^19.3.1",
+    "zustand": "^5.1.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
