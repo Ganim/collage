@@ -36,7 +36,13 @@ async function write<S extends Stores>(
     await fn(tx)
     await tx.done
   } catch (e) {
-    if (isQuota(e) || isQuota(tx.error)) throw new StorageFullError()
+    const full = isQuota(e) || isQuota(tx.error)
+    try {
+      tx.abort()
+    } catch {
+      // already finished or aborted
+    }
+    if (full) throw new StorageFullError()
     throw e
   }
 }
@@ -65,6 +71,14 @@ export async function createIdbStore(name = 'collage'): Promise<Store> {
     },
     saveCollection: (c) =>
       write(db, ['collections'], async (tx) => void (await tx.objectStore('collections').put(c))),
+    importCollection: (photos, collection) =>
+      write(db, ['photos', 'collections'], async (tx) => {
+        const photoStore = tx.objectStore('photos')
+        for (const p of photos) {
+          if ((await photoStore.getKey(p.id)) === undefined) await photoStore.put(p)
+        }
+        await tx.objectStore('collections').put(collection)
+      }),
     getCollection: (id) => db.get('collections', id),
     async listCollections() {
       const all = await db.getAll('collections')

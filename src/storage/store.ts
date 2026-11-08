@@ -18,6 +18,8 @@ export interface Store {
   getPhoto(id: string): Promise<StoredPhoto | undefined>
   getPhotosMeta(ids: string[]): Promise<Record<string, Photo>>
   saveCollection(c: Collection): Promise<void>
+  /** Atomically writes the collection and its photos; never overwrites a photo that already exists. */
+  importCollection(photos: StoredPhoto[], collection: Collection): Promise<void>
   getCollection(id: string): Promise<Collection | undefined>
   listCollections(): Promise<CollectionSummary[]>
   /** Also deletes photos that no other collection uses. */

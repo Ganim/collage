@@ -13,6 +13,14 @@ interface Manifest {
 
 const PHOTO_ID = /^[0-9a-f]{64}$/
 const MANIFEST = 'manifest.json'
+const MAX_ENTRIES = 2000
+const MAX_TOTAL_BYTES = 2 * 1024 ** 3
+const WANTED = /^(manifest\.json|photos\/[0-9a-f]{64}\/(original|preview|thumb))$/
+
+async function sha256Hex(data: Uint8Array): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', data as BufferSource)
+  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('')
+}
 const part = (id: string, kind: 'original' | 'preview' | 'thumb') => `photos/${id}/${kind}`
 
 async function bytes(blob: Blob): Promise<Uint8Array> {
@@ -95,7 +103,19 @@ export async function importBundle(store: Store, file: Blob): Promise<Collection
   let files: Record<string, Uint8Array>
   let manifest: unknown
   try {
-    files = unzipSync(await bytes(file))
+    const zipped = await bytes(file)
+    let entries = 0
+    let total = 0
+    // First pass inflates nothing; it only checks the declared sizes.
+    unzipSync(zipped, {
+      filter: (f) => {
+        entries++
+        total += f.originalSize
+        if (entries > MAX_ENTRIES || total > MAX_TOTAL_BYTES) throw new Error('too large')
+        return false
+      },
+    })
+    files = unzipSync(zipped, { filter: (f) => WANTED.test(f.name) })
     const raw = files[MANIFEST]
     if (!raw) invalid()
     manifest = JSON.parse(strFromU8(raw))
@@ -124,10 +144,19 @@ export async function importBundle(store: Store, file: Blob): Promise<Collection
   }
   const collection = validateCollection(manifest.collection, new Set(bundled.keys()))
 
+  for (const id of collection.photoIds) {
+    if ((await sha256Hex(files[part(id, 'original')]!)) !== id) invalid()
+  }
+
   const photos: StoredPhoto[] = collection.photoIds.map((id) => {
     const p = bundled.get(id)!
-    const blob = (kind: 'original' | 'preview' | 'thumb', type: string) =>
-      new Blob([files[part(id, kind)] as BlobPart], { type })
+    // Take each entry out of `files` as its Blob is built so the bytes can be freed.
+    const blob = (kind: 'original' | 'preview' | 'thumb', type: string) => {
+      const key = part(id, kind)
+      const b = new Blob([files[key] as BlobPart], { type })
+      delete files[key]
+      return b
+    }
     return {
       id,
       width: p.width,
@@ -139,8 +168,7 @@ export async function importBundle(store: Store, file: Blob): Promise<Collection
     }
   })
 
-  for (const p of photos) await store.putPhoto(p)
   const imported: Collection = { ...collection, id: crypto.randomUUID() }
-  await store.saveCollection(imported)
+  await store.importCollection(photos, imported)
   return imported
 }
