@@ -5,3 +5,4 @@ coverage
 .DS_Store
 target
 pkg
+src/packing/wasm

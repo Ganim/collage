@@ -3,3 +3,5 @@ dist
 .git
 .github
 *.log
+target
+pkg

@@ -15,7 +15,7 @@ const forbiddenInPureCode = [
 ]
 
 export default tseslint.config(
-  { ignores: ['dist', 'coverage'] },
+  { ignores: ['dist', 'coverage', 'src/packing/wasm'] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {

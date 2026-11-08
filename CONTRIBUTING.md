@@ -14,6 +14,7 @@ npm run dev
 Run the same checks as CI:
 
 ```sh
+npm run build:wasm
 npm run lint
 npm run typecheck
 npm test
@@ -23,7 +24,7 @@ npm run build
 ## Standards
 
 - TypeScript in strict mode; avoid `any`.
-- Code is formatted with Prettier (`npx prettier --write .`).
+- Code is formatted with Prettier (`npm run format`).
 - Write a failing test first, then the code that makes it pass.
 - Keep modules small, with one responsibility each.
 - Architecture boundary: `src/core` and `src/packing` are pure logic. They must not import from

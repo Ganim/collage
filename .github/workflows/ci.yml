@@ -14,6 +14,13 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo install wasm-pack --locked
+      - run: cargo test
+      - run: npm run build:wasm
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test

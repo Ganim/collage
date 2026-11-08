@@ -8,7 +8,10 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "test": "vitest run",
-    "lint": "eslint .",
+    "lint": "eslint src eslint.config.js vite.config.ts",
+    "format": "prettier --write src",
+    "format:check": "prettier --check src",
+    "build:wasm": "wasm-pack build crates/packing --target web --out-dir ../../src/packing/wasm --no-pack -- --features wasm",
     "typecheck": "tsc --noEmit",
     "e2e": "echo \"no e2e tests yet\""
   },
