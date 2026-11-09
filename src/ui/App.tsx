@@ -10,6 +10,7 @@ export function App() {
   const bootstrap = useEditor((s) => s.bootstrap)
   const exitEdit = useEditor((s) => s.exitEdit)
   const saveStatus = useEditor((s) => s.saveStatus)
+  const loadFailed = useEditor((s) => s.loadFailed)
   // Until the saved collection is in, the empty state would flash on every visit.
   const [ready, setReady] = useState(false)
   const [screen, setScreen] = useState<'build' | 'sheet'>('build')
@@ -23,6 +24,12 @@ export function App() {
     void bootstrap().finally(() => setReady(true))
   }, [bootstrap])
 
+  const retry = () => {
+    // Hidden while it reads, or a retry would flash the empty start screen.
+    setReady(false)
+    void bootstrap().finally(() => setReady(true))
+  }
+
   const openSheet = () => {
     exitEdit()
     setScreen('sheet')
@@ -35,7 +42,17 @@ export function App() {
           {t('banner.saveFailed')}
         </p>
       )}
+      {ready && loadFailed && (
+        <div className="empty-stage">
+          <h1 role="alert">{t('load.failed')}</h1>
+          <p>{t('load.safe')}</p>
+          <button type="button" className="primary-button" onClick={retry}>
+            {t('load.retry')}
+          </button>
+        </div>
+      )}
       {ready &&
+        !loadFailed &&
         (screen === 'build' ? (
           <BuildScreen onDownload={openSheet} />
         ) : (

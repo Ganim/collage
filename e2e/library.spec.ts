@@ -190,6 +190,39 @@ test('after the first visit the app loads offline', async ({ browser, baseURL })
   await context.close()
 })
 
+test('closing the app and opening it again brings the work back', async ({ page, context }) => {
+  await frameWithPhoto(page)
+  await expect.poll(async () => (await savedCollection(page))?.frames.length).toBe(1)
+  await page.close()
+  const reopened = await context.newPage()
+  await reopened.goto('/')
+  await expect(frameLabel(reopened, 'Frame 1 de 1').locator('img')).toHaveCount(1)
+})
+
+test('a failure reading the saved work offers a retry and loses nothing', async ({
+  page,
+  context,
+}) => {
+  await frameWithPhoto(page)
+  await expect.poll(async () => (await savedCollection(page))?.frames.length).toBe(1)
+  await context.addInitScript(() => {
+    const open = indexedDB.open.bind(indexedDB)
+    indexedDB.open = (...args: Parameters<typeof open>) => {
+      if (sessionStorage.getItem('failReads')) throw new Error('cannot read')
+      return open(...args)
+    }
+  })
+  await page.evaluate(() => sessionStorage.setItem('failReads', '1'))
+
+  await page.reload()
+  await expect(page.getByRole('alert')).toHaveText(/Não foi possível abrir seus trabalhos\./)
+  await expect(page.getByRole('heading', { name: 'Seu primeiro frame' })).toHaveCount(0)
+
+  await page.evaluate(() => sessionStorage.removeItem('failReads'))
+  await page.getByRole('button', { name: 'Tentar de novo', exact: true }).click()
+  await expect(frameLabel(page, 'Frame 1 de 1').locator('img')).toHaveCount(1)
+})
+
 test.describe('on a first visit in Safari', () => {
   test.use({ installHint: true })
 
