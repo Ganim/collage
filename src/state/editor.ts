@@ -39,6 +39,8 @@ export interface EditorState {
   selectedLayerId: string | null
   replacing: boolean
   saveStatus: SaveStatus
+  /** The saved work could not be read. Calling bootstrap again tries once more. */
+  loadFailed: boolean
   flush(): Promise<void>
   bootstrap(): Promise<void>
   openCollection(id: string): Promise<void>
@@ -233,8 +235,10 @@ export function createEditorStore(
       replacing: false,
       saveStatus: 'saved',
       savedSizes: [],
+      loadFailed: false,
 
       async bootstrap() {
+        set({ loadFailed: false })
         try {
           const [sizes, lastId] = await Promise.all([
             store.listSizes(),
@@ -242,12 +246,18 @@ export function createEditorStore(
           ])
           set({ savedSizes: sizes })
           const token = loadToken
+          const untouched = () => token === loadToken && revision === queuedRevision
           if (lastId) await load(() => store.getCollection(lastId))
-          // Nothing opened (no last collection, or it is gone): start empty unless something newer took over.
-          if (token === loadToken && revision === queuedRevision) startFresh()
+          if (untouched()) {
+            // The last one is gone or was never recorded: an older work beats an empty screen.
+            const [newest] = newestFirst(await store.listCollections())
+            if (newest) await load(() => store.getCollection(newest.id))
+          }
+          if (untouched()) startFresh()
         } catch (e) {
+          // Starting empty here would make the saved work look lost, and would become the "last" one.
           console.error(e)
-          startFresh()
+          set({ loadFailed: true })
         }
       },
 
@@ -500,7 +510,12 @@ export function createEditorStore(
 /** The app talks to IndexedDB, opened on first use so importing this module has no side effects. */
 function lazyIdbStore(): Store {
   let opened: Promise<Store> | undefined
-  const open = () => (opened ??= createIdbStore())
+  const open = () =>
+    (opened ??= createIdbStore().catch((e: unknown) => {
+      // A failed open is not final: the next call tries again.
+      opened = undefined
+      throw e
+    }))
   return new Proxy({} as Store, {
     get: (_target, key: string) => {
       // Not a thenable: awaiting the store must not call into IndexedDB.

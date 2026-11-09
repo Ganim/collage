@@ -496,15 +496,58 @@ describe('never losing the latest edit', () => {
     expect((await store.getCollection(editor.getState().collection.id))?.name).toBe('minha edicao')
   })
 
-  it('falls back to a usable, saved empty collection when bootstrap fails', async () => {
-    const log = vi.spyOn(console, 'error').mockImplementation(() => {})
-    vi.spyOn(store, 'listSizes').mockRejectedValue(new Error('corrupt'))
-    const editor = createEditorStore(store)
-    await editor.getState().bootstrap()
-    expect(log).toHaveBeenCalled()
-    expect(editor.getState().collection.frames).toEqual([])
-    await advance(500)
-    expect(editor.getState().saveStatus).toBe('saved')
-    expect(await store.getCollection(editor.getState().collection.id)).toBeDefined()
+  describe('when the saved work cannot be read at first', () => {
+    async function savedWork() {
+      await store.saveCollection(stored('a'))
+      await store.setLastCollectionId('a')
+    }
+
+    it('writes nothing and reports the failure', async () => {
+      const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+      await savedWork()
+      vi.spyOn(store, 'getLastCollectionId').mockRejectedValueOnce(new Error('read'))
+      const setLast = vi.spyOn(store, 'setLastCollectionId')
+      const save = vi.spyOn(store, 'saveCollection')
+      const editor = createEditorStore(store)
+      await editor.getState().bootstrap()
+      await advance(1000)
+      expect(log).toHaveBeenCalled()
+      expect(editor.getState().loadFailed).toBe(true)
+      expect(setLast).not.toHaveBeenCalled()
+      expect(save).not.toHaveBeenCalled()
+    })
+
+    it('brings the last collection back on a retry', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {})
+      await savedWork()
+      vi.spyOn(store, 'getLastCollectionId').mockRejectedValueOnce(new Error('read'))
+      const editor = createEditorStore(store)
+      await editor.getState().bootstrap()
+      await editor.getState().bootstrap()
+      expect(editor.getState().loadFailed).toBe(false)
+      expect(editor.getState().collection.id).toBe('a')
+    })
+  })
+
+  describe('when the last collection is not available', () => {
+    async function twoSaved() {
+      await store.saveCollection({ ...stored('old'), updatedAt: 1 })
+      await store.saveCollection({ ...stored('new'), updatedAt: 2 })
+    }
+
+    it('opens the newest collection if the last one is gone', async () => {
+      await twoSaved()
+      await store.setLastCollectionId('gone')
+      const editor = createEditorStore(store)
+      await editor.getState().bootstrap()
+      expect(editor.getState().collection.id).toBe('new')
+    })
+
+    it('opens the newest collection if none is recorded', async () => {
+      await twoSaved()
+      const editor = createEditorStore(store)
+      await editor.getState().bootstrap()
+      expect(editor.getState().collection.id).toBe('new')
+    })
   })
 })
