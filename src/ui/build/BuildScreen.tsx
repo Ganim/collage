@@ -64,6 +64,7 @@ export function BuildScreen({ onDownload }: { onDownload: () => void }) {
     <>
       <Header
         onSizeClick={() => setSheet('change')}
+        onCollections={() => setSheet('collections')}
         onMore={() => setSheet('more')}
         onDownload={onDownload}
       />

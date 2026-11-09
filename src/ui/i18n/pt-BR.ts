@@ -1,8 +1,9 @@
 /** Flat dictionary. Placeholders look like {name}. */
 export const ptBR = {
-  'collection.defaultName': 'Fotos de {month}',
+  'collection.defaultName': 'Fotos de {day} de {month}',
   'size.chip': '{w} × {h} cm',
   'size.list': '{w}×{h} cm',
+  'header.collections': 'Coleções: {name}',
   'header.more': 'Mais opções',
   'header.download': 'Baixar',
   'empty.title': 'Seu primeiro frame',

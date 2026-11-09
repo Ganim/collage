@@ -190,6 +190,42 @@ test('after the first visit the app loads offline', async ({ browser, baseURL })
   await context.close()
 })
 
+const workChip = (page: Page) => page.getByRole('button', { name: /^Coleções: / })
+
+test('the top bar names the open work and one tap lists the others', async ({ page }) => {
+  await frameWithPhoto(page)
+  await nameCollection(page, 'Maio')
+  await expect(workChip(page)).toHaveText('Maio')
+  await openCollectionsFromChip(page)
+  await menuItem(page, 'Nova coleção').click()
+  await expect(page.getByRole('heading', { name: 'Seu primeiro frame' })).toBeVisible()
+
+  await openCollectionsFromChip(page)
+  await page.getByRole('button', { name: /^Maio\b/ }).click()
+  await expect(frameLabel(page, 'Frame 1 de 1').locator('img')).toHaveCount(1)
+  await expect(workChip(page)).toHaveText('Maio')
+})
+
+async function openCollectionsFromChip(page: Page) {
+  await workChip(page).click()
+  await expect(page.getByRole('dialog', { name: 'Coleções' })).toBeVisible()
+}
+
+test('a very long name keeps the top bar and the frame in place', async ({ page }) => {
+  await frameWithPhoto(page)
+  await nameCollection(page, 'Maio')
+  const frame = frameLabel(page, 'Frame 1 de 1')
+  const before = (await frame.boundingBox())!
+
+  await nameCollection(page, 'Muito longo '.repeat(20))
+  await expect(page.getByRole('button', { name: 'Baixar', exact: true })).toBeInViewport({
+    ratio: 1,
+  })
+  const chip = (await workChip(page).boundingBox())!
+  expect(chip.x + chip.width).toBeLessThanOrEqual(page.viewportSize()!.width)
+  expect(await frame.boundingBox()).toEqual(before)
+})
+
 test('closing the app and opening it again brings the work back', async ({ page, context }) => {
   await frameWithPhoto(page)
   await expect.poll(async () => (await savedCollection(page))?.frames.length).toBe(1)

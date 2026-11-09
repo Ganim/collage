@@ -12,6 +12,7 @@ import {
   updateLayer,
   zoomLayer,
 } from '../core/frame'
+import { uniqueName } from '../core/names'
 import { defaultPaper } from '../core/presets'
 import type { Collection, Frame, Layer, Paper, Photo, SavedSize, Size } from '../core/types'
 import { importPhotos } from '../photos/import'
@@ -81,12 +82,14 @@ export interface EditorState {
   deleteSize(id: string): Promise<void>
 }
 
-function emptyCollection(): Collection {
-  const month = new Date().toLocaleDateString('pt-BR', { month: 'long' })
+function emptyCollection(takenNames: string[]): Collection {
+  const today = new Date()
+  const month = today.toLocaleDateString('pt-BR', { month: 'long' })
+  const name = t('collection.defaultName', { day: today.getDate(), month })
   return {
     schemaVersion: 1,
     id: crypto.randomUUID(),
-    name: t('collection.defaultName', { month }),
+    name: uniqueName(name, takenNames),
     photoIds: [],
     frames: [],
     paper: defaultPaper(),
@@ -183,8 +186,8 @@ export function createEditorStore(
       loadToken++
     }
 
-    const startFresh = () => {
-      const c = emptyCollection()
+    const startFresh = (takenNames: string[] = []) => {
+      const c = emptyCollection(takenNames)
       swap(c, {}, true)
       void store.setLastCollectionId(c.id).catch((e: unknown) => console.error(e))
     }
@@ -227,7 +230,7 @@ export function createEditorStore(
     }
 
     return {
-      collection: emptyCollection(),
+      collection: emptyCollection([]),
       photos: {},
       activeFrameId: null,
       mode: 'browse',
@@ -269,7 +272,7 @@ export function createEditorStore(
       async newCollection() {
         // Leaving a collection that could not be saved would lose it.
         if (!(await flushSave())) return
-        startFresh()
+        startFresh((await store.listCollections()).map((c) => c.name))
       },
 
       flush: async () => {

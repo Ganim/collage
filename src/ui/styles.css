@@ -120,8 +120,36 @@ p {
   color: var(--muted);
 }
 
+.size-chip {
+  flex: none;
+}
+
+/* Gives up its width first, so a long name never moves the buttons. */
+.work-chip {
+  display: inline-flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: var(--touch);
+  padding: 0 8px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.work-chip svg {
+  flex: none;
+}
+
+.work-chip span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .header-actions {
   display: flex;
+  flex: none;
   margin-left: auto;
 }
 

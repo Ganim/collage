@@ -344,7 +344,16 @@ describe('bootstrap', () => {
     await editor.getState().bootstrap()
     const s = editor.getState()
     expect(s.collection.frames).toEqual([])
-    expect(s.collection.name).toMatch(/^Fotos de [a-zç]+$/)
+    expect(s.collection.name).toMatch(/^Fotos de \d+ de [a-zç]+$/)
+  })
+
+  it('numbers a new collection when another started the same day', async () => {
+    const editor = createEditorStore(store)
+    await editor.getState().bootstrap()
+    const first = editor.getState().collection.name
+    await editor.getState().flush()
+    await editor.getState().newCollection()
+    expect(editor.getState().collection.name).toBe(`${first} (2)`)
   })
 
   it('reopens the last collection with its photos and saved sizes', async () => {
