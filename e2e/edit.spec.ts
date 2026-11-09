@@ -125,6 +125,43 @@ async function layersWhen(page: Page, check: (layers: SavedLayer[]) => boolean) 
   return savedLayers(page)
 }
 
+/** Keeps every photo import from finishing until releaseImport. */
+async function holdImport(page: Page) {
+  await page.evaluate(() => {
+    const subtle = crypto.subtle
+    const digest = subtle.digest.bind(subtle)
+    const gate = new Promise<void>((resolve) => {
+      ;(window as unknown as { releaseImport: () => void }).releaseImport = resolve
+    })
+    subtle.digest = async (...args: Parameters<typeof digest>) => {
+      await gate
+      return digest(...args)
+    }
+  })
+}
+
+async function releaseImport(page: Page) {
+  await page.evaluate(() => (window as unknown as { releaseImport: () => void }).releaseImport())
+}
+
+const zoom = (page: Page) => page.getByRole('slider', { name: 'Zoom da foto' })
+
+/** Presses the mouse on the slider's thumb area and drags it to a fraction of the track. */
+async function dragZoomTo(page: Page, fraction: number) {
+  const b = (await zoom(page).boundingBox())!
+  const y = b.y + b.height / 2
+  const value = Number(await zoom(page).inputValue()) / 1000
+  await drag(page, [b.x + b.width * value, y], [b.x + b.width * fraction, y])
+}
+
+function wheel(page: Page, deltaY: number) {
+  return surface(page).evaluate((el, delta) => {
+    const event = new WheelEvent('wheel', { deltaY: delta, bubbles: true, cancelable: true })
+    el.dispatchEvent(event)
+    return event.defaultPrevented
+  }, deltaY)
+}
+
 test.beforeEach(async ({ page }) => {
   await page.goto('/')
 })
@@ -276,24 +313,14 @@ test('a photo read after moving to another frame stays in the tray', async ({ pa
   await expect(ok(page)).toBeVisible()
 
   const fresh = await makeJpeg(page, 400, 600, COLORS[1]!)
-  // Holds the import open until the test has changed frames.
-  await page.evaluate(() => {
-    const subtle = crypto.subtle
-    const digest = subtle.digest.bind(subtle)
-    const gate = new Promise<void>((resolve) => {
-      ;(window as unknown as { releaseImport: () => void }).releaseImport = resolve
-    })
-    subtle.digest = async (...args: Parameters<typeof digest>) => {
-      await gate
-      return digest(...args)
-    }
-  })
+  await holdImport(page)
   await uploadPhotos(page, [fresh])
+  await ok(page).click()
   await page.getByRole('button', { name: 'Ir para o frame 1', exact: true }).click()
   await expect(
     page.getByRole('button', { name: 'Ir para o frame 1', exact: true }),
   ).toHaveAttribute('aria-current', 'true')
-  await page.evaluate(() => (window as unknown as { releaseImport: () => void }).releaseImport())
+  await releaseImport(page)
 
   await expect(page.getByRole('button', { name: 'Colocar foto-1.jpg no frame' })).toHaveCount(2)
   await expect(ok(page)).toHaveCount(0)
@@ -301,6 +328,136 @@ test('a photo read after moving to another frame stays in the tray', async ({ pa
     page.getByRole('img', { name: 'Frame 1 de 2', exact: true }).locator('img'),
   ).toHaveCount(1)
   await expect(second.locator('img')).toHaveCount(1)
+})
+
+test('moving the slider enlarges the background and it still covers the frame', async ({
+  page,
+}) => {
+  await frameWithBackground(page, 1)
+  await theFrame(page).click()
+  await expect(zoom(page)).toHaveValue('0')
+  const image = theFrame(page).locator('img')
+  const before = (await image.boundingBox())!
+
+  await dragZoomTo(page, 0.5)
+
+  await expect.poll(async () => (await image.boundingBox())!.width).toBeGreaterThan(before.width)
+  const [layer] = await layersWhen(page, (l) => (l[0]?.widthFrac ?? 0) > 1.5)
+  expect(layer!.widthFrac).toBeCloseTo(2, 0)
+  await expectCovered(page, 0)
+  await expect(handles(page)).toHaveCount(0)
+})
+
+test('the slider at its minimum leaves the photo covering the frame exactly', async ({ page }) => {
+  await frameWithBackground(page, 1)
+  await theFrame(page).click()
+  await dragZoomTo(page, 0.6)
+  await layersWhen(page, (l) => (l[0]?.widthFrac ?? 0) > 1.5)
+
+  await zoom(page).focus()
+  await page.keyboard.press('Home')
+
+  await expect(zoom(page)).toHaveValue('0')
+  const [layer] = await layersWhen(page, (l) => l[0]?.widthFrac === 1)
+  expect(layer!.widthFrac).toBe(1)
+  const f = await box(page)
+  const i = (await theFrame(page).locator('img').boundingBox())!
+  expect(Math.abs(i.x - f.x)).toBeLessThanOrEqual(1)
+  expect(Math.abs(i.y - f.y)).toBeLessThanOrEqual(1)
+  expect(Math.abs(i.width - f.width)).toBeLessThanOrEqual(1)
+  expect(Math.abs(i.height - f.height)).toBeLessThanOrEqual(1)
+})
+
+test('the slider stops at four times the cover width on the background', async ({ page }) => {
+  await frameWithBackground(page, 1)
+  await theFrame(page).click()
+  await zoom(page).focus()
+  await page.keyboard.press('End')
+  const [layer] = await layersWhen(page, (l) => (l[0]?.widthFrac ?? 0) > 3.9)
+  expect(layer!.widthFrac).toBeCloseTo(4)
+})
+
+test('the slider reaches 300% of the frame width on a photo on top', async ({ page }) => {
+  await frameWithBackground(page, 2)
+  await trayPhoto(page, 2).click()
+  await zoom(page).focus()
+  await page.keyboard.press('End')
+  const [, top] = await layersWhen(page, (l) => (l[1]?.widthFrac ?? 0) > 2.9)
+  expect(top!.widthFrac).toBeCloseTo(3)
+  await page.keyboard.press('Home')
+  const [, small] = await layersWhen(page, (l) => (l[1]?.widthFrac ?? 1) < 0.2)
+  expect(small!.widthFrac).toBeCloseTo(0.1)
+})
+
+test('the slider follows the selection and the layer', async ({ page }) => {
+  await frameWithBackground(page, 2)
+  await trayPhoto(page, 2).click()
+  // Width 0.5 on a log scale from 0.1 to 3.
+  await expect(zoom(page)).toHaveValue('473')
+
+  await tapInFrame(page, 0.05, 0.05)
+  await expect(handles(page)).toHaveCount(0)
+  await expect(zoom(page)).toHaveValue('0')
+
+  await wheel(page, -300)
+  await expect(zoom(page)).not.toHaveValue('0')
+})
+
+test('the slider sits just above the action bar, with an icon at each end', async ({ page }) => {
+  await frameWithBackground(page, 1)
+  await theFrame(page).click()
+  const row = (await page.locator('.zoom-row').boundingBox())!
+  const bar = (await toolbar(page).boundingBox())!
+  expect(Math.abs(row.y + row.height - bar.y)).toBeLessThanOrEqual(1)
+  await expect(page.locator('.zoom-row svg')).toHaveCount(2)
+  expect(row.height).toBeGreaterThanOrEqual(44)
+})
+
+test('the mouse wheel zooms the background, covers the frame, and does not scroll', async ({
+  page,
+}) => {
+  await frameWithBackground(page, 1)
+  await theFrame(page).click()
+
+  expect(await wheel(page, -300)).toBe(true)
+  const [zoomed] = await layersWhen(page, (l) => (l[0]?.widthFrac ?? 0) > 1.2)
+  expect(zoomed!.cx).toBeCloseTo(0.5)
+  expect(zoomed!.cy).toBeCloseTo(0.5)
+  await expectCovered(page, 0)
+
+  await wheel(page, 100000)
+  const [back] = await layersWhen(page, (l) => l[0]?.widthFrac === 1)
+  expect(back!.widthFrac).toBe(1)
+  await expectCovered(page, 0)
+})
+
+test('the mouse wheel keeps a photo on top within its limits, around its centre', async ({
+  page,
+}) => {
+  await frameWithBackground(page, 2)
+  await trayPhoto(page, 2).click()
+  await wheel(page, -100000)
+  const [, top] = await layersWhen(page, (l) => (l[1]?.widthFrac ?? 0) > 2.9)
+  expect(top!.widthFrac).toBeCloseTo(3)
+  expect(top!.cx).toBeCloseTo(0.5)
+})
+
+test('a photo that lands while the sheet is open does not bring edit mode back', async ({
+  page,
+}) => {
+  await frameWithBackground(page, 1)
+  await theFrame(page).click()
+  await holdImport(page)
+  await uploadPhotos(page, [await makeJpeg(page, 400, 600, COLORS[2]!)])
+  await page.getByRole('button', { name: 'Baixar', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Voltar', exact: true })).toBeVisible()
+  await releaseImport(page)
+  await layersWhen(page, (l) => l.length === 2)
+
+  await page.getByRole('button', { name: 'Voltar', exact: true }).click()
+  await expect(theFrame(page)).toBeVisible()
+  await expect(ok(page)).toHaveCount(0)
+  await expect(toolbar(page)).toHaveCount(0)
 })
 
 test('a frame opens with its top layer selected', async ({ page }) => {

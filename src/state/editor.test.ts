@@ -71,6 +71,37 @@ describe('tapPhoto', () => {
     expect(s.mode).toBe('browse')
   })
 
+  it('selects a late photo while the frame is still being edited', async () => {
+    const editor = await setup()
+    const target = editor.getState().activeFrameId!
+    editor.getState().tapPhoto('a')
+    editor.getState().enterEdit()
+    editor.getState().tapPhoto('b', target)
+    const s = editor.getState()
+    expect(s.mode).toBe('edit')
+    expect(s.selectedLayerId).toBe(s.collection.frames[0]!.layers[1]!.id)
+  })
+
+  it('places a late photo without reopening an edit that was closed meanwhile', async () => {
+    const editor = await setup()
+    const target = editor.getState().activeFrameId!
+    editor.getState().tapPhoto('a')
+    editor.getState().tapPhoto('b', target)
+    const s = editor.getState()
+    expect(s.collection.frames[0]!.layers).toHaveLength(2)
+    expect(s.mode).toBe('browse')
+    expect(s.selectedLayerId).toBeNull()
+  })
+
+  it('zooms the selected layer from its latest width, so quick ticks add up', async () => {
+    const editor = await setup()
+    editor.getState().tapPhoto('a')
+    editor.getState().tapPhoto('b')
+    editor.getState().zoomSelected(2)
+    editor.getState().zoomSelected(2)
+    expect(editor.getState().collection.frames[0]!.layers[1]!.widthFrac).toBeCloseTo(2)
+  })
+
   it('replaces the selected photo after startReplace and turns replacing off', async () => {
     const editor = await setup()
     editor.getState().tapPhoto('a')

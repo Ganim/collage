@@ -10,6 +10,7 @@ import {
   resizeFrame,
   rotateLayer90,
   updateLayer,
+  zoomLayer,
 } from '../core/frame'
 import { defaultPaper } from '../core/presets'
 import type { Collection, Frame, Layer, Paper, Photo, SavedSize, Size } from '../core/types'
@@ -44,7 +45,10 @@ export interface EditorState {
   renameCollection(name: string): void
   /** photoIds lists every readable file, including one the collection already had. */
   addPhotos(files: File[]): Promise<{ failed: string[]; photoIds: string[] }>
-  /** With onlyOnFrameId, does nothing unless that frame is still the active one. */
+  /**
+   * With onlyOnFrameId, for a photo that took a while to read: does nothing unless that frame
+   * is still the active one, and does not reopen an edit that was closed in the meantime.
+   */
   tapPhoto(photoId: string, onlyOnFrameId?: string): void
   addFrame(size: Size): void
   duplicateActive(): void
@@ -57,6 +61,7 @@ export interface EditorState {
   selectLayer(id: string): void
   startReplace(): void
   transformSelected(patch: Partial<Pick<Layer, 'cx' | 'cy' | 'widthFrac' | 'rotationDeg'>>): void
+  zoomSelected(factor: number): void
   rotateSelected(): void
   moveSelected(d: 'forward' | 'back'): void
   removeSelected(): void
@@ -257,14 +262,14 @@ export function createEditorStore(
         const photo = get().photos[photoId]
         if (!frame || !photo) return
         if (onlyOnFrameId !== undefined && frame.id !== onlyOnFrameId) return
-        const { selectedLayerId, replacing } = get()
+        const { selectedLayerId, replacing, mode } = get()
         if (replacing && selectedLayerId) {
           updateActive((f) => replaceLayerPhoto(f, selectedLayerId, photo))
           commit({ replacing: false })
           return
         }
         const placed = placePhoto(frame, photo)
-        const added = frame.layers.length > 0
+        const added = frame.layers.length > 0 && (onlyOnFrameId === undefined || mode === 'edit')
         const top = placed.layers[placed.layers.length - 1]
         const { collection } = get()
         commit({
@@ -335,6 +340,11 @@ export function createEditorStore(
       transformSelected(patch) {
         const id = get().selectedLayerId
         if (id) updateActive((f, photos) => updateLayer(f, id, patch, photos))
+      },
+
+      zoomSelected(factor) {
+        const id = get().selectedLayerId
+        if (id) updateActive((f, photos) => zoomLayer(f, id, factor, photos))
       },
 
       rotateSelected() {

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useEditor } from '../../state/editor'
 import { ActionBar } from '../edit/ActionBar'
+import { ZoomSlider } from '../edit/ZoomSlider'
 import { t } from '../i18n'
 import { Carousel } from './Carousel'
 import { Dots } from './Dots'
@@ -72,6 +73,7 @@ export function BuildScreen({ onDownload }: { onDownload: () => void }) {
       </div>
       <Dots onAdd={() => setSheet('new')} />
       <div className="tray-area">
+        {editing && !replacing && <ZoomSlider />}
         <div className="tray-float">
           {status && (
             <p className="notice" role="status">

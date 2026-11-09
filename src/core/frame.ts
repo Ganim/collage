@@ -1,5 +1,6 @@
 import { clampToCover, coverLayer } from './transform'
 import type { Frame, Layer, Photo, Size } from './types'
+import { clampWidth, zoomLimits } from './zoom'
 
 type Photos = Record<string, Photo>
 
@@ -66,6 +67,15 @@ export function updateLayer(
 ): Frame {
   const layers = frame.layers.map((l) => (l.id === layerId ? { ...l, ...patch } : l))
   return fitBackground({ ...frame, layers }, photos)
+}
+
+/** Multiplies the layer's width around its centre, within what the layer allows. */
+export function zoomLayer(frame: Frame, layerId: string, factor: number, photos: Photos): Frame {
+  const layer = frame.layers.find((l) => l.id === layerId)
+  const photo = layer && photos[layer.photoId]
+  if (!layer || !photo) return frame
+  const widthFrac = clampWidth(layer.widthFrac * factor, zoomLimits(frame, layer, photo))
+  return updateLayer(frame, layerId, { widthFrac }, photos)
 }
 
 export function rotateLayer90(frame: Frame, layerId: string, photos: Photos): Frame {

@@ -1,4 +1,5 @@
 import type { Layer, Photo } from '../../core/types'
+import { MIN_WIDTH_FRAC } from '../../core/zoom'
 
 export type LayerPatch = Partial<Pick<Layer, 'cx' | 'cy' | 'widthFrac' | 'rotationDeg'>>
 export type Point = readonly [number, number]
@@ -8,9 +9,6 @@ export interface FramePx {
   width: number
   height: number
 }
-
-/** Below this a photo is smaller than the finger trying to grab it. */
-const MIN_WIDTH_FRAC = 0.1
 
 export function dragToPatch(
   layer: Layer,

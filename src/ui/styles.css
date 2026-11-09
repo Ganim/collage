@@ -372,6 +372,38 @@ p {
   pointer-events: none;
 }
 
+/* Covers the dots, which have no use during an edit, so the frame stays put. */
+.zoom-row {
+  position: absolute;
+  z-index: 1;
+  right: 0;
+  bottom: 100%;
+  left: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: var(--touch);
+  padding: 0 16px;
+  background: var(--paper);
+  color: var(--muted);
+}
+
+.zoom-row svg {
+  flex: none;
+}
+
+.zoom-row input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.zoom-row + .tray-float {
+  margin-bottom: calc(var(--touch) + 8px);
+}
+
 .notice {
   padding: 8px 14px;
   border-radius: 10px;

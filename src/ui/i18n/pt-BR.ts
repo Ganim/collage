@@ -44,6 +44,7 @@ export const ptBR = {
   'action.forward': 'Frente',
   'action.back': 'Trás',
   'action.remove': 'Remover',
+  'zoom.label': 'Zoom da foto',
   'replace.hint': 'Toque numa foto para trocar',
   'replace.cancel': 'Cancelar',
   'frame.photoMissing': 'Foto não encontrada',

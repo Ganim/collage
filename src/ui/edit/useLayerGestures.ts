@@ -5,6 +5,9 @@ import { useEditor } from '../../state/editor'
 import { cornerScale, dragToPatch, keepInFrame, layerAt, pinchToPatch } from './gesture'
 
 const TAP_THRESHOLD_PX = 10
+/** One notch of a mouse wheel is about 100 px, which this turns into about 22%. */
+const WHEEL_SPEED = 0.002
+const WHEEL_LINE_PX = 33
 
 interface LayerGesturesArgs {
   /** Holds everything the fingers can touch while editing. */
@@ -19,6 +22,7 @@ export function useLayerGestures({ root, surface, frame, selected }: LayerGestur
   const photos = useEditor((s) => s.photos)
   const transformSelected = useEditor((s) => s.transformSelected)
   const selectLayer = useEditor((s) => s.selectLayer)
+  const zoomSelected = useEditor((s) => s.zoomSelected)
   const isBackground = frame.layers[0]?.id === selected.id
 
   const frameRect = () => {
@@ -79,6 +83,19 @@ export function useLayerGestures({ root, surface, frame, selected }: LayerGestur
       el.removeEventListener('gesturechange', block)
     }
   }, [root])
+
+  // React listens to wheel passively, and only an active listener can stop the page scrolling.
+  useEffect(() => {
+    const el = root.current
+    if (!el) return
+    const zoom = (e: WheelEvent) => {
+      e.preventDefault()
+      const px = e.deltaMode === WheelEvent.DOM_DELTA_LINE ? e.deltaY * WHEEL_LINE_PX : e.deltaY
+      zoomSelected(Math.exp(-px * WHEEL_SPEED))
+    }
+    el.addEventListener('wheel', zoom, { passive: false })
+    return () => el.removeEventListener('wheel', zoom)
+  }, [root, zoomSelected])
 
   return { bindSurface, bindHandle }
 }
