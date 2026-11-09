@@ -1,0 +1,81 @@
+import { useDrag, useGesture } from '@use-gesture/react'
+import { useEffect, type RefObject } from 'react'
+import type { Frame, Layer } from '../../core/types'
+import { useEditor } from '../../state/editor'
+import { cornerScale, dragToPatch, keepInFrame, layerAt, pinchToPatch } from './gesture'
+
+interface LayerGesturesArgs {
+  /** Holds everything the fingers can touch while editing. */
+  root: RefObject<HTMLElement | null>
+  /** Has the frame's size and position on screen. */
+  surface: RefObject<HTMLElement | null>
+  frame: Frame
+  selected: Layer
+}
+
+export function useLayerGestures({ root, surface, frame, selected }: LayerGesturesArgs) {
+  const photos = useEditor((s) => s.photos)
+  const transformSelected = useEditor((s) => s.transformSelected)
+  const selectLayer = useEditor((s) => s.selectLayer)
+  const isBackground = frame.layers[0]?.id === selected.id
+
+  const frameRect = () => {
+    const el = surface.current
+    if (!el) throw new Error('The edit surface is not mounted')
+    return el.getBoundingClientRect()
+  }
+
+  // Each gesture works from the layer as it was when the fingers landed.
+  const startOf = (first: boolean, memo: unknown): Layer =>
+    first || !memo ? selected : (memo as Layer)
+
+  const bindSurface = useGesture(
+    {
+      onDrag: ({ first, tap, pinching, cancel, memo, xy: [x, y], movement: [mx, my] }) => {
+        if (pinching) {
+          cancel()
+          return memo as unknown
+        }
+        const rect = frameRect()
+        if (tap) {
+          const hit = layerAt(frame.layers, photos, rect, x - rect.left, y - rect.top)
+          if (hit) selectLayer(hit.id)
+          return undefined
+        }
+        const start = startOf(first, memo)
+        const moved = dragToPatch(start, mx, my, rect)
+        transformSelected(isBackground ? moved : keepInFrame(moved))
+        return start
+      },
+      onPinch: ({ first, memo, movement: [ratio, angle] }) => {
+        const start = startOf(first, memo)
+        transformSelected(pinchToPatch(start, ratio, angle, !isBackground))
+        return start
+      },
+    },
+    { drag: { filterTaps: true } },
+  )
+
+  const bindHandle = useDrag(({ first, memo, xy, initial }) => {
+    const start = startOf(first, memo)
+    const rect = frameRect()
+    const center = [rect.left + start.cx * rect.width, rect.top + start.cy * rect.height] as const
+    transformSelected(pinchToPatch(start, cornerScale(center, initial, xy), 0, false))
+    return start
+  })
+
+  // iOS Safari zooms the page on its own proprietary pinch events, whatever touch-action says.
+  useEffect(() => {
+    const el = root.current
+    if (!el) return
+    const block = (e: Event) => e.preventDefault()
+    el.addEventListener('gesturestart', block, { passive: false })
+    el.addEventListener('gesturechange', block, { passive: false })
+    return () => {
+      el.removeEventListener('gesturestart', block)
+      el.removeEventListener('gesturechange', block)
+    }
+  }, [root])
+
+  return { bindSurface, bindHandle }
+}

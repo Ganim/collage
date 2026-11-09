@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useEditor } from '../../state/editor'
+import { ActionBar } from '../edit/ActionBar'
 import { t } from '../i18n'
 import { Carousel } from './Carousel'
 import { Dots } from './Dots'
@@ -14,6 +15,10 @@ export function BuildScreen() {
   const saveStatus = useEditor((s) => s.saveStatus)
   const addPhotos = useEditor((s) => s.addPhotos)
   const tapPhoto = useEditor((s) => s.tapPhoto)
+  const editing = useEditor((s) => s.mode === 'edit')
+  const replacing = useEditor((s) => s.replacing)
+  const selectedId = useEditor((s) => s.selectedLayerId)
+  const selectLayer = useEditor((s) => s.selectLayer)
   const [sheet, setSheet] = useState<'change' | 'new' | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [importing, setImporting] = useState(false)
@@ -28,18 +33,25 @@ export function BuildScreen() {
     return () => clearTimeout(timer)
   }, [notice])
 
-  const upload = async (files: File[]) => {
+  const upload = async (files: File[]): Promise<string[]> => {
     setImporting(true)
     try {
-      const { failed } = await addPhotos(files)
+      const { failed, photoIds } = await addPhotos(files)
       if (failed.length === 1) setNotice(t('notice.failedOne'))
       else if (failed.length > 1) setNotice(t('notice.failedMany', { count: failed.length }))
+      return photoIds
     } catch (e) {
       console.error(e)
       setNotice(t('notice.importFailed'))
+      return []
     } finally {
       setImporting(false)
     }
+  }
+
+  const addOnTop = async (files: File[]) => {
+    const [photoId] = await upload(files)
+    if (photoId) tapPhoto(photoId)
   }
 
   const status = importing ? t('notice.importing') : notice
@@ -67,15 +79,34 @@ export function BuildScreen() {
       </div>
       <Dots onAdd={() => setSheet('new')} />
       <div className="tray-area">
-        {status && (
-          <p className="notice" role="status">
-            {status}
-          </p>
+        <div className="tray-float">
+          {status && (
+            <p className="notice" role="status">
+              {status}
+            </p>
+          )}
+          {replacing && selectedId && (
+            <p className="notice notice--action">
+              {t('replace.hint')}
+              {/* Selecting the same layer again leaves replace mode and keeps the edit going. */}
+              <button type="button" onClick={() => selectLayer(selectedId)}>
+                {t('replace.cancel')}
+              </button>
+            </p>
+          )}
+        </div>
+        {editing && !replacing ? (
+          <ActionBar
+            busy={importing}
+            onSize={() => setSheet('change')}
+            onAdd={(files) => void addOnTop(files)}
+          />
+        ) : (
+          <PhotoTray
+            onUpload={(files) => void upload(files)}
+            onPhotoTap={(id) => (hasFrames ? tapPhoto(id) : setSheet('new'))}
+          />
         )}
-        <PhotoTray
-          onUpload={(files) => void upload(files)}
-          onPhotoTap={(id) => (hasFrames ? tapPhoto(id) : setSheet('new'))}
-        />
       </div>
       {sheet && (
         <SizeSheet

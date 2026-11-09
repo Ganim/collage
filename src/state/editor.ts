@@ -42,7 +42,8 @@ export interface EditorState {
   openCollection(id: string): Promise<void>
   newCollection(): Promise<void>
   renameCollection(name: string): void
-  addPhotos(files: File[]): Promise<{ failed: string[] }>
+  /** photoIds lists every readable file, including one the collection already had. */
+  addPhotos(files: File[]): Promise<{ failed: string[]; photoIds: string[] }>
   tapPhoto(photoId: string): void
   addFrame(size: Size): void
   duplicateActive(): void
@@ -247,7 +248,7 @@ export function createEditorStore(
             })
           }
         }
-        return { failed }
+        return { failed, photoIds: imported.map((p) => p.id) }
       },
 
       tapPhoto(photoId) {

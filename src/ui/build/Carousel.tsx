@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef } from 'react'
 import { useEditor } from '../../state/editor'
+import { EditLayer } from '../edit/EditLayer'
 import { t } from '../i18n'
 import { FrameView } from './FrameView'
 
@@ -7,7 +8,13 @@ export function Carousel() {
   const frames = useEditor((s) => s.collection.frames)
   const activeId = useEditor((s) => s.activeFrameId)
   const setActive = useEditor((s) => s.setActive)
+  const editing = useEditor((s) => s.mode === 'edit')
+  const selectedId = useEditor((s) => s.selectedLayerId)
+  const enterEdit = useEditor((s) => s.enterEdit)
+  const exitEdit = useEditor((s) => s.exitEdit)
   const scrollerRef = useRef<HTMLElement>(null)
+  // A drag that begins on the frame and ends past it is not a tap outside.
+  const pressedOutside = useRef(false)
   // The frame the scroll position already shows, so a swipe is not answered with a scroll.
   const shownId = useRef<string | null>(null)
   const frameIds = frames.map((f) => f.id).join()
@@ -43,21 +50,38 @@ export function Carousel() {
   }, [frameIds, setActive])
 
   return (
-    <section ref={scrollerRef} className="carousel" aria-label={t('carousel.label')}>
-      {frames.map((frame, i) => (
-        <div
-          key={frame.id}
-          data-frame-id={frame.id}
-          className={frame.id === activeId ? 'slide slide--active' : 'slide'}
-        >
-          <FrameView
-            frame={frame}
-            interactive={false}
-            label={t('frame.label', { position: i + 1, total: frames.length })}
-            showImages={Math.abs(i - activeIndex) <= 1}
-          />
-        </div>
-      ))}
+    <section
+      ref={scrollerRef}
+      className={editing ? 'carousel carousel--locked' : 'carousel'}
+      aria-label={t('carousel.label')}
+      onPointerDown={(e) => {
+        pressedOutside.current = !(e.target as Element).closest('[data-edit-surface]')
+      }}
+      onClick={() => {
+        if (editing && pressedOutside.current) exitEdit()
+      }}
+    >
+      {frames.map((frame, i) => {
+        const active = frame.id === activeId
+        const selected =
+          active && editing ? frame.layers.find((l) => l.id === selectedId) : undefined
+        return (
+          <div
+            key={frame.id}
+            data-frame-id={frame.id}
+            className={active ? 'slide slide--active' : 'slide'}
+          >
+            <FrameView
+              frame={frame}
+              interactive={active && !editing && frame.layers.length > 0}
+              onTap={() => enterEdit()}
+              label={t('frame.label', { position: i + 1, total: frames.length })}
+              showImages={Math.abs(i - activeIndex) <= 1}
+            />
+            {selected && <EditLayer frame={frame} selected={selected} />}
+          </div>
+        )
+      })}
     </section>
   )
 }

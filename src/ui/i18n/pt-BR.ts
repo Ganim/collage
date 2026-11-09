@@ -34,6 +34,18 @@ export const ptBR = {
   'notice.importing': 'Lendo fotos…',
   'notice.importFailed': 'Não foi possível guardar as fotos',
   'notice.sizeNotSaved': 'Não foi possível guardar esse tamanho na lista',
+  'edit.label': 'Edição do frame',
+  'edit.done': 'OK',
+  'actions.label': 'Ações da foto',
+  'action.replace': 'Trocar',
+  'action.size': 'Tamanho',
+  'action.rotate': 'Girar',
+  'action.add': 'Adicionar',
+  'action.forward': 'Frente',
+  'action.back': 'Trás',
+  'action.remove': 'Remover',
+  'replace.hint': 'Toque numa foto para trocar',
+  'replace.cancel': 'Cancelar',
 } as const
 
 export type MessageKey = keyof typeof ptBR

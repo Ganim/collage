@@ -293,7 +293,7 @@ describe('never losing the latest edit', () => {
     const pending = editor.getState().addPhotos([])
     await editor.getState().openCollection('outra')
     finish()
-    expect(await pending).toEqual({ failed: ['ruim.jpg'] })
+    expect(await pending).toEqual({ failed: ['ruim.jpg'], photoIds: ['novo'] })
 
     expect(editor.getState().collection.id).toBe('outra')
     expect(editor.getState().collection.photoIds).toEqual([])

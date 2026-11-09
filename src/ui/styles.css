@@ -209,6 +209,101 @@ p {
   position: absolute;
   height: auto;
   max-width: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+/* Edit mode */
+
+.carousel--locked {
+  overflow-x: hidden;
+}
+
+/* Keeps handles that stick out of the frame above the neighbouring slide. */
+.slide--active {
+  position: relative;
+  z-index: 1;
+}
+
+.frame,
+.edit-layer {
+  grid-area: 1 / 1;
+}
+
+.edit-layer {
+  position: relative;
+  width: min(100cqw, calc(100cqh * var(--frame-ratio)));
+  aspect-ratio: var(--frame-ratio);
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.edit-surface {
+  position: absolute;
+  inset: 0;
+  touch-action: none;
+}
+
+.edit-outline {
+  position: absolute;
+  border: 2px solid var(--accent);
+  box-shadow: 0 0 0 1px #fff;
+  pointer-events: none;
+}
+
+.edit-outline--background {
+  inset: 0;
+}
+
+/* The touch area is 44 px; the dot drawn in it is smaller. */
+.edit-handle {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  width: var(--touch);
+  height: var(--touch);
+  margin: calc(var(--touch) / -2);
+  touch-action: none;
+  pointer-events: auto;
+}
+
+.edit-handle::after {
+  content: '';
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  background: #fff;
+}
+
+.edit-handle--nw,
+.edit-handle--sw {
+  left: 0;
+}
+
+.edit-handle--ne,
+.edit-handle--se {
+  left: 100%;
+}
+
+.edit-handle--nw,
+.edit-handle--ne {
+  top: 0;
+}
+
+.edit-handle--sw,
+.edit-handle--se {
+  top: 100%;
+}
+
+.done-button {
+  min-width: var(--touch);
+  min-height: var(--touch);
+  padding: 0 12px;
+  color: var(--accent);
+  font-weight: 600;
 }
 
 /* Dots */
@@ -260,21 +355,43 @@ p {
   position: relative;
 }
 
-.notice {
+.tray-float {
   position: absolute;
-  z-index: 1;
+  z-index: 2;
   bottom: 100%;
   left: 50%;
   transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
   width: max-content;
   max-width: calc(100vw - 32px);
   margin-bottom: 8px;
+  pointer-events: none;
+}
+
+.notice {
   padding: 8px 14px;
   border-radius: 10px;
   background: var(--ink);
   color: var(--surface);
   font-size: 14px;
-  pointer-events: none;
+}
+
+.notice--action {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 4px 0 14px;
+  pointer-events: auto;
+}
+
+.notice--action button {
+  min-width: var(--touch);
+  min-height: var(--touch);
+  padding: 0 10px;
+  font-weight: 600;
 }
 
 .tray {
@@ -331,6 +448,55 @@ p {
 
 .tray-photo {
   background: var(--line);
+}
+
+/* Same height as the tray, so the frame stays put when one replaces the other. */
+.action-bar {
+  display: flex;
+  gap: 4px;
+  height: 93px;
+  padding: 8px 8px 12px;
+  border-top: 1px solid var(--line);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.action-bar::-webkit-scrollbar {
+  display: none;
+}
+
+.action {
+  position: relative;
+  flex: 0 0 64px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border-radius: 10px;
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.action:disabled,
+.action--disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.action:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.action input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
 }
 
 .tray-photo img {

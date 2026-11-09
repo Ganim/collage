@@ -7,12 +7,13 @@ interface FrameViewProps {
   frame: Frame
   /** When false the frame ignores touches, so a swipe over it reaches what is underneath. */
   interactive: boolean
+  onTap?: () => void
   label?: string
   showImages?: boolean
 }
 
 /** Fills the nearest size container, preserving the frame's proportions. */
-export function FrameView({ frame, interactive, label, showImages = true }: FrameViewProps) {
+export function FrameView({ frame, interactive, onTap, label, showImages = true }: FrameViewProps) {
   const photos = useEditor((s) => s.photos)
   const style = { '--frame-ratio': frame.widthMm / frame.heightMm } as CSSProperties
   return (
@@ -21,6 +22,7 @@ export function FrameView({ frame, interactive, label, showImages = true }: Fram
       aria-label={label}
       className={interactive ? 'frame frame--interactive' : 'frame'}
       style={style}
+      onClick={interactive ? onTap : undefined}
     >
       {showImages &&
         frame.layers.map((layer) => {

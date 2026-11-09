@@ -11,6 +11,8 @@ interface HeaderProps {
 
 export function Header({ onSizeClick, onMore, onDownload }: HeaderProps) {
   const frame = useEditor((s) => s.collection.frames.find((f) => f.id === s.activeFrameId))
+  const editing = useEditor((s) => s.mode === 'edit')
+  const exitEdit = useEditor((s) => s.exitEdit)
   return (
     <header className="header">
       {frame && (
@@ -20,6 +22,11 @@ export function Header({ onSizeClick, onMore, onDownload }: HeaderProps) {
         </button>
       )}
       <div className="header-actions">
+        {editing && (
+          <button type="button" className="done-button" onClick={exitEdit}>
+            {t('edit.done')}
+          </button>
+        )}
         <button
           type="button"
           className="icon-button"
