@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseCm } from './sizeText'
+import { parseCm, parseMm } from './sizeText'
 
 describe('parseCm', () => {
   it.each([
@@ -19,4 +19,21 @@ describe('parseCm', () => {
       expect(parseCm(value)).toBeNull()
     },
   )
+})
+
+describe('parseMm', () => {
+  it.each([
+    ['5', 5],
+    ['0', 0],
+    ['12,5', 12.5],
+    [' 2.5 ', 2.5],
+    ['1,26', 1.3],
+    ['50', 50],
+  ])('reads %s', (text, mm) => {
+    expect(parseMm(text)).toBe(mm)
+  })
+
+  it.each(['', 'abc', '-1', '1,2,3', '50,1', '1e2'])('rejects %s', (text) => {
+    expect(parseMm(text)).toBeNull()
+  })
 })

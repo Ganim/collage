@@ -16,8 +16,7 @@ function getStore(): Promise<Store> {
 
 const reply = (message: PdfWorkerReply): void => self.postMessage(message)
 
-self.onmessage = async (event: MessageEvent<{ id: number; req: GenerateRequest }>) => {
-  const { id, req } = event.data
+async function run({ id, req }: { id: number; req: GenerateRequest }): Promise<void> {
   try {
     const pdf = await generatePdfWith(await getStore(), req, (done, total) =>
       reply({ id, progress: { done, total } }),
@@ -30,4 +29,12 @@ self.onmessage = async (event: MessageEvent<{ id: number; req: GenerateRequest }
       missingFrameIds: error instanceof MissingPhotoError ? error.frameIds : undefined,
     })
   }
+}
+
+// One at a time: two generations side by side would hold two sets of full-size canvases.
+let queue: Promise<void> = Promise.resolve()
+
+self.onmessage = (event: MessageEvent<{ id: number; req: GenerateRequest }>) => {
+  const message = event.data
+  queue = queue.then(() => run(message))
 }

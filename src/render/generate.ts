@@ -1,3 +1,4 @@
+import type { Store } from '../storage/store'
 import { MissingPhotoError } from './compose'
 import type { GenerateRequest } from './pdf'
 
@@ -13,6 +14,8 @@ interface Pending {
   reject: (reason: unknown) => void
   onProgress: (done: number, total: number) => void
 }
+
+type OnProgress = (done: number, total: number) => void
 
 let worker: Worker | undefined
 let nextId = 0
@@ -49,15 +52,45 @@ function getWorker(): Worker {
   return created
 }
 
-/** Builds the PDF in a Web Worker; replies are matched to calls by id. */
-export function generatePdf(
-  req: GenerateRequest,
-  onProgress: (done: number, total: number) => void,
-): Promise<Blob> {
+function generateInWorker(req: GenerateRequest, onProgress: OnProgress): Promise<Blob> {
   return new Promise((resolve, reject) => {
     const target = getWorker()
     const id = nextId++
     pending.set(id, { resolve, reject, onProgress })
-    target.postMessage({ id, req })
+    try {
+      target.postMessage({ id, req })
+    } catch (error) {
+      pending.delete(id)
+      throw error
+    }
   })
+}
+
+let store: Promise<Store> | undefined
+let mainQueue: Promise<unknown> = Promise.resolve()
+
+function getStore(): Promise<Store> {
+  store ??= import('../storage/indexeddb')
+    .then(({ createIdbStore }) => createIdbStore())
+    .catch((error: unknown) => {
+      store = undefined
+      throw error
+    })
+  return store
+}
+
+function generateOnMainThread(req: GenerateRequest, onProgress: OnProgress): Promise<Blob> {
+  const run = mainQueue.then(async () => {
+    const [{ generatePdfWith }, opened] = await Promise.all([import('./pdf'), getStore()])
+    return generatePdfWith(opened, req, onProgress)
+  })
+  mainQueue = run.catch(() => {})
+  return run
+}
+
+/** Builds the PDF in a Web Worker, or on the main thread where workers cannot draw on a canvas. */
+export function generatePdf(req: GenerateRequest, onProgress: OnProgress): Promise<Blob> {
+  return typeof OffscreenCanvas === 'undefined'
+    ? generateOnMainThread(req, onProgress)
+    : generateInWorker(req, onProgress)
 }

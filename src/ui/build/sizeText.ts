@@ -3,6 +3,7 @@ import { t } from '../i18n'
 
 const MIN_CM = 1
 const MAX_CM = 100
+const MAX_MM = 50
 
 const cm = (mm: number) => (mm / 10).toLocaleString('pt-BR', { maximumFractionDigits: 1 })
 
@@ -19,4 +20,13 @@ export function parseCm(value: string): number | null {
   const centimetres = Number(text.replace(',', '.'))
   if (centimetres < MIN_CM || centimetres > MAX_CM) return null
   return Math.round(centimetres * 10)
+}
+
+/** Reads a length typed in mm, with comma or period, to a tenth of a millimetre; null if unusable. */
+export function parseMm(value: string): number | null {
+  const text = value.trim()
+  if (!/^\d+([.,]\d+)?$/.test(text)) return null
+  const millimetres = Number(text.replace(',', '.'))
+  if (millimetres > MAX_MM) return null
+  return Math.round(millimetres * 10) / 10
 }

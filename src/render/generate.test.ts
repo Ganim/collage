@@ -73,6 +73,7 @@ function fakeRaster(decoded: Blob[] = []) {
         drawImage() {},
       } as unknown as ReturnType<Raster['createCanvas']>['context'],
       exportJpeg: async () => Uint8Array.from(JPEG),
+      release() {},
     })),
   }
 }
@@ -157,6 +158,7 @@ describe('generatePdf', () => {
   class FakeWorker {
     static instances: FakeWorker[] = []
     static failConstruct = false
+    static failPost = false
     posted: { id: number }[] = []
     terminated = false
     onmessage: ((e: { data: unknown }) => void) | null = null
@@ -168,6 +170,7 @@ describe('generatePdf', () => {
     }
     postMessage(msg: { id: number }) {
       this.posted.push(msg)
+      if (FakeWorker.failPost) throw new DOMException('cannot clone', 'DataCloneError')
     }
     terminate() {
       this.terminated = true
@@ -179,10 +182,26 @@ describe('generatePdf', () => {
     FakeWorker.instances = []
     FakeWorker.failConstruct = false
     vi.stubGlobal('Worker', FakeWorker)
+    vi.stubGlobal('OffscreenCanvas', class {})
     return import('./generate')
   }
 
-  afterEach(() => vi.unstubAllGlobals())
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    FakeWorker.failPost = false
+  })
+
+  it('forgets the call when postMessage throws', async () => {
+    const { generatePdf } = await load()
+    FakeWorker.failPost = true
+    const progress = vi.fn()
+    await expect(generatePdf(req, progress)).rejects.toThrow('cannot clone')
+    FakeWorker.failPost = false
+
+    const w = FakeWorker.instances[0]!
+    w.onmessage?.({ data: { id: w.posted[0]!.id, progress: { done: 1, total: 1 } } })
+    expect(progress).not.toHaveBeenCalled()
+  })
 
   it('matches progress and results to calls by id and reuses one worker', async () => {
     const { generatePdf } = await load()
@@ -255,5 +274,86 @@ describe('generatePdf', () => {
     const pdf = new Blob(['p'])
     w.onmessage?.({ data: { id: w.posted[0]!.id, pdf } })
     expect(await retry).toBe(pdf)
+  })
+})
+
+const { mockGeneratePdf, createIdbStore } = vi.hoisted(() => ({
+  mockGeneratePdf: vi.fn(),
+  createIdbStore: vi.fn(),
+}))
+
+describe('generatePdf without OffscreenCanvas', () => {
+  const req = { collection: collectionOf(), layout: layoutOf() }
+
+  async function load() {
+    vi.resetModules()
+    vi.doMock('./pdf', () => ({ generatePdfWith: mockGeneratePdf }))
+    vi.doMock('../storage/indexeddb', () => ({ createIdbStore }))
+    createIdbStore.mockReset()
+    createIdbStore.mockResolvedValue({ store: true })
+    mockGeneratePdf.mockReset()
+    return import('./generate')
+  }
+
+  afterEach(() => {
+    vi.doUnmock('./pdf')
+    vi.doUnmock('../storage/indexeddb')
+    vi.unstubAllGlobals()
+  })
+
+  it('runs on the main thread, with no worker, and relays progress', async () => {
+    const worker = vi.fn()
+    vi.stubGlobal('Worker', worker)
+    const { generatePdf } = await load()
+    const pdf = new Blob(['p'])
+    mockGeneratePdf.mockImplementation(async (_store, _req, onProgress) => {
+      onProgress(1, 1)
+      return pdf
+    })
+    const progress = vi.fn()
+
+    await expect(generatePdf(req, progress)).resolves.toBe(pdf)
+
+    expect(worker).not.toHaveBeenCalled()
+    expect(mockGeneratePdf.mock.calls[0]![0]).toEqual({ store: true })
+    expect(mockGeneratePdf.mock.calls[0]![1]).toBe(req)
+    expect(progress).toHaveBeenCalledWith(1, 1)
+  })
+
+  it('runs one generation at a time and survives a failure', async () => {
+    const { generatePdf } = await load()
+    let finishFirst!: (error: Error) => void
+    mockGeneratePdf.mockImplementationOnce(
+      () => new Promise((_resolve, reject) => (finishFirst = reject)),
+    )
+    const pdf = new Blob(['second'])
+    mockGeneratePdf.mockResolvedValueOnce(pdf)
+
+    const first = generatePdf(req, () => {})
+    const second = generatePdf(req, () => {})
+    await vi.waitFor(() => expect(mockGeneratePdf).toHaveBeenCalledTimes(1))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(mockGeneratePdf).toHaveBeenCalledTimes(1)
+
+    finishFirst(new Error('decode failed'))
+    await expect(first).rejects.toThrow('decode failed')
+    await expect(second).resolves.toBe(pdf)
+  })
+
+  it('keeps MissingPhotoError so the screen can tell it apart', async () => {
+    const generate = await load()
+    mockGeneratePdf.mockRejectedValue(new generate.MissingPhotoError(['a']))
+    await expect(generate.generatePdf(req, () => {})).rejects.toBeInstanceOf(
+      generate.MissingPhotoError,
+    )
+  })
+
+  it('tries the storage again after it could not be opened', async () => {
+    const { generatePdf } = await load()
+    createIdbStore.mockRejectedValueOnce(new Error('blocked'))
+    const pdf = new Blob(['p'])
+    mockGeneratePdf.mockResolvedValue(pdf)
+    await expect(generatePdf(req, () => {})).rejects.toThrow('blocked')
+    await expect(generatePdf(req, () => {})).resolves.toBe(pdf)
   })
 })

@@ -10,9 +10,8 @@ import { SizeSheet } from './SizeSheet'
 
 const NOTICE_MS = 6000
 
-export function BuildScreen() {
+export function BuildScreen({ onDownload }: { onDownload: () => void }) {
   const hasFrames = useEditor((s) => s.collection.frames.length > 0)
-  const saveStatus = useEditor((s) => s.saveStatus)
   const addPhotos = useEditor((s) => s.addPhotos)
   const tapPhoto = useEditor((s) => s.tapPhoto)
   const activeFrameId = useEditor((s) => s.activeFrameId)
@@ -23,10 +22,6 @@ export function BuildScreen() {
   const [sheet, setSheet] = useState<'change' | 'new' | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [importing, setImporting] = useState(false)
-  // A retry passes through 'saving'; the warning stays up until a save really works.
-  const [saveFailed, setSaveFailed] = useState(false)
-  if (saveStatus === 'full' && !saveFailed) setSaveFailed(true)
-  if (saveStatus === 'saved' && saveFailed) setSaveFailed(false)
 
   useEffect(() => {
     if (!notice) return
@@ -61,12 +56,7 @@ export function BuildScreen() {
 
   return (
     <>
-      {saveFailed && (
-        <p className="banner" role="alert">
-          {t('banner.saveFailed')}
-        </p>
-      )}
-      <Header onSizeClick={() => setSheet('change')} />
+      <Header onSizeClick={() => setSheet('change')} onDownload={onDownload} />
       <div className="stage">
         {hasFrames ? (
           <Carousel />

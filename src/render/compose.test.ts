@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Frame, Layer, Photo } from '../core/types'
 import type { StoredPhoto } from '../storage/store'
-import { composeFrame, frameCanvasSize, layerDrawRect, type Raster } from './compose'
+import { browserRaster, composeFrame, frameCanvasSize, layerDrawRect, type Raster } from './compose'
 
 const photo23: Photo = { id: 'p', width: 2000, height: 3000, name: 'p.jpg' }
 const canvas = { width: 1181, height: 1772 }
@@ -75,6 +75,7 @@ describe('composeFrame', () => {
             log.push(['exportJpeg', quality])
             return new Uint8Array([1, 2, 3])
           },
+          release: () => log.push(['release']),
         }
       },
     }
@@ -114,6 +115,7 @@ describe('composeFrame', () => {
       ['restore'],
       ['close', 'bitmap1'],
       ['exportJpeg', 0.92],
+      ['release'],
     ])
   })
 
@@ -132,5 +134,189 @@ describe('composeFrame', () => {
     }
     await expect(composeFrame(frame, async () => stored, failing)).rejects.toThrow('draw failed')
     expect(log).toContainEqual(['close', 'bitmap0'])
+    expect(log).toContainEqual(['release'])
+  })
+
+  it('releases the canvas when a photo cannot be loaded or exported', async () => {
+    const log: unknown[][] = []
+    const lost = composeFrame(
+      frame,
+      async () => {
+        throw new Error('gone')
+      },
+      fakeRaster(log),
+    )
+    await expect(lost).rejects.toThrow('gone')
+    expect(log).toContainEqual(['release'])
+
+    const exportLog: unknown[][] = []
+    const raster = fakeRaster(exportLog)
+    const failing: Raster = {
+      decode: raster.decode,
+      createCanvas(width, height) {
+        const created = raster.createCanvas(width, height)
+        created.exportJpeg = async () => {
+          throw new Error('export failed')
+        }
+        return created
+      },
+    }
+    await expect(composeFrame(frame, async () => stored, failing)).rejects.toThrow('export failed')
+    expect(exportLog).toContainEqual(['release'])
+  })
+
+  it('draws with high quality smoothing, since this is the print output', async () => {
+    const seen: (string | boolean | undefined)[] = []
+    const raster = fakeRaster([])
+    const watching: Raster = {
+      decode: raster.decode,
+      createCanvas(width, height) {
+        const created = raster.createCanvas(width, height)
+        const { context } = created
+        context.drawImage = () => {
+          seen.push(context.imageSmoothingEnabled, context.imageSmoothingQuality)
+        }
+        return created
+      },
+    }
+    await composeFrame({ ...frame, layers: [layer()] }, async () => stored, watching)
+    expect(seen).toEqual([true, 'high'])
+  })
+
+  describe('decoding size', () => {
+    function decodeCalls(): { calls: unknown[][]; raster: Raster } {
+      const calls: unknown[][] = []
+      const base = fakeRaster([])
+      return {
+        calls,
+        raster: {
+          createCanvas: base.createCanvas,
+          decode: (blob, resizeWidth) => {
+            calls.push([resizeWidth])
+            return base.decode(blob)
+          },
+        },
+      }
+    }
+
+    it('decodes at the drawn width when that is smaller than the photo', async () => {
+      const { calls, raster } = decodeCalls()
+      const halfWidth = { ...frame, layers: [layer({ widthFrac: 0.5 })] }
+      await composeFrame(halfWidth, async () => stored, raster)
+      expect(calls).toEqual([[591]])
+    })
+
+    it('rounds the width up, so nothing is lost to the last pixel', async () => {
+      const { calls, raster } = decodeCalls()
+      const third = { ...frame, layers: [layer({ widthFrac: 0.3333 })] }
+      await composeFrame(third, async () => stored, raster)
+      expect(calls).toEqual([[394]])
+    })
+
+    it('never upscales: a narrower photo is decoded at its own size', async () => {
+      const { calls, raster } = decodeCalls()
+      const small: StoredPhoto = { ...stored, width: 800, height: 1200 }
+      await composeFrame({ ...frame, layers: [layer()] }, async () => small, raster)
+      expect(calls).toEqual([[undefined]])
+    })
+
+    it('decodes at its own size when the drawn width equals the photo width', async () => {
+      const { calls, raster } = decodeCalls()
+      const exact: StoredPhoto = { ...stored, width: 1181, height: 1771 }
+      await composeFrame({ ...frame, layers: [layer()] }, async () => exact, raster)
+      expect(calls).toEqual([[undefined]])
+    })
+  })
+})
+
+describe('browserRaster', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+  })
+
+  describe('decode', () => {
+    function stubDecoder() {
+      const decoder = vi.fn(async () => ({}) as ImageBitmap)
+      vi.stubGlobal('createImageBitmap', decoder)
+      return decoder
+    }
+
+    it('keeps the EXIF orientation at the full size', async () => {
+      const decoder = stubDecoder()
+      const blob = new Blob(['x'])
+      await browserRaster.decode(blob)
+      expect(decoder).toHaveBeenCalledWith(blob, { imageOrientation: 'from-image' })
+    })
+
+    it('asks for a high quality reduction, still with the EXIF orientation', async () => {
+      const decoder = stubDecoder()
+      const blob = new Blob(['x'])
+      await browserRaster.decode(blob, 1181)
+      expect(decoder).toHaveBeenCalledWith(blob, {
+        imageOrientation: 'from-image',
+        resizeWidth: 1181,
+        resizeQuality: 'high',
+      })
+    })
+  })
+
+  describe('without OffscreenCanvas', () => {
+    function stubDomCanvas(blob: Blob | null) {
+      vi.stubGlobal('OffscreenCanvas', undefined)
+      const context = { fillRect() {} } as unknown as CanvasRenderingContext2D
+      vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(context as never)
+      vi.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementation((done, type, quality) => {
+        expect([type, quality]).toEqual(['image/jpeg', 0.92])
+        done(blob)
+      })
+      return context
+    }
+
+    const createdCanvas = () =>
+      vi.mocked(HTMLCanvasElement.prototype.getContext).mock.contexts[0] as HTMLCanvasElement
+
+    it('renders on a DOM canvas of the requested size and exports a JPEG', async () => {
+      const context = stubDomCanvas(new Blob([new Uint8Array([9, 8])]))
+      const canvas = browserRaster.createCanvas(40, 60)
+      expect(canvas.context).toBe(context)
+      await expect(canvas.exportJpeg(0.92)).resolves.toEqual(new Uint8Array([9, 8]))
+      expect([createdCanvas().width, createdCanvas().height]).toEqual([40, 60])
+    })
+
+    it('fails instead of producing nothing when the canvas cannot export', async () => {
+      stubDomCanvas(null)
+      await expect(browserRaster.createCanvas(40, 60).exportJpeg(0.92)).rejects.toThrow()
+    })
+
+    it('frees the backing store on release', () => {
+      stubDomCanvas(new Blob(['x']))
+      browserRaster.createCanvas(40, 60).release()
+      expect([createdCanvas().width, createdCanvas().height]).toEqual([0, 0])
+    })
+  })
+
+  it('prefers OffscreenCanvas when it exists', async () => {
+    const convertToBlob = vi.fn(async () => new Blob([new Uint8Array([7])]))
+    const instances: FakeOffscreen[] = []
+    class FakeOffscreen {
+      width: number
+      height: number
+      constructor(width: number, height: number) {
+        this.width = width
+        this.height = height
+        instances.push(this)
+      }
+      getContext = () => ({})
+      convertToBlob = convertToBlob
+    }
+    vi.stubGlobal('OffscreenCanvas', FakeOffscreen)
+
+    const canvas = browserRaster.createCanvas(10, 20)
+    await expect(canvas.exportJpeg(0.92)).resolves.toEqual(new Uint8Array([7]))
+    expect(convertToBlob).toHaveBeenCalledWith({ type: 'image/jpeg', quality: 0.92 })
+    expect([instances[0]!.width, instances[0]!.height]).toEqual([10, 20])
+    canvas.release()
+    expect([instances[0]!.width, instances[0]!.height]).toEqual([0, 0])
   })
 })

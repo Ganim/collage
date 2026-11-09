@@ -61,6 +61,7 @@ export async function uploadPhotos(page: Page, buffers: Buffer[]): Promise<void>
 interface SavedCollection {
   photoIds: string[]
   frames: { layers: unknown[] }[]
+  paper: { widthMm: number; heightMm: number; marginMm: number; gapMm: number }
 }
 
 /** The collection as IndexedDB has it right now, to wait for the autosave before a reload. */
