@@ -6,6 +6,7 @@ import {
   moveLayer,
   placePhoto,
   removeLayer,
+  removePhotoLayers,
   replaceLayerPhoto,
   resizeFrame,
   rotateLayer90,
@@ -57,6 +58,8 @@ export interface EditorState {
   importCollection(file: Blob): Promise<void>
   /** photoIds lists every readable file, including one the collection already had. */
   addPhotos(files: File[]): Promise<{ failed: string[]; photoIds: string[] }>
+  /** Removes the photo from the open collection: its tray entry and every frame showing it. */
+  deletePhoto(photoId: string): Promise<void>
   /**
    * With onlyOnFrameId, for a photo that took a while to read: does nothing unless that frame
    * is still the active one, and does not reopen an edit that was closed in the meantime.
@@ -325,6 +328,22 @@ export function createEditorStore(
         const work = importInto(files)
         imports = Promise.all([imports, work.catch(() => undefined)])
         return work
+      },
+
+      async deletePhoto(photoId) {
+        const { collection, photos } = get()
+        commit({
+          collection: {
+            ...collection,
+            photoIds: collection.photoIds.filter((id) => id !== photoId),
+            frames: collection.frames.map((f) => removePhotoLayers(f, photoId, photos)),
+          },
+          photos: Object.fromEntries(Object.entries(photos).filter(([id]) => id !== photoId)),
+        })
+        // The file goes last: until the save lands, the collection on disk still points at it.
+        await imports
+        if (!(await flushSave()) || get().collection.photoIds.includes(photoId)) return
+        await store.deletePhotoIfUnused(photoId).catch((e: unknown) => console.error(e))
       },
 
       tapPhoto(photoId, onlyOnFrameId) {

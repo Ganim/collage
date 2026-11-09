@@ -540,6 +540,55 @@ p {
   background: var(--line);
 }
 
+.tray-item {
+  position: relative;
+  flex: 0 0 72px;
+  height: 72px;
+}
+
+.tray-item .tray-photo {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* Bigger than the mark it shows, so a finger can hit it. */
+.tray-delete {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: flex;
+  justify-content: flex-end;
+  width: 36px;
+  height: 36px;
+  padding: 3px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.tray-delete span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.62);
+  color: #fff;
+}
+
+.tray-delete--confirming {
+  width: 100%;
+}
+
+.tray-delete--confirming span {
+  width: 100%;
+  background: var(--warning-bg);
+  color: var(--warning-ink);
+  font-size: 12px;
+  font-weight: 600;
+}
+
 /* Same height as the tray, so the frame stays put when one replaces the other. */
 .action-bar {
   display: flex;

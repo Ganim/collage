@@ -582,3 +582,66 @@ describe('never losing the latest edit', () => {
     })
   })
 })
+
+describe('deletePhoto', () => {
+  const blobs = { original: new Blob(['o']), preview: new Blob(['p']), thumb: new Blob(['t']) }
+
+  /** Two frames using photo a, one of them also using b, all saved. */
+  async function withPhotoInTwoFrames() {
+    const editor = await setup()
+    await store.putPhoto({ ...photo('a'), ...blobs })
+    await store.putPhoto({ ...photo('b'), ...blobs })
+    const { collection } = editor.getState()
+    editor.setState({ collection: { ...collection, photoIds: ['a', 'b'] } })
+    editor.getState().tapPhoto('a')
+    editor.getState().addFrame({ widthMm: 100, heightMm: 150 })
+    editor.getState().tapPhoto('a')
+    editor.getState().tapPhoto('b')
+    editor.getState().exitEdit()
+    await editor.getState().flush()
+    return editor
+  }
+
+  const shownPerFrame = (frames: { layers: { photoId: string }[] }[]) =>
+    frames.map((f) => f.layers.map((l) => l.photoId))
+
+  it('takes the photo out of the tray and of every frame, on screen and on disk', async () => {
+    const editor = await withPhotoInTwoFrames()
+    await editor.getState().deletePhoto('a')
+
+    const { collection, photos } = editor.getState()
+    expect(collection.photoIds).toEqual(['b'])
+    expect(photos.a).toBeUndefined()
+    expect(shownPerFrame(collection.frames)).toEqual([[], ['b']])
+    const saved = await store.getCollection(collection.id)
+    expect(saved?.photoIds).toEqual(['b'])
+    expect(shownPerFrame(saved?.frames ?? [])).toEqual([[], ['b']])
+    expect(await store.getPhoto('a')).toBeUndefined()
+  })
+
+  it('keeps the file for another collection that uses the same photo', async () => {
+    const editor = await withPhotoInTwoFrames()
+    const { collection } = editor.getState()
+    await store.saveCollection({ ...collection, id: 'other', photoIds: ['a'] })
+    await editor.getState().deletePhoto('a')
+    expect(await store.getPhoto('a')).toBeDefined()
+    expect((await store.getCollection('other'))?.photoIds).toEqual(['a'])
+  })
+
+  it('keeps the file while the saved collection still lists the photo', async () => {
+    const editor = await withPhotoInTwoFrames()
+    vi.spyOn(store, 'saveCollection').mockRejectedValueOnce(new StorageFullError())
+    await editor.getState().deletePhoto('a')
+    expect(editor.getState().saveStatus).toBe('full')
+    expect(await store.getPhoto('a')).toBeDefined()
+  })
+
+  it('leaves editing when the selected photo is the one deleted', async () => {
+    const editor = await withPhotoInTwoFrames()
+    editor.getState().enterEdit()
+    expect(editor.getState().mode).toBe('edit')
+    await editor.getState().deletePhoto('b')
+    expect(editor.getState().mode).toBe('browse')
+    expect(editor.getState().selectedLayerId).toBeNull()
+  })
+})

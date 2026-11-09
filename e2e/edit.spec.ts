@@ -531,6 +531,55 @@ test('a background that only just covers the frame shows no lines', async ({ pag
   await page.mouse.up()
 })
 
+const deleteButton = (page: Page, position: number) =>
+  page.getByRole('button', { name: `Apagar foto-${position}.jpg`, exact: true })
+const confirmDelete = (page: Page, position: number) =>
+  page.getByRole('button', {
+    name: `Confirmar apagar foto-${position}.jpg de todos os frames`,
+    exact: true,
+  })
+
+test('deleting a photo takes two taps and removes it from every frame', async ({ page }) => {
+  await frameWithBackground(page, 2)
+  await page.getByRole('button', { name: 'Mais opções', exact: true }).click()
+  await page.getByRole('button', { name: 'Duplicar frame', exact: true }).click()
+  await expect(page.getByRole('img', { name: 'Frame 2 de 2', exact: true })).toBeVisible()
+
+  await deleteButton(page, 1).click()
+  await expect(trayPhoto(page, 1)).toBeVisible()
+  await expect(
+    page.getByRole('img', { name: 'Frame 2 de 2', exact: true }).locator('img'),
+  ).toHaveCount(1)
+
+  await confirmDelete(page, 1).click()
+  await expect(trayPhoto(page, 1)).toHaveCount(0)
+  await expect(trayPhoto(page, 2)).toBeVisible()
+  await expect(
+    page.getByRole('img', { name: 'Frame 2 de 2', exact: true }).locator('img'),
+  ).toHaveCount(0)
+
+  await expect
+    .poll(async () => (await savedCollection(page))?.frames.flatMap((f) => f.layers).length)
+    .toBe(0)
+  await page.reload()
+  await expect(trayPhoto(page, 2)).toBeVisible()
+  await expect(trayPhoto(page, 1)).toHaveCount(0)
+})
+
+test('a delete that is not confirmed goes away by itself', async ({ page }) => {
+  await frameWithBackground(page, 1)
+  await deleteButton(page, 1).click()
+  await expect(confirmDelete(page, 1)).toBeVisible()
+  await expect(deleteButton(page, 1)).toBeVisible({ timeout: 6000 })
+  await expect(trayPhoto(page, 1)).toBeVisible()
+})
+
+test('the delete button does not place the photo in the frame', async ({ page }) => {
+  await frameWithBackground(page, 2)
+  await deleteButton(page, 2).click()
+  await expect(theFrame(page).locator('img')).toHaveCount(1)
+})
+
 test('a frame opens with its top layer selected', async ({ page }) => {
   await frameWithBackground(page, 2)
   await trayPhoto(page, 2).click()

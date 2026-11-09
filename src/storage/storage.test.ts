@@ -79,6 +79,20 @@ describe('store', () => {
     })
   })
 
+  it('deletePhotoIfUnused removes a photo no collection lists', async () => {
+    await store.putPhoto(photo('a'))
+    await store.saveCollection(collection('c1', []))
+    await store.deletePhotoIfUnused(ID.a)
+    expect(await store.getPhoto(ID.a)).toBeUndefined()
+  })
+
+  it('deletePhotoIfUnused keeps a photo another collection still lists', async () => {
+    await store.putPhoto(photo('a'))
+    await store.saveCollection(collection('c1', [ID.a]))
+    await store.deletePhotoIfUnused(ID.a)
+    expect(await store.getPhoto(ID.a)).toBeDefined()
+  })
+
   it('deleteCollection keeps a photo used by another collection and removes the unused one', async () => {
     await store.putPhoto(photo('a'))
     await store.putPhoto(photo('b'))

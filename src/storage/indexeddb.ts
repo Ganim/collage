@@ -100,6 +100,12 @@ export async function createIdbStore(name = 'collage'): Promise<Store> {
           if (!stillUsed.has(photoId)) await tx.objectStore('photos').delete(photoId)
         }
       }),
+    deletePhotoIfUnused: (id) =>
+      write(db, ['collections', 'photos'], async (tx) => {
+        const collections = await tx.objectStore('collections').getAll()
+        if (!collections.some((c) => c.photoIds.includes(id)))
+          await tx.objectStore('photos').delete(id)
+      }),
     listSizes: () => db.getAll('sizes'),
     saveSize: (s) =>
       write(db, ['sizes'], async (tx) => void (await tx.objectStore('sizes').put(s))),

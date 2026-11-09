@@ -122,6 +122,13 @@ export function removeLayer(frame: Frame, layerId: string, photos: Photos): Fram
   return { ...frame, layers }
 }
 
+/** Takes a photo off a frame wherever it appears. The frame stays, even if that empties it. */
+export function removePhotoLayers(frame: Frame, photoId: string, photos: Photos): Frame {
+  return frame.layers
+    .filter((l) => l.photoId === photoId)
+    .reduce((f, l) => removeLayer(f, l.id, photos), frame)
+}
+
 export function duplicateFrame(frame: Frame): Frame {
   return {
     ...frame,

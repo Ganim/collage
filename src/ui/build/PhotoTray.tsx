@@ -12,6 +12,7 @@ interface PhotoTrayProps {
 export function PhotoTray({ onUpload, onPhotoTap }: PhotoTrayProps) {
   const photoIds = useEditor((s) => s.collection.photoIds)
   const photos = useEditor((s) => s.photos)
+  const deletePhoto = useEditor((s) => s.deletePhoto)
   const empty = photoIds.length === 0
 
   return (
@@ -34,7 +35,14 @@ export function PhotoTray({ onUpload, onPhotoTap }: PhotoTrayProps) {
       </label>
       {photoIds.map((id) => {
         const photo = photos[id]
-        return photo ? <PhotoThumb key={id} photo={photo} onTap={() => onPhotoTap(id)} /> : null
+        return photo ? (
+          <PhotoThumb
+            key={id}
+            photo={photo}
+            onTap={() => onPhotoTap(id)}
+            onDelete={() => void deletePhoto(id)}
+          />
+        ) : null
       })}
     </div>
   )

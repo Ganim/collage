@@ -24,6 +24,8 @@ export interface Store {
   listCollections(): Promise<CollectionSummary[]>
   /** Also deletes photos that no other collection uses. */
   deleteCollection(id: string): Promise<void>
+  /** Frees a photo's files, unless a saved collection still lists it. */
+  deletePhotoIfUnused(id: string): Promise<void>
   listSizes(): Promise<SavedSize[]>
   saveSize(s: SavedSize): Promise<void>
   deleteSize(id: string): Promise<void>
