@@ -44,7 +44,8 @@ export interface EditorState {
   renameCollection(name: string): void
   /** photoIds lists every readable file, including one the collection already had. */
   addPhotos(files: File[]): Promise<{ failed: string[]; photoIds: string[] }>
-  tapPhoto(photoId: string): void
+  /** With onlyOnFrameId, does nothing unless that frame is still the active one. */
+  tapPhoto(photoId: string, onlyOnFrameId?: string): void
   addFrame(size: Size): void
   duplicateActive(): void
   removeActive(): void
@@ -251,10 +252,11 @@ export function createEditorStore(
         return { failed, photoIds: imported.map((p) => p.id) }
       },
 
-      tapPhoto(photoId) {
+      tapPhoto(photoId, onlyOnFrameId) {
         const frame = active()
         const photo = get().photos[photoId]
         if (!frame || !photo) return
+        if (onlyOnFrameId !== undefined && frame.id !== onlyOnFrameId) return
         const { selectedLayerId, replacing } = get()
         if (replacing && selectedLayerId) {
           updateActive((f) => replaceLayerPhoto(f, selectedLayerId, photo))
@@ -346,8 +348,18 @@ export function createEditorStore(
       },
 
       removeSelected() {
-        const id = get().selectedLayerId
-        if (id) updateActive((f, photos) => removeLayer(f, id, photos))
+        const frame = active()
+        const { collection, photos, selectedLayerId } = get()
+        if (!frame || !selectedLayerId) return
+        const updated = removeLayer(frame, selectedLayerId, photos)
+        commit({
+          collection: {
+            ...collection,
+            frames: collection.frames.map((f) => (f.id === frame.id ? updated : f)),
+          },
+          // Editing carries on with the new top layer; with none left, commit returns to browse.
+          selectedLayerId: updated.layers.at(-1)?.id ?? null,
+        })
       },
 
       setPaper(p) {

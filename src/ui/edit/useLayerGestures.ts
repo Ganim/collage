@@ -4,6 +4,8 @@ import type { Frame, Layer } from '../../core/types'
 import { useEditor } from '../../state/editor'
 import { cornerScale, dragToPatch, keepInFrame, layerAt, pinchToPatch } from './gesture'
 
+const TAP_THRESHOLD_PX = 10
+
 interface LayerGesturesArgs {
   /** Holds everything the fingers can touch while editing. */
   root: RefObject<HTMLElement | null>
@@ -53,7 +55,8 @@ export function useLayerGestures({ root, surface, frame, selected }: LayerGestur
         return start
       },
     },
-    { drag: { filterTaps: true } },
+    // A resting finger jitters: the library adds up every small move, so 3 px is too tight.
+    { drag: { filterTaps: true, tapsThreshold: TAP_THRESHOLD_PX } },
   )
 
   const bindHandle = useDrag(({ first, memo, xy, initial }) => {

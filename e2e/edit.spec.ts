@@ -243,6 +243,66 @@ test('tapping a layer selects it; the background has an outline and no handles',
   await expect(handles(page)).toHaveCount(4)
 })
 
+test('a press that jitters a few pixels is still a tap and moves nothing', async ({ page }) => {
+  await frameWithBackground(page, 2)
+  await trayPhoto(page, 2).click()
+  await expect(handles(page)).toHaveCount(4)
+  const overlay = theFrame(page).locator('img').nth(1)
+  await expect(overlay).toBeVisible()
+  const before = await overlay.boundingBox()
+
+  // Back and forth over one pixel: little net movement, about 4 px accumulated.
+  const b = await box(page)
+  const [x, y] = [b.x + b.width * 0.05, b.y + b.height * 0.05]
+  await page.mouse.move(x, y)
+  await page.mouse.down()
+  for (const dx of [1, 0, 1, 0]) await page.mouse.move(x + dx, y)
+  await page.mouse.up()
+
+  await expect(handles(page)).toHaveCount(0)
+  await expect(outline(page)).toHaveCount(1)
+  expect(await overlay.boundingBox()).toEqual(before)
+})
+
+test('a photo read after moving to another frame stays in the tray', async ({ page }) => {
+  await frameWithBackground(page, 1)
+  await page.getByRole('button', { name: 'Adicionar frame', exact: true }).click()
+  await page.getByRole('button', { name: '10×15 cm', exact: true }).click()
+  const second = page.getByRole('img', { name: 'Frame 2 de 2', exact: true })
+  await expect(second).toBeVisible()
+  await trayPhoto(page, 1).click()
+  await expect(second.locator('img')).toHaveCount(1)
+  await second.click()
+  await expect(ok(page)).toBeVisible()
+
+  const fresh = await makeJpeg(page, 400, 600, COLORS[1]!)
+  // Holds the import open until the test has changed frames.
+  await page.evaluate(() => {
+    const subtle = crypto.subtle
+    const digest = subtle.digest.bind(subtle)
+    const gate = new Promise<void>((resolve) => {
+      ;(window as unknown as { releaseImport: () => void }).releaseImport = resolve
+    })
+    subtle.digest = async (...args: Parameters<typeof digest>) => {
+      await gate
+      return digest(...args)
+    }
+  })
+  await uploadPhotos(page, [fresh])
+  await page.getByRole('button', { name: 'Ir para o frame 1', exact: true }).click()
+  await expect(
+    page.getByRole('button', { name: 'Ir para o frame 1', exact: true }),
+  ).toHaveAttribute('aria-current', 'true')
+  await page.evaluate(() => (window as unknown as { releaseImport: () => void }).releaseImport())
+
+  await expect(page.getByRole('button', { name: 'Colocar foto-1.jpg no frame' })).toHaveCount(2)
+  await expect(ok(page)).toHaveCount(0)
+  await expect(
+    page.getByRole('img', { name: 'Frame 1 de 2', exact: true }).locator('img'),
+  ).toHaveCount(1)
+  await expect(second.locator('img')).toHaveCount(1)
+})
+
 test('a frame opens with its top layer selected', async ({ page }) => {
   await frameWithBackground(page, 2)
   await trayPhoto(page, 2).click()
@@ -289,6 +349,8 @@ test('Remover on the background makes the next layer the background', async ({ p
   expect(layers[0]?.id).not.toBe(bg?.id)
   await expect(theFrame(page).locator('img')).toHaveCount(1)
   await expectCovered(page, 0)
+  await expect(ok(page)).toBeVisible()
+  await expect(outline(page)).toHaveCount(1)
 })
 
 test('Adicionar puts the chosen photo on top, even one already in the collection', async ({

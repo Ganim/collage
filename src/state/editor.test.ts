@@ -54,6 +54,23 @@ describe('tapPhoto', () => {
     expect(s.selectedLayerId).toBe(layers[1]!.id)
   })
 
+  it('places the photo when it is meant for the frame still active', async () => {
+    const editor = await setup()
+    const target = editor.getState().activeFrameId!
+    editor.getState().tapPhoto('a', target)
+    expect(editor.getState().collection.frames[0]!.layers).toHaveLength(1)
+  })
+
+  it('adds nothing when the photo was meant for a frame no longer active', async () => {
+    const editor = await setup()
+    const target = editor.getState().activeFrameId!
+    editor.getState().addFrame({ widthMm: 50, heightMm: 70 })
+    editor.getState().tapPhoto('a', target)
+    const s = editor.getState()
+    expect(s.collection.frames.flatMap((f) => f.layers)).toHaveLength(0)
+    expect(s.mode).toBe('browse')
+  })
+
   it('replaces the selected photo after startReplace and turns replacing off', async () => {
     const editor = await setup()
     editor.getState().tapPhoto('a')
@@ -89,13 +106,30 @@ describe('selection', () => {
     expect(editor.getState().mode).toBe('edit')
   })
 
-  it('returns to browse when the selected layer is removed', async () => {
+  it('keeps editing, with the new top layer selected, when others remain', async () => {
     const editor = await setup()
     editor.getState().tapPhoto('a')
     editor.getState().tapPhoto('b')
+    editor.getState().tapPhoto('a')
+    const [, middle] = editor.getState().collection.frames[0]!.layers
+    editor.getState().selectLayer(middle!.id)
     editor.getState().removeSelected()
-    expect(editor.getState().mode).toBe('browse')
-    expect(editor.getState().selectedLayerId).toBeNull()
+    const s = editor.getState()
+    const layers = s.collection.frames[0]!.layers
+    expect(layers).toHaveLength(2)
+    expect(s.mode).toBe('edit')
+    expect(s.selectedLayerId).toBe(layers[1]!.id)
+  })
+
+  it('returns to browse when the last layer is removed', async () => {
+    const editor = await setup()
+    editor.getState().tapPhoto('a')
+    editor.getState().enterEdit()
+    editor.getState().removeSelected()
+    const s = editor.getState()
+    expect(s.collection.frames[0]!.layers).toHaveLength(0)
+    expect(s.mode).toBe('browse')
+    expect(s.selectedLayerId).toBeNull()
   })
 
   it('leaves edit when the active frame changes or is removed', async () => {

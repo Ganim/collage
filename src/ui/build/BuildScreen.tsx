@@ -15,6 +15,7 @@ export function BuildScreen() {
   const saveStatus = useEditor((s) => s.saveStatus)
   const addPhotos = useEditor((s) => s.addPhotos)
   const tapPhoto = useEditor((s) => s.tapPhoto)
+  const activeFrameId = useEditor((s) => s.activeFrameId)
   const editing = useEditor((s) => s.mode === 'edit')
   const replacing = useEditor((s) => s.replacing)
   const selectedId = useEditor((s) => s.selectedLayerId)
@@ -50,8 +51,10 @@ export function BuildScreen() {
   }
 
   const addOnTop = async (files: File[]) => {
+    // If the user moves to another frame while it is read, the photo just stays in the tray.
+    const targetFrameId = activeFrameId ?? undefined
     const [photoId] = await upload(files)
-    if (photoId) tapPhoto(photoId)
+    if (photoId) tapPhoto(photoId, targetFrameId)
   }
 
   const status = importing ? t('notice.importing') : notice
