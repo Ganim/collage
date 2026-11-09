@@ -1,13 +1,22 @@
 import { useDrag, useGesture } from '@use-gesture/react'
-import { useEffect, type RefObject } from 'react'
+import { useEffect, useState, type RefObject } from 'react'
+import { freeAxes } from '../../core/transform'
 import type { Frame, Layer } from '../../core/types'
 import { useEditor } from '../../state/editor'
 import { cornerScale, dragToPatch, keepInFrame, layerAt, pinchToPatch } from './gesture'
+import { snapToCenters, type SnapTargets } from './snap'
 
 const TAP_THRESHOLD_PX = 10
 /** One notch of a mouse wheel is about 100 px, which this turns into about 22%. */
 const WHEEL_SPEED = 0.002
 const WHEEL_LINE_PX = 33
+
+export interface Guides {
+  x: number | null
+  y: number | null
+}
+
+const NO_GUIDES: Guides = { x: null, y: null }
 
 interface LayerGesturesArgs {
   /** Holds everything the fingers can touch while editing. */
@@ -24,6 +33,18 @@ export function useLayerGestures({ root, surface, frame, selected }: LayerGestur
   const selectLayer = useEditor((s) => s.selectLayer)
   const zoomSelected = useEditor((s) => s.zoomSelected)
   const isBackground = frame.layers[0]?.id === selected.id
+  const [guides, setGuides] = useState<Guides>(NO_GUIDES)
+
+  const snapTargets = (): SnapTargets => {
+    const others = frame.layers.filter((l) => l.id !== selected.id)
+    const photo = photos[selected.photoId]
+    // A background that only just covers the frame cannot move, so a line would mean nothing.
+    const free = isBackground && photo ? freeAxes(selected, photo, frame) : { x: true, y: true }
+    return {
+      x: free.x ? [0.5, ...others.map((l) => l.cx)] : [],
+      y: free.y ? [0.5, ...others.map((l) => l.cy)] : [],
+    }
+  }
 
   const frameRect = () => {
     const el = surface.current
@@ -37,8 +58,9 @@ export function useLayerGestures({ root, surface, frame, selected }: LayerGestur
 
   const bindSurface = useGesture(
     {
-      onDrag: ({ first, tap, pinching, cancel, memo, xy: [x, y], movement: [mx, my] }) => {
+      onDrag: ({ first, last, tap, pinching, cancel, memo, xy: [x, y], movement: [mx, my] }) => {
         if (pinching) {
+          setGuides(NO_GUIDES)
           cancel()
           return memo as unknown
         }
@@ -50,7 +72,13 @@ export function useLayerGestures({ root, surface, frame, selected }: LayerGestur
         }
         const start = startOf(first, memo)
         const moved = dragToPatch(start, mx, my, rect)
-        transformSelected(isBackground ? moved : keepInFrame(moved))
+        const snapped = snapToCenters(
+          isBackground ? moved : keepInFrame(moved),
+          snapTargets(),
+          rect,
+        )
+        transformSelected({ cx: snapped.cx, cy: snapped.cy })
+        setGuides(last ? NO_GUIDES : { x: snapped.guideX, y: snapped.guideY })
         return start
       },
       onPinch: ({ first, memo, movement: [ratio, angle] }) => {
@@ -97,5 +125,5 @@ export function useLayerGestures({ root, surface, frame, selected }: LayerGestur
     return () => el.removeEventListener('wheel', zoom)
   }, [root, zoomSelected])
 
-  return { bindSurface, bindHandle }
+  return { bindSurface, bindHandle, guides }
 }

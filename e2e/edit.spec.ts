@@ -67,6 +67,18 @@ async function drag(page: Page, from: Point, to: Point) {
   await page.mouse.up()
 }
 
+/** Presses at one point and moves to another, leaving the button down to inspect the gesture. */
+async function holdDrag(page: Page, from: Point, to: Point) {
+  await page.mouse.move(from[0], from[1])
+  await page.mouse.down()
+  for (let i = 1; i <= 5; i++) {
+    await page.mouse.move(
+      from[0] + ((to[0] - from[0]) * i) / 5,
+      from[1] + ((to[1] - from[1]) * i) / 5,
+    )
+  }
+}
+
 /** Two fingers, sent as pointer events: a test cannot produce a real multi-touch on the page. */
 async function pinch(page: Page, from: [Point, Point], to: [Point, Point]) {
   await surface(page).evaluate(
@@ -458,6 +470,65 @@ test('a photo that lands while the sheet is open does not bring edit mode back',
   await expect(theFrame(page)).toBeVisible()
   await expect(ok(page)).toHaveCount(0)
   await expect(toolbar(page)).toHaveCount(0)
+})
+
+const guides = (page: Page) => page.locator('.edit-guide')
+
+test('a photo dragged close to the frame centre aligns, shows a line, then the line goes', async ({
+  page,
+}) => {
+  await frameWithBackground(page, 2)
+  await trayPhoto(page, 2).click()
+  const f = await box(page)
+  const center: Point = [f.x + f.width / 2, f.y + f.height / 2]
+
+  await holdDrag(page, center, [center[0] + 80, center[1] + 120])
+  await expect(guides(page)).toHaveCount(0)
+  await page.mouse.move(center[0] + 4, center[1] + 120)
+  await expect(page.locator('.edit-guide--x')).toHaveCount(1)
+  await expect(page.locator('.edit-guide--y')).toHaveCount(0)
+  await page.mouse.up()
+
+  await expect(guides(page)).toHaveCount(0)
+  const [, top] = await layersWhen(page, (l) => l[1]?.cx === 0.5)
+  expect(top!.cx).toBe(0.5)
+  expect(top!.cy).toBeGreaterThan(0.6)
+})
+
+test('moving on past the centre lets the photo go', async ({ page }) => {
+  await frameWithBackground(page, 2)
+  await trayPhoto(page, 2).click()
+  const f = await box(page)
+  const center: Point = [f.x + f.width / 2, f.y + f.height / 2]
+  await drag(page, center, [center[0] + 30, center[1] + 120])
+  // The gesture library holds back the first few pixels of a drag, so 30 px moves it a bit less.
+  const [, top] = await layersWhen(page, (l) => (l[1]?.cy ?? 0) > 0.6)
+  expect(top!.cx).toBeGreaterThan(0.5 + 12 / f.width)
+})
+
+test('a photo aligns with the centre of another photo', async ({ page }) => {
+  await frameWithBackground(page, 3)
+  await trayPhoto(page, 2).click()
+  const f = await box(page)
+  const center: Point = [f.x + f.width / 2, f.y + f.height / 2]
+  await drag(page, center, [center[0] - 100, center[1] - 150])
+  await layersWhen(page, (l) => (l[1]?.cx ?? 1) < 0.4)
+  await ok(page).click()
+
+  await trayPhoto(page, 3).click()
+  await drag(page, center, [center[0] - 96, center[1] + 120])
+  const [, second, third] = await layersWhen(page, (l) => l[2]?.cx === l[1]?.cx)
+  expect(third!.cx).toBe(second!.cx)
+})
+
+test('a background that only just covers the frame shows no lines', async ({ page }) => {
+  await frameWithBackground(page, 1)
+  await theFrame(page).click()
+  const f = await box(page)
+  const center: Point = [f.x + f.width / 2, f.y + f.height / 2]
+  await holdDrag(page, center, [center[0] + 3, center[1] + 3])
+  await expect(guides(page)).toHaveCount(0)
+  await page.mouse.up()
 })
 
 test('a frame opens with its top layer selected', async ({ page }) => {

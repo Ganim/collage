@@ -48,6 +48,13 @@ export function coverLayer(photo: Photo, frame: Frame, rotationDeg = 0): Placeme
   }
 }
 
+/** Which ways a background can still move while covering the frame. */
+export function freeAxes(layer: Layer, photo: Photo, frame: Frame): { x: boolean; y: boolean } {
+  const low = clampToCover({ ...layer, cx: 0, cy: 0 }, photo, frame)
+  const high = clampToCover({ ...layer, cx: 1, cy: 1 }, photo, frame)
+  return { x: high.cx - low.cx > EPS, y: high.cy - low.cy > EPS }
+}
+
 export function clampToCover(layer: Layer, photo: Photo, frame: Frame): Layer {
   const [c, s] = cosSin(layer.rotationDeg)
   const minFrac = minWidthMm(photo, frame, layer.rotationDeg) / frame.widthMm

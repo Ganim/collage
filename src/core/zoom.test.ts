@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createFrame, placePhoto, rotateLayer90, zoomLayer } from './frame'
 import type { Frame, Layer, Photo } from './types'
+import { freeAxes } from './transform'
 import { SLIDER_MAX, sliderToWidth, widthToSlider, zoomLimits } from './zoom'
 
 const portrait: Photo = { id: 'p', width: 400, height: 600, name: 'p' }
@@ -92,5 +93,24 @@ describe('zoomLayer', () => {
     const frame = withOverlay()
     expect(zoomLayer(frame, 'nope', 2, photos)).toBe(frame)
     expect(zoomLayer(frame, at(frame, 1).id, 2, {})).toBe(frame)
+  })
+})
+
+describe('freeAxes', () => {
+  it('finds no room to move on a background that exactly covers the frame', () => {
+    const frame = withBackground()
+    expect(freeAxes(at(frame, 0), portrait, frame)).toEqual({ x: false, y: false })
+  })
+
+  it('finds room on both axes once the background is zoomed in', () => {
+    const frame = withBackground()
+    const zoomed = zoomLayer(frame, at(frame, 0).id, 2, photos)
+    expect(freeAxes(at(zoomed, 0), portrait, zoomed)).toEqual({ x: true, y: true })
+  })
+
+  it('finds room only along the side the photo overflows', () => {
+    const square: Photo = { id: 's', width: 1000, height: 1000, name: 's' }
+    const frame = placePhoto(createFrame({ widthMm: 100, heightMm: 150 }), square)
+    expect(freeAxes(at(frame, 0), square, frame)).toEqual({ x: true, y: false })
   })
 })

@@ -284,6 +284,26 @@ p {
   touch-action: none;
 }
 
+.edit-guide {
+  position: absolute;
+  z-index: 1;
+  background: var(--accent);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.8);
+  pointer-events: none;
+}
+
+.edit-guide--x {
+  top: 0;
+  bottom: 0;
+  width: 1px;
+}
+
+.edit-guide--y {
+  right: 0;
+  left: 0;
+  height: 1px;
+}
+
 .edit-outline {
   position: absolute;
   border: 2px solid var(--accent);
