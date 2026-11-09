@@ -1,4 +1,5 @@
 const DISMISSED_KEY = 'collage.installHintDismissed'
+const DISMISSAL_MS = 24 * 60 * 60 * 1000
 
 export interface InstallEnv {
   ua: string
@@ -12,9 +13,15 @@ export function shouldSuggestInstall({ ua, standalone, dismissed }: InstallEnv):
   return /iPhone|iPod/.test(ua) && /Safari\//.test(ua) && !/CriOS|FxiOS|EdgiOS|OPiOS/.test(ua)
 }
 
+/** A dismissal only lasts a day: outside the installed app her collections are at risk. */
+export function isDismissalActive(stored: string | null, now: number): boolean {
+  if (stored === null) return false
+  return now - Number(stored) < DISMISSAL_MS
+}
+
 function wasDismissed(): boolean {
   try {
-    return localStorage.getItem(DISMISSED_KEY) !== null
+    return isDismissalActive(localStorage.getItem(DISMISSED_KEY), Date.now())
   } catch {
     return false
   }
@@ -31,7 +38,7 @@ export function readInstallEnv(): InstallEnv {
 
 export function rememberDismissed(): void {
   try {
-    localStorage.setItem(DISMISSED_KEY, '1')
+    localStorage.setItem(DISMISSED_KEY, String(Date.now()))
   } catch {
     // Private tabs may refuse: the suggestion just comes back on the next visit.
   }

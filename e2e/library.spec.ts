@@ -193,7 +193,7 @@ test('after the first visit the app loads offline', async ({ browser, baseURL })
 test.describe('on a first visit in Safari', () => {
   test.use({ installHint: true })
 
-  test('it suggests installing, once', async ({ page }) => {
+  test('it suggests installing, and comes back on a later visit', async ({ page }) => {
     const dialog = page.getByRole('dialog', { name: 'Instale o Collage' })
     await expect(dialog).toBeVisible()
     await page.getByRole('button', { name: 'Agora não', exact: true }).click()
@@ -201,5 +201,12 @@ test.describe('on a first visit in Safari', () => {
     await page.reload()
     await expect(page.getByRole('heading', { name: 'Seu primeiro frame' })).toBeVisible()
     await expect(dialog).toHaveCount(0)
+
+    await page.evaluate(() => {
+      const twoDaysAgo = Date.now() - 2 * 24 * 60 * 60 * 1000
+      localStorage.setItem('collage.installHintDismissed', String(twoDaysAgo))
+    })
+    await page.reload()
+    await expect(dialog).toBeVisible()
   })
 })

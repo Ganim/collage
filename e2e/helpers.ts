@@ -22,7 +22,9 @@ export const test = base.extend<{ installHint: boolean }>({
       },
     )
     if (!installHint) {
-      await context.addInitScript(() => localStorage.setItem('collage.installHintDismissed', '1'))
+      await context.addInitScript(() =>
+        localStorage.setItem('collage.installHintDismissed', String(Date.now())),
+      )
     }
     await provide(context)
     await context.close()
