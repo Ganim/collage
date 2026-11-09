@@ -18,6 +18,7 @@ import type { Collection, Frame, Layer, Paper, Photo, SavedSize, Size } from '..
 import { importPhotos } from '../photos/import'
 import { exportBundle, importBundle } from '../storage/bundle'
 import { createIdbStore } from '../storage/indexeddb'
+import { reopeningStore } from '../storage/reopening'
 import { StorageFullError, type CollectionSummary, type Store } from '../storage/store'
 import { t } from '../ui/i18n'
 
@@ -178,6 +179,7 @@ export function createEditorStore(
           mode: 'browse',
           replacing: false,
           saveStatus: 'saved',
+          loadFailed: false,
         })
       } finally {
         loading = false
@@ -200,7 +202,8 @@ export function createEditorStore(
       if (!c) return
       const photos = c.photoIds.length > 0 ? await store.getPhotosMeta(c.photoIds) : {}
       if (token !== loadToken || rev !== revision) return
-      await store.setLastCollectionId(c.id)
+      // Only a convenience for next time: on a full device it must not stop the work from opening.
+      await store.setLastCollectionId(c.id).catch((e: unknown) => console.error(e))
       if (token !== loadToken || rev !== revision) return
       swap(c, photos, false)
     }
@@ -511,23 +514,7 @@ export function createEditorStore(
 }
 
 /** The app talks to IndexedDB, opened on first use so importing this module has no side effects. */
-function lazyIdbStore(): Store {
-  let opened: Promise<Store> | undefined
-  const open = () =>
-    (opened ??= createIdbStore().catch((e: unknown) => {
-      // A failed open is not final: the next call tries again.
-      opened = undefined
-      throw e
-    }))
-  return new Proxy({} as Store, {
-    get: (_target, key: string) => {
-      // Not a thenable: awaiting the store must not call into IndexedDB.
-      if (key === 'then') return undefined
-      return (...args: unknown[]) =>
-        open().then((s) => (s[key as keyof Store] as (...a: unknown[]) => unknown)(...args))
-    },
-  })
-}
+const lazyIdbStore = () => reopeningStore(() => createIdbStore())
 
 let storage: Store | undefined
 

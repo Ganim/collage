@@ -13,7 +13,13 @@ const details = (item: CollectionSummary) => {
   return `${frames} · ${new Date(item.updatedAt).toLocaleDateString('pt-BR')}`
 }
 
-export function CollectionsScreen({ onClose }: { onClose: () => void }) {
+interface CollectionsScreenProps {
+  onClose: () => void
+  /** Opened from the read-failure screen: no work is open, so there is nothing to rename. */
+  recovering?: boolean
+}
+
+export function CollectionsScreen({ onClose, recovering = false }: CollectionsScreenProps) {
   const currentId = useEditor((s) => s.collection.id)
   const currentName = useEditor((s) => s.collection.name)
   const listCollections = useEditor((s) => s.listCollections)
@@ -87,10 +93,16 @@ export function CollectionsScreen({ onClose }: { onClose: () => void }) {
 
   return (
     <BottomSheet title={t('library.title')} onClose={onClose}>
-      <label className="library-name">
-        {t('library.name')}
-        <input type="text" value={currentName} onChange={(e) => renameCollection(e.target.value)} />
-      </label>
+      {!recovering && (
+        <label className="library-name">
+          {t('library.name')}
+          <input
+            type="text"
+            value={currentName}
+            onChange={(e) => renameCollection(e.target.value)}
+          />
+        </label>
+      )}
 
       <ul className="library-list">
         {items.map((item) => {

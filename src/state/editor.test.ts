@@ -526,6 +526,28 @@ describe('never losing the latest edit', () => {
       expect(save).not.toHaveBeenCalled()
     })
 
+    it('still opens the work when remembering it cannot be written', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {})
+      await savedWork()
+      vi.spyOn(store, 'setLastCollectionId').mockRejectedValue(new StorageFullError())
+      const editor = createEditorStore(store)
+      await editor.getState().bootstrap()
+      expect(editor.getState().loadFailed).toBe(false)
+      expect(editor.getState().collection.id).toBe('a')
+    })
+
+    it('leaves the failure behind when another work is opened', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {})
+      await savedWork()
+      await store.saveCollection(stored('b'))
+      vi.spyOn(store, 'getLastCollectionId').mockRejectedValueOnce(new Error('read'))
+      const editor = createEditorStore(store)
+      await editor.getState().bootstrap()
+      await editor.getState().openCollection('b')
+      expect(editor.getState().loadFailed).toBe(false)
+      expect(editor.getState().collection.id).toBe('b')
+    })
+
     it('brings the last collection back on a retry', async () => {
       vi.spyOn(console, 'error').mockImplementation(() => {})
       await savedWork()

@@ -4,6 +4,7 @@ import { requestPersistentStorage } from '../storage/persist'
 import { BuildScreen } from './build/BuildScreen'
 import { t } from './i18n'
 import { InstallHint } from './install/InstallHint'
+import { CollectionsScreen } from './library/CollectionsScreen'
 import { SheetScreen } from './sheet/SheetScreen'
 
 export function App() {
@@ -13,6 +14,7 @@ export function App() {
   const loadFailed = useEditor((s) => s.loadFailed)
   // Until the saved collection is in, the empty state would flash on every visit.
   const [ready, setReady] = useState(false)
+  const [recovering, setRecovering] = useState(false)
   const [screen, setScreen] = useState<'build' | 'sheet'>('build')
   // A retry passes through 'saving'; the warning stays up until a save really works.
   const [saveFailed, setSaveFailed] = useState(false)
@@ -49,6 +51,10 @@ export function App() {
           <button type="button" className="primary-button" onClick={retry}>
             {t('load.retry')}
           </button>
+          <button type="button" className="load-others" onClick={() => setRecovering(true)}>
+            {t('load.others')}
+          </button>
+          {recovering && <CollectionsScreen recovering onClose={() => setRecovering(false)} />}
         </div>
       )}
       {ready &&

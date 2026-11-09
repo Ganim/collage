@@ -259,6 +259,29 @@ test('a failure reading the saved work offers a retry and loses nothing', async 
   await expect(frameLabel(page, 'Frame 1 de 1').locator('img')).toHaveCount(1)
 })
 
+test('when the last work cannot be read, the others can still be opened', async ({
+  page,
+  context,
+}) => {
+  await frameWithPhoto(page)
+  await nameCollection(page, 'Maio')
+  await expect.poll(async () => (await savedCollection(page))?.name).toBe('Maio')
+  await context.addInitScript(() => {
+    const get = IDBObjectStore.prototype.get
+    IDBObjectStore.prototype.get = function (key: IDBValidKey | IDBKeyRange) {
+      if (key === 'lastCollectionId') throw new Error('cannot read')
+      return get.call(this, key)
+    }
+  })
+
+  await page.reload()
+  await expect(page.getByRole('alert')).toHaveText(/Não foi possível abrir/)
+  await page.getByRole('button', { name: 'Ver meus trabalhos', exact: true }).click()
+  await expect(page.getByLabel('Nome da coleção')).toHaveCount(0)
+  await page.getByRole('button', { name: /^Maio\b/ }).click()
+  await expect(frameLabel(page, 'Frame 1 de 1').locator('img')).toHaveCount(1)
+})
+
 test.describe('on a first visit in Safari', () => {
   test.use({ installHint: true })
 

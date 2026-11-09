@@ -29,7 +29,8 @@ export const ptBR = {
   'sizeSheet.use': 'Usar este tamanho',
   'sizeSheet.invalid': 'Use medidas de 1 a 100 cm',
   'load.failed': 'Não foi possível abrir seus trabalhos.',
-  'load.safe': 'Eles continuam guardados neste aparelho.',
+  'load.safe': 'Nada foi apagado.',
+  'load.others': 'Ver meus trabalhos',
   'load.retry': 'Tentar de novo',
   'banner.saveFailed':
     'Não foi possível salvar. Libere espaço no aparelho para não perder o que você fez.',

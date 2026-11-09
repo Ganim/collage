@@ -66,6 +66,7 @@ export async function uploadPhotos(page: Page, buffers: Buffer[]): Promise<void>
 }
 
 interface SavedCollection {
+  name: string
   photoIds: string[]
   frames: { layers: unknown[] }[]
   paper: { widthMm: number; heightMm: number; marginMm: number; gapMm: number }

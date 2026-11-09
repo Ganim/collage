@@ -124,6 +124,15 @@ p {
   flex: none;
 }
 
+.load-others {
+  display: block;
+  min-height: var(--touch);
+  margin: 8px auto 0;
+  padding: 0 12px;
+  color: var(--accent);
+  font-weight: 600;
+}
+
 /* Gives up its width first, so a long name never moves the buttons. */
 .work-chip {
   display: inline-flex;
