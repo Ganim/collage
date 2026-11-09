@@ -6,8 +6,10 @@ const { viewport, userAgent, deviceScaleFactor, isMobile, hasTouch } = devices['
  * Each test gets a fresh on-disk profile. Playwright's default context is ephemeral, and
  * WebKit refuses to keep Blobs in IndexedDB there ("Error preparing Blob/File data").
  */
-export const test = base.extend({
-  context: async ({ playwright, baseURL }, provide, testInfo) => {
+export const test = base.extend<{ installHint: boolean }>({
+  // The suggestion covers the screen on an iPhone's first visit, which is every test's visit.
+  installHint: [false, { option: true }],
+  context: async ({ playwright, baseURL, installHint }, provide, testInfo) => {
     const context = await playwright.webkit.launchPersistentContext(
       testInfo.outputPath('profile'),
       {
@@ -19,6 +21,9 @@ export const test = base.extend({
         hasTouch,
       },
     )
+    if (!installHint) {
+      await context.addInitScript(() => localStorage.setItem('collage.installHintDismissed', '1'))
+    }
     await provide(context)
     await context.close()
   },

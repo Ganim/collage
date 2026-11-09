@@ -34,6 +34,50 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
+describe('deleteCollection', () => {
+  async function twoCollections() {
+    const editor = await setup()
+    const first = editor.getState().collection.id
+    await editor.getState().flush()
+    await editor.getState().newCollection()
+    const second = editor.getState().collection.id
+    await editor.getState().flush()
+    return { editor, first, second }
+  }
+
+  it('removes another collection and leaves the open one alone', async () => {
+    const { editor, first, second } = await twoCollections()
+    await editor.getState().deleteCollection(first)
+    expect(editor.getState().collection.id).toBe(second)
+    expect((await store.listCollections()).map((c) => c.id)).toEqual([second])
+  })
+
+  it('opens the next collection when the open one is deleted', async () => {
+    const { editor, first, second } = await twoCollections()
+    await editor.getState().deleteCollection(second)
+    expect(editor.getState().collection.id).toBe(first)
+    expect((await store.listCollections()).map((c) => c.id)).toEqual([first])
+  })
+
+  it('starts an empty collection when the only one is deleted', async () => {
+    const editor = await setup()
+    const only = editor.getState().collection.id
+    await editor.getState().flush()
+    await editor.getState().deleteCollection(only)
+    expect(editor.getState().collection.id).not.toBe(only)
+    expect(editor.getState().collection.frames).toHaveLength(0)
+    expect(await store.getCollection(only)).toBeUndefined()
+  })
+
+  it('is not undone by a save that was still waiting', async () => {
+    const { editor, second } = await twoCollections()
+    editor.getState().renameCollection('edited')
+    await editor.getState().deleteCollection(second)
+    await advance(1000)
+    expect(await store.getCollection(second)).toBeUndefined()
+  })
+})
+
 describe('tapPhoto', () => {
   it('makes the photo the background of an empty frame and stays in browse', async () => {
     const editor = await setup()

@@ -15,8 +15,9 @@ import {
 import { defaultPaper } from '../core/presets'
 import type { Collection, Frame, Layer, Paper, Photo, SavedSize, Size } from '../core/types'
 import { importPhotos } from '../photos/import'
+import { exportBundle, importBundle } from '../storage/bundle'
 import { createIdbStore } from '../storage/indexeddb'
-import { StorageFullError, type Store } from '../storage/store'
+import { StorageFullError, type CollectionSummary, type Store } from '../storage/store'
 import { t } from '../ui/i18n'
 
 const AUTOSAVE_DELAY_MS = 500
@@ -43,6 +44,13 @@ export interface EditorState {
   openCollection(id: string): Promise<void>
   newCollection(): Promise<void>
   renameCollection(name: string): void
+  /** Newest first, with the latest edits of the open collection already saved. */
+  listCollections(): Promise<CollectionSummary[]>
+  deleteCollection(id: string): Promise<void>
+  /** The open collection as a .collage file. Rejects if its latest edits could not be saved. */
+  exportActive(): Promise<Blob>
+  /** Opens a .collage file as a new collection. Rejects, changing nothing, if it is invalid. */
+  importCollection(file: Blob): Promise<void>
   /** photoIds lists every readable file, including one the collection already had. */
   addPhotos(files: File[]): Promise<{ failed: string[]; photoIds: string[] }>
   /**
@@ -83,6 +91,9 @@ function emptyCollection(): Collection {
     updatedAt: Date.now(),
   }
 }
+
+const newestFirst = (list: CollectionSummary[]) =>
+  [...list].sort((a, b) => b.updatedAt - a.updatedAt)
 
 export interface EditorDeps {
   importPhotos: typeof importPhotos
@@ -231,6 +242,37 @@ export function createEditorStore(
 
       renameCollection(name) {
         commit({ collection: { ...get().collection, name } })
+      },
+
+      async listCollections() {
+        await flushSave()
+        return newestFirst(await store.listCollections())
+      },
+
+      async deleteCollection(id) {
+        if (get().collection.id === id) {
+          // Its unsaved edits go with it, so a full device cannot block freeing space.
+          clearTimeout(timer)
+          timer = undefined
+          queuedRevision = revision
+          await queue
+          const others = (await store.listCollections()).filter((c) => c.id !== id)
+          const next = newestFirst(others)[0]
+          if (next) await load(() => store.getCollection(next.id))
+          else startFresh()
+          if (get().collection.id === id) return
+        }
+        await store.deleteCollection(id)
+      },
+
+      async exportActive() {
+        if (!(await flushSave())) throw new Error('The collection could not be saved')
+        return exportBundle(store, get().collection.id)
+      },
+
+      async importCollection(file) {
+        const imported = await importBundle(store, file)
+        await get().openCollection(imported.id)
       },
 
       async addPhotos(files) {

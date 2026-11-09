@@ -8,6 +8,16 @@ It is a static site: everything runs in your browser and your photos never leave
 
 Live at https://collage.guilhermeganim.com/
 
+## Your collections
+
+Collections are saved automatically in the browser, and the app works offline after the first
+visit. On an iPhone, add it to the Home Screen from Safari before you start: browsers can clear
+the data of sites you have not used for a while, and the installed app keeps its own storage.
+
+To keep a copy or move a collection to another device, use "Salvar em arquivo" in the menu. It
+creates a `.collage` file with the collection and its photos, which "Abrir de um arquivo" reads
+back.
+
 ## Running locally
 
 Requires Node.js 24 or newer.

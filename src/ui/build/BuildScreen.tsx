@@ -3,6 +3,9 @@ import { useEditor } from '../../state/editor'
 import { ActionBar } from '../edit/ActionBar'
 import { ZoomSlider } from '../edit/ZoomSlider'
 import { t } from '../i18n'
+import { CollectionsScreen } from '../library/CollectionsScreen'
+import { MoreMenu } from '../library/MoreMenu'
+import { SizesScreen } from '../library/SizesScreen'
 import { Carousel } from './Carousel'
 import { Dots } from './Dots'
 import { Header } from './Header'
@@ -20,7 +23,9 @@ export function BuildScreen({ onDownload }: { onDownload: () => void }) {
   const replacing = useEditor((s) => s.replacing)
   const selectedId = useEditor((s) => s.selectedLayerId)
   const selectLayer = useEditor((s) => s.selectLayer)
-  const [sheet, setSheet] = useState<'change' | 'new' | null>(null)
+  const [sheet, setSheet] = useState<'change' | 'new' | 'more' | 'collections' | 'sizes' | null>(
+    null,
+  )
   const [notice, setNotice] = useState<string | null>(null)
   const [importing, setImporting] = useState(false)
 
@@ -57,7 +62,11 @@ export function BuildScreen({ onDownload }: { onDownload: () => void }) {
 
   return (
     <>
-      <Header onSizeClick={() => setSheet('change')} onDownload={onDownload} />
+      <Header
+        onSizeClick={() => setSheet('change')}
+        onMore={() => setSheet('more')}
+        onDownload={onDownload}
+      />
       <div className="stage">
         {hasFrames ? (
           <Carousel />
@@ -103,13 +112,22 @@ export function BuildScreen({ onDownload }: { onDownload: () => void }) {
           />
         )}
       </div>
-      {sheet && (
+      {(sheet === 'change' || sheet === 'new') && (
         <SizeSheet
           mode={sheet}
           onClose={() => setSheet(null)}
           onSizeNotSaved={() => setNotice(t('notice.sizeNotSaved'))}
         />
       )}
+      {sheet === 'more' && (
+        <MoreMenu
+          onClose={() => setSheet(null)}
+          onCollections={() => setSheet('collections')}
+          onSizes={() => setSheet('sizes')}
+        />
+      )}
+      {sheet === 'collections' && <CollectionsScreen onClose={() => setSheet(null)} />}
+      {sheet === 'sizes' && <SizesScreen onClose={() => setSheet(null)} />}
     </>
   )
 }

@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useEditor } from '../state/editor'
+import { requestPersistentStorage } from '../storage/persist'
 import { BuildScreen } from './build/BuildScreen'
 import { t } from './i18n'
+import { InstallHint } from './install/InstallHint'
 import { SheetScreen } from './sheet/SheetScreen'
 
 export function App() {
@@ -17,6 +19,7 @@ export function App() {
   if (saveStatus === 'saved' && saveFailed) setSaveFailed(false)
 
   useEffect(() => {
+    void requestPersistentStorage()
     void bootstrap().finally(() => setReady(true))
   }, [bootstrap])
 
@@ -38,6 +41,7 @@ export function App() {
         ) : (
           <SheetScreen onBack={() => setScreen('build')} />
         ))}
+      {ready && <InstallHint />}
     </main>
   )
 }

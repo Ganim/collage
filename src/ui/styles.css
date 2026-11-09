@@ -851,3 +851,146 @@ p {
   font-size: 16px;
   font-variant-numeric: tabular-nums;
 }
+
+/* Menu and library */
+
+.menu-list,
+.library-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.menu-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  min-height: 52px;
+  font-size: 16px;
+  text-align: left;
+}
+
+.menu-row:disabled {
+  color: var(--muted);
+}
+
+.library-name {
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.library-name input {
+  min-height: var(--touch);
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--ink);
+  /* Below 16px, iOS zooms the page on focus. */
+  font-size: 16px;
+}
+
+.library-list {
+  margin-top: 10px;
+}
+
+.library-row {
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+}
+
+.library-info {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 56px;
+  justify-content: center;
+  font-size: 16px;
+  text-align: left;
+}
+
+.library-info[aria-current='true'] span {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.library-info small {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.library-armed {
+  background: var(--warning-bg);
+  color: var(--warning-ink);
+  border-radius: 10px;
+}
+
+.library-empty {
+  color: var(--muted);
+}
+
+.library-error {
+  margin: 12px 0 0;
+  color: var(--warning-ink);
+  font-size: 14px;
+}
+
+.library-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.library-import {
+  position: relative;
+  cursor: pointer;
+}
+
+.library-import input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.library-import:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Install suggestion */
+
+.install-why {
+  margin: 4px 0 12px;
+  line-height: 1.4;
+}
+
+.install-steps {
+  display: grid;
+  gap: 12px;
+  margin: 0 0 18px;
+  padding: 0;
+  list-style: none;
+}
+
+.install-steps li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.install-steps svg {
+  flex: none;
+  color: var(--accent);
+}
+
+.install-dismiss {
+  width: 100%;
+}

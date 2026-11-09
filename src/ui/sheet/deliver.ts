@@ -3,13 +3,15 @@ import { t } from '../i18n'
 const MAX_NAME_LENGTH = 120
 const REVOKE_DELAY_MS = 60_000
 
-/** The collection name as a file name: only characters every system accepts, ending in .pdf. */
-export function pdfFileName(collectionName: string): string {
+/** The collection name as a file name, with only characters every system accepts. */
+export function safeFileName(collectionName: string, extension: string): string {
   const trimEnds = (text: string) => text.replace(/^[\s.]+|[\s.]+$/g, '')
   const cleaned = trimEnds(collectionName.replace(/[\\/:*?"<>|\p{Cc}]/gu, ''))
   const name = trimEnds([...cleaned].slice(0, MAX_NAME_LENGTH).join(''))
-  return `${name || t('print.defaultFileName')}.pdf`
+  return `${name || t('print.defaultFileName')}.${extension}`
 }
+
+export const pdfFileName = (collectionName: string) => safeFileName(collectionName, 'pdf')
 
 function download(blob: Blob, fileName: string): void {
   const url = URL.createObjectURL(blob)
@@ -24,11 +26,12 @@ function download(blob: Blob, fileName: string): void {
 }
 
 /** Call straight from a tap: iOS only opens the share sheet right after one. */
-export async function deliverPdf(
+export async function deliverFile(
   blob: Blob,
   fileName: string,
+  type: string,
 ): Promise<'shared' | 'downloaded' | 'cancelled'> {
-  const file = new File([blob], fileName, { type: 'application/pdf' })
+  const file = new File([blob], fileName, { type })
   if (navigator.canShare?.({ files: [file] })) {
     try {
       await navigator.share({ files: [file] })
@@ -41,3 +44,6 @@ export async function deliverPdf(
   download(blob, fileName)
   return 'downloaded'
 }
+
+export const deliverPdf = (blob: Blob, fileName: string) =>
+  deliverFile(blob, fileName, 'application/pdf')
