@@ -270,6 +270,72 @@ test('changing the paper after generating asks to generate again', async ({ page
   await expect(generateButton(page)).toBeEnabled()
 })
 
+test.describe('a photo that lands while on this screen', () => {
+  type Gates = { releaseImport: () => void; releaseDrawing: () => void }
+  const previewImages = (page: Page) =>
+    page.getByRole('img', { name: 'Frame 1 de 1', exact: true }).locator('img')
+
+  /** Enters edit mode and starts adding a photo that stays held at import until released. */
+  async function importHeldOpen(page: Page) {
+    await photoFrames(page, 1)
+    await page.getByRole('img', { name: 'Frame 1 de 1', exact: true }).click()
+    await expect(page.getByRole('button', { name: 'OK', exact: true })).toBeVisible()
+    const fresh = await makeJpeg(page, 400, 600, COLORS[1]!)
+    await page.evaluate(() => {
+      const subtle = crypto.subtle
+      const digest = subtle.digest.bind(subtle)
+      const gate = new Promise<void>((resolve) => {
+        ;(window as unknown as Gates).releaseImport = resolve
+      })
+      subtle.digest = async (...args: Parameters<typeof digest>) => {
+        await gate
+        return digest(...args)
+      }
+    })
+    await uploadPhotos(page, [fresh])
+  }
+
+  test('asks to generate again when it lands after generating', async ({ page }) => {
+    await importHeldOpen(page)
+    await openSheet(page)
+    await generated(page)
+    await expect(previewImages(page)).toHaveCount(1)
+
+    await page.evaluate(() => (window as unknown as Gates).releaseImport())
+    await expect(previewImages(page)).toHaveCount(2)
+    await expect(saveButton(page)).toHaveCount(0)
+    await expect(generateButton(page)).toBeEnabled()
+  })
+
+  test('does not offer a PDF that finished after it landed', async ({ page }) => {
+    await importHeldOpen(page)
+    await openSheet(page)
+    await expect(generateButton(page)).toBeEnabled()
+    // Only drawing asks for a reduced decode; reading the imported photo must get through.
+    await page.evaluate(() => {
+      const decode = window.createImageBitmap.bind(window) as (
+        ...args: unknown[]
+      ) => Promise<ImageBitmap>
+      const gate = new Promise<void>((resolve) => {
+        ;(window as unknown as Gates).releaseDrawing = resolve
+      })
+      window.createImageBitmap = (async (...args: unknown[]) => {
+        if ((args[1] as ImageBitmapOptions | undefined)?.resizeWidth) await gate
+        return decode(...args)
+      }) as typeof window.createImageBitmap
+    })
+    await generateButton(page).click()
+    await expect(generateButton(page)).toHaveCount(0)
+
+    await page.evaluate(() => (window as unknown as Gates).releaseImport())
+    await expect(previewImages(page)).toHaveCount(2)
+    await page.evaluate(() => (window as unknown as Gates).releaseDrawing())
+
+    await expect(generateButton(page)).toBeEnabled({ timeout: 25_000 })
+    await expect(saveButton(page)).toHaveCount(0)
+  })
+})
+
 test('rotated frames are drawn turned, in their true position', async ({ page }) => {
   await photoFrames(page, 2)
   await openSheet(page)

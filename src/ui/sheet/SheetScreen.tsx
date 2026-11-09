@@ -23,13 +23,14 @@ export function SheetScreen({ onBack }: { onBack: () => void }) {
   const generating = useRef(false)
   const saving = useRef(false)
 
-  const paperKey = [paper.widthMm, paper.heightMm, paper.marginMm, paper.gapMm].join()
+  // A PDF only stands for the exact frames, photos and paper it was built from.
+  const contentKey = JSON.stringify({ frames, paper })
   const placed = layout ? layout.sheets.flat().length : 0
   const unplacedIds = layout ? layout.unplaced : []
   const missingFrameIds = missing
     ? frames.filter((f) => f.layers.some((l) => missing.has(l.photoId))).map((f) => f.id)
     : []
-  const ready = generated?.key === paperKey && inputsValid
+  const ready = generated?.key === contentKey && inputsValid
   const canGenerate =
     current &&
     inputsValid &&
@@ -41,7 +42,7 @@ export function SheetScreen({ onBack }: { onBack: () => void }) {
   const generate = async () => {
     if (generating.current || !canGenerate || !layout) return
     generating.current = true
-    const key = paperKey
+    const key = contentKey
     setError(null)
     setProgress({ done: 0, total: placed })
     try {
@@ -64,14 +65,14 @@ export function SheetScreen({ onBack }: { onBack: () => void }) {
   }
 
   const save = async () => {
-    if (saving.current || !generated) return
+    if (saving.current || !ready) return
     saving.current = true
     setError(null)
     try {
       await deliverPdf(generated.pdf, pdfFileName(collection.name))
     } catch (e) {
       console.error(e)
-      setError({ key: paperKey, text: t('print.saveFailed') })
+      setError({ key: contentKey, text: t('print.saveFailed') })
     } finally {
       saving.current = false
     }
@@ -137,7 +138,7 @@ export function SheetScreen({ onBack }: { onBack: () => void }) {
             {t('print.layoutFailed')}
           </p>
         )}
-        {error?.key === paperKey && (
+        {error?.key === contentKey && (
           <p className="print-warning print-warning--error" role="alert">
             {error.text}
           </p>
