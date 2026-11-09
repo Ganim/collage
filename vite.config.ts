@@ -8,7 +8,9 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: 'autoUpdate',
+      // A release waits for the next launch: taking over an open page would delete the
+      // files it still has to load, such as the workers behind the PDF.
+      registerType: 'prompt',
       includeAssets: ['apple-touch-icon.png'],
       manifest: {
         name: 'Collage',

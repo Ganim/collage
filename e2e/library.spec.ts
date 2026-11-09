@@ -180,9 +180,9 @@ test('after the first visit the app loads offline', async ({ browser, baseURL })
   const page = await context.newPage()
   await page.goto('/')
   await expect(page.getByRole('heading', { name: 'Seu primeiro frame' })).toBeVisible()
-  await expect
-    .poll(() => page.evaluate(() => navigator.serviceWorker.controller !== null))
-    .toBe(true)
+  await page.evaluate(async () => {
+    await navigator.serviceWorker.ready
+  })
 
   await context.setOffline(true)
   await page.reload()

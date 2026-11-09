@@ -34,7 +34,62 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
+describe('saving around a collection change', () => {
+  it('keeps an edit made while the save before switching is being written', async () => {
+    const editor = await setup()
+    const first = editor.getState().collection.id
+    await editor.getState().flush()
+    await editor.getState().newCollection()
+    const second = editor.getState().collection.id
+    await editor.getState().flush()
+    editor.getState().renameCollection('before')
+
+    let release = () => {}
+    const gate = new Promise<void>((resolve) => (release = resolve))
+    const save = store.saveCollection.bind(store)
+    const spy = vi.spyOn(store, 'saveCollection').mockImplementationOnce(async (c) => {
+      await gate
+      await save(c)
+    })
+    const opening = editor.getState().openCollection(first)
+    await vi.waitFor(() => expect(spy).toHaveBeenCalled())
+    editor.getState().renameCollection('during')
+    release()
+    await opening
+
+    expect(editor.getState().collection.id).toBe(first)
+    expect((await store.getCollection(second))?.name).toBe('during')
+  })
+})
+
 describe('deleteCollection', () => {
+  it('waits for photos being read, and saves them, before deleting another collection', async () => {
+    let release = () => {}
+    const gate = new Promise<void>((resolve) => (release = resolve))
+    const editor = createEditorStore(store, {
+      importPhotos: async () => {
+        await gate
+        return { photos: [photo('late')], failed: [] }
+      },
+    })
+    await editor.getState().bootstrap()
+    const other = editor.getState().collection.id
+    await editor.getState().flush()
+    await editor.getState().newCollection()
+    const open = editor.getState().collection.id
+    await editor.getState().flush()
+
+    const adding = editor.getState().addPhotos([])
+    const deleting = editor.getState().deleteCollection(other)
+    await advance(0)
+    expect(await store.getCollection(other)).toBeDefined()
+
+    release()
+    await Promise.all([adding, deleting])
+    expect(await store.getCollection(other)).toBeUndefined()
+    expect((await store.getCollection(open))?.photoIds).toEqual(['late'])
+  })
+
   async function twoCollections() {
     const editor = await setup()
     const first = editor.getState().collection.id

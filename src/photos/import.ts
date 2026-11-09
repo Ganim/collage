@@ -67,7 +67,9 @@ export const decodeImage: Decode = async (file) => {
 
 /**
  * Stores each file once (the id is the SHA-256 of its bytes). A file that cannot be
- * decoded is reported in `failed` and the rest carry on; storage errors propagate.
+ * decoded is reported in `failed` and the rest carry on. A storage error stops the batch:
+ * photos already stored are still returned, since nothing else could ever free them, and
+ * it only propagates when there are none.
  */
 export async function importPhotos(
   files: File[],
@@ -76,7 +78,7 @@ export async function importPhotos(
 ): Promise<{ photos: Photo[]; failed: string[] }> {
   const photos = new Map<string, Photo>()
   const failed: string[] = []
-  for (const file of files) {
+  for (const [index, file] of files.entries()) {
     let id: string
     let decoded: Decoded
     try {
@@ -93,15 +95,21 @@ export async function importPhotos(
       failed.push(file.name)
       continue
     }
-    await store.putPhoto({
-      id,
-      width: decoded.width,
-      height: decoded.height,
-      name: file.name,
-      original: file,
-      preview: decoded.preview,
-      thumb: decoded.thumb,
-    })
+    try {
+      await store.putPhoto({
+        id,
+        width: decoded.width,
+        height: decoded.height,
+        name: file.name,
+        original: file,
+        preview: decoded.preview,
+        thumb: decoded.thumb,
+      })
+    } catch (e) {
+      if (photos.size === 0) throw e
+      failed.push(...files.slice(index).map((f) => f.name))
+      break
+    }
     photos.set(id, { id, width: decoded.width, height: decoded.height, name: file.name })
   }
   return { photos: [...photos.values()], failed }

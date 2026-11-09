@@ -2,7 +2,7 @@
 import 'fake-indexeddb/auto'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { createIdbStore } from '../storage/indexeddb'
-import type { Store } from '../storage/store'
+import { StorageFullError, type Store } from '../storage/store'
 import { importPhotos, type Decode } from './import'
 
 const decode: Decode = async (file) => {
@@ -24,6 +24,31 @@ beforeEach(async () => {
 const file = (content: string, name: string) => new File([content], name, { type: 'image/jpeg' })
 
 describe('importPhotos', () => {
+  it('keeps the photos already stored when the device fills up mid-batch', async () => {
+    const put = store.putPhoto.bind(store)
+    let puts = 0
+    store.putPhoto = async (p) => {
+      if (++puts === 2) throw new StorageFullError()
+      await put(p)
+    }
+    const { photos, failed } = await importPhotos(
+      [file('one', 'a.jpg'), file('two', 'b.jpg'), file('three', 'c.jpg')],
+      store,
+      decode,
+    )
+    expect(photos.map((p) => p.name)).toEqual(['a.jpg'])
+    expect(failed).toEqual(['b.jpg', 'c.jpg'])
+  })
+
+  it('rejects when the device is full from the first photo', async () => {
+    store.putPhoto = async () => {
+      throw new StorageFullError()
+    }
+    await expect(importPhotos([file('one', 'a.jpg')], store, decode)).rejects.toThrow(
+      StorageFullError,
+    )
+  })
+
   it('turns the same file imported twice into one photo', async () => {
     const { photos, failed } = await importPhotos(
       [file('same', 'a.jpg'), file('same', 'b.jpg')],

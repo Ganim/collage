@@ -106,6 +106,8 @@ export function createEditorStore(
   let timer: ReturnType<typeof setTimeout> | undefined
   // Saves run strictly one after another, so the newest snapshot is always written last.
   let queue: Promise<void> = Promise.resolve()
+  // Settles when every photo import started so far has finished.
+  let imports: Promise<unknown> = Promise.resolve()
   // Counts changes to the collection; queuedRevision is the last one handed to a save.
   let revision = 0
   let queuedRevision = 0
@@ -198,6 +200,30 @@ export function createEditorStore(
       swap(c, photos, false)
     }
 
+    const importInto = async (files: File[]) => {
+      const targetId = get().collection.id
+      const { photos: imported, failed } = await deps.importPhotos(files, store)
+      const addIds = (ids: string[]) => [...new Set([...ids, ...imported.map((p) => p.id)])]
+      const { collection, photos } = get()
+      if (collection.id === targetId) {
+        commit({
+          collection: { ...collection, photoIds: addIds(collection.photoIds) },
+          photos: { ...photos, ...Object.fromEntries(imported.map((p) => [p.id, p])) },
+        })
+      } else {
+        // The user moved on while importing: the photos belong to the collection they were added to.
+        const original = await store.getCollection(targetId)
+        if (original) {
+          await store.saveCollection({
+            ...original,
+            photoIds: addIds(original.photoIds),
+            updatedAt: Date.now(),
+          })
+        }
+      }
+      return { failed, photoIds: imported.map((p) => p.id) }
+    }
+
     return {
       collection: emptyCollection(),
       photos: {},
@@ -250,7 +276,11 @@ export function createEditorStore(
       },
 
       async deleteCollection(id) {
-        if (get().collection.id === id) {
+        // A photo being read may be stored only under this collection until it lands in the open one.
+        await imports
+        if (get().collection.id !== id) {
+          await flushSave()
+        } else {
           // Its unsaved edits go with it, so a full device cannot block freeing space.
           clearTimeout(timer)
           timer = undefined
@@ -275,28 +305,10 @@ export function createEditorStore(
         await get().openCollection(imported.id)
       },
 
-      async addPhotos(files) {
-        const targetId = get().collection.id
-        const { photos: imported, failed } = await deps.importPhotos(files, store)
-        const addIds = (ids: string[]) => [...new Set([...ids, ...imported.map((p) => p.id)])]
-        const { collection, photos } = get()
-        if (collection.id === targetId) {
-          commit({
-            collection: { ...collection, photoIds: addIds(collection.photoIds) },
-            photos: { ...photos, ...Object.fromEntries(imported.map((p) => [p.id, p])) },
-          })
-        } else {
-          // The user moved on while importing: the photos belong to the collection they were added to.
-          const original = await store.getCollection(targetId)
-          if (original) {
-            await store.saveCollection({
-              ...original,
-              photoIds: addIds(original.photoIds),
-              updatedAt: Date.now(),
-            })
-          }
-        }
-        return { failed, photoIds: imported.map((p) => p.id) }
+      addPhotos(files) {
+        const work = importInto(files)
+        imports = Promise.all([imports, work.catch(() => undefined)])
+        return work
       },
 
       tapPhoto(photoId, onlyOnFrameId) {
@@ -438,6 +450,14 @@ export function createEditorStore(
    * stored (a failed save is retried by the next call, since it stays dirty).
    */
   async function flushSave(): Promise<boolean> {
+    // Repeats for an edit made while waiting: callers replace the collection right after this.
+    do {
+      await saveOnce()
+    } while (editor.getState().saveStatus !== 'full' && revision !== queuedRevision)
+    return editor.getState().saveStatus !== 'full'
+  }
+
+  async function saveOnce(): Promise<void> {
     clearTimeout(timer)
     timer = undefined
     if (revision !== queuedRevision) {
@@ -464,7 +484,6 @@ export function createEditorStore(
       })
     }
     await queue
-    return editor.getState().saveStatus !== 'full'
   }
 
   editor.subscribe((s, prev) => {
@@ -472,7 +491,7 @@ export function createEditorStore(
     revision++
     editor.setState({ saveStatus: 'saving' })
     clearTimeout(timer)
-    timer = setTimeout(() => void flushSave(), AUTOSAVE_DELAY_MS)
+    timer = setTimeout(() => void saveOnce(), AUTOSAVE_DELAY_MS)
   })
 
   return editor
