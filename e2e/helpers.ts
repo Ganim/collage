@@ -45,7 +45,13 @@ export const test = base.extend<{ installHint: boolean; loggedIn: boolean }>({
   },
 })
 
-export const TEST_ACCOUNT = { email: 'teste@exemplo.com', name: 'Conta de teste', picture: null }
+export const TEST_ACCOUNT = {
+  id: 'test-user',
+  email: 'teste@exemplo.com',
+  name: 'Conta de teste',
+  picture: null,
+  drive: false,
+}
 
 /** Answers the app's "who is signed in" question: the test account, or nobody (401). */
 export async function serveAccount(context: BrowserContext, loggedIn = true): Promise<void> {

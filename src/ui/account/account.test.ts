@@ -1,10 +1,23 @@
-import { describe, expect, it, vi } from 'vitest'
-import { loadAccount, signOut, type Account } from './account'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  DriveAuthError,
+  clearDriveToken,
+  getDriveToken,
+  loadAccount,
+  signOut,
+  type Account,
+} from './account'
 
 const KEY = 'collage.account'
-const saved: Account = { email: 'ana@exemplo.com', name: 'Ana', picture: null }
+const saved: Account = {
+  id: 'sub-ana',
+  email: 'ana@exemplo.com',
+  name: 'Ana',
+  picture: null,
+  drive: true,
+}
 
-function memoryStorage(initial?: Account): Storage {
+function memoryStorage(initial?: object): Storage {
   const data = new Map<string, string>()
   if (initial) data.set(KEY, JSON.stringify(initial))
   return {
@@ -45,7 +58,13 @@ describe('loadAccount', () => {
 
   it('200 saves and returns the account', async () => {
     const storage = memoryStorage()
-    const fresh = { email: 'bia@exemplo.com', name: 'Bia', picture: 'https://foto/bia.jpg' }
+    const fresh = {
+      id: 'sub-bia',
+      email: 'bia@exemplo.com',
+      name: 'Bia',
+      picture: 'https://foto/bia.jpg',
+      drive: true,
+    }
     expect(await loadAccount(respond(200, fresh), storage)).toEqual(fresh)
     expect(JSON.parse(storage.getItem(KEY)!)).toEqual(fresh)
   })
@@ -62,7 +81,13 @@ describe('loadAccount', () => {
     delete AbortSignal.timeout
     try {
       const storage = memoryStorage()
-      const fresh = { email: 'bia@exemplo.com', name: 'Bia', picture: null }
+      const fresh = {
+        id: 'sub-bia',
+        email: 'bia@exemplo.com',
+        name: 'Bia',
+        picture: null,
+        drive: false,
+      }
       expect(await loadAccount(respond(200, fresh), storage)).toEqual(fresh)
     } finally {
       AbortSignal.timeout = timeout
@@ -88,6 +113,15 @@ describe('loadAccount', () => {
     }
   })
 
+  it('reads an account saved before ids and Drive existed as id = email, drive off', async () => {
+    const old = { email: 'ana@exemplo.com', name: 'Ana', picture: null }
+    expect(await loadAccount(offline(), memoryStorage(old))).toEqual({
+      ...old,
+      id: 'ana@exemplo.com',
+      drive: false,
+    })
+  })
+
   it('asks the service without a cached answer', async () => {
     const fetchFn = respond(401)
     await loadAccount(fetchFn, memoryStorage())
@@ -108,5 +142,71 @@ describe('signOut', () => {
       expect.objectContaining({ method: 'POST' }),
     )
     expect(storage.getItem(KEY)).toBeNull()
+  })
+})
+
+describe('getDriveToken', () => {
+  const NOW = 1_000_000_000_000
+  const ok = (accessToken: string, expiresIn = 3600) => respond(200, { accessToken, expiresIn })
+
+  beforeEach(() => {
+    clearDriveToken()
+    vi.useFakeTimers()
+    vi.setSystemTime(NOW)
+  })
+  afterEach(() => vi.useRealTimers())
+
+  it('returns the token with its expiry and asks the service with the session', async () => {
+    const fetchFn = ok('t1')
+    expect(await getDriveToken(fetchFn)).toEqual({
+      accessToken: 't1',
+      expiresAt: NOW + 3600_000,
+    })
+    expect(fetchFn).toHaveBeenCalledWith(
+      '/api/auth/drive-token',
+      expect.objectContaining({ method: 'POST', credentials: 'same-origin' }),
+    )
+  })
+
+  it('reuses the token while it is valid', async () => {
+    const fetchFn = ok('t1')
+    await getDriveToken(fetchFn)
+    vi.setSystemTime(NOW + 3500_000)
+    expect((await getDriveToken(fetchFn)).accessToken).toBe('t1')
+    expect(fetchFn).toHaveBeenCalledTimes(1)
+  })
+
+  it('asks again within 60 s of the expiry', async () => {
+    await getDriveToken(ok('t1'))
+    vi.setSystemTime(NOW + 3541_000)
+    const next = ok('t2')
+    expect((await getDriveToken(next)).accessToken).toBe('t2')
+    expect(next).toHaveBeenCalledTimes(1)
+  })
+
+  it('clearDriveToken forces a new request, and signOut clears it', async () => {
+    await getDriveToken(ok('t1'))
+    clearDriveToken()
+    expect((await getDriveToken(ok('t2'))).accessToken).toBe('t2')
+    await signOut(offline(), memoryStorage())
+    expect((await getDriveToken(ok('t3'))).accessToken).toBe('t3')
+  })
+
+  it.each([
+    [401, undefined, 'signed_out'],
+    [403, { error: 'no_drive' }, 'no_drive'],
+    [403, { error: 'revoked' }, 'revoked'],
+  ])('%i %j is a DriveAuthError (%s)', async (status, body, reason) => {
+    const error = await getDriveToken(respond(status, body)).catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(DriveAuthError)
+    expect((error as DriveAuthError).reason).toBe(reason)
+  })
+
+  it('502 and network failures are plain errors', async () => {
+    for (const fetchFn of [respond(502, { error: 'google' }), offline()]) {
+      const error = await getDriveToken(fetchFn).catch((e: unknown) => e)
+      expect(error).toBeInstanceOf(Error)
+      expect(error).not.toBeInstanceOf(DriveAuthError)
+    }
   })
 })
