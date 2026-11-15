@@ -639,6 +639,25 @@ describe('collections list actions', () => {
     expect(editor.getState().collection.frames).toEqual([])
   })
 
+  it('closeCollection does not replace a collection opened while it closes', async () => {
+    await store.saveCollection(stored('x'))
+    const editor = await setup()
+    await editor.getState().flush()
+    const list = store.listCollections.bind(store)
+    let release!: () => void
+    const gate = new Promise<void>((r) => (release = r))
+    const spy = vi.spyOn(store, 'listCollections').mockImplementationOnce(async () => {
+      await gate
+      return list()
+    })
+    const closing = editor.getState().closeCollection()
+    await vi.waitFor(() => expect(spy).toHaveBeenCalled())
+    await editor.getState().openCollection('x')
+    release()
+    await closing
+    expect(editor.getState().collection.id).toBe('x')
+  })
+
   it('leaving a draft while photos import keeps them in that collection', async () => {
     let release!: () => void
     const gate = new Promise<void>((r) => (release = r))

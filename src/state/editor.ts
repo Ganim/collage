@@ -216,16 +216,17 @@ export function createEditorStore(
 
     /**
      * Swaps in an empty collection that is not saved until the first edit. Does nothing, and
-     * returns false, if something else opened a collection (or, with strict, edited the open
-     * one) while the names were being read.
+     * says why: 'moved' if something else opened a collection while the names were read,
+     * 'edited' if (with strict) the open one was edited meanwhile.
      */
-    const startDraft = async (excludeId?: string, strict = true): Promise<boolean> => {
+    const startDraft = async (excludeId?: string, strict = true): Promise<'swapped' | 'moved' | 'edited'> => {
       const token = loadToken
       const rev = revision
       const names = (await store.listCollections()).filter((c) => c.id !== excludeId).map((c) => c.name)
-      if (token !== loadToken || (strict && rev !== revision)) return false
+      if (token !== loadToken) return 'moved'
+      if (strict && rev !== revision) return 'edited'
       swap(emptyCollection(names), {}, false)
-      return true
+      return 'swapped'
     }
 
     /** Reads first and swaps only if nothing newer (open, new collection, edit) happened meanwhile. */
@@ -313,9 +314,11 @@ export function createEditorStore(
 
       async closeCollection() {
         await imports
-        do {
+        for (;;) {
           if (!(await flushSave())) throw new Error('The collection could not be saved')
-        } while (!(await startDraft()))
+          // Another collection opened meanwhile stays open; an edit to this one is saved first.
+          if ((await startDraft()) !== 'edited') return
+        }
       },
 
       async renameCollectionById(id, name) {
