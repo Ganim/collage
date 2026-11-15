@@ -4,7 +4,7 @@ import { ActionBar } from '../edit/ActionBar'
 import { ZoomSlider } from '../edit/ZoomSlider'
 import { t } from '../i18n'
 import { MoreMenu } from '../library/MoreMenu'
-import { SizesScreen } from '../library/SizesScreen'
+import { navigate } from '../router'
 import { Carousel } from './Carousel'
 import { Dots } from './Dots'
 import { Header } from './Header'
@@ -27,7 +27,7 @@ export function BuildScreen({ onCollections, onDownload }: BuildScreenProps) {
   const replacing = useEditor((s) => s.replacing)
   const selectedId = useEditor((s) => s.selectedLayerId)
   const selectLayer = useEditor((s) => s.selectLayer)
-  const [sheet, setSheet] = useState<'change' | 'new' | 'more' | 'sizes' | null>(null)
+  const [sheet, setSheet] = useState<'change' | 'new' | 'more' | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [importing, setImporting] = useState(false)
 
@@ -126,10 +126,9 @@ export function BuildScreen({ onCollections, onDownload }: BuildScreenProps) {
         <MoreMenu
           onClose={() => setSheet(null)}
           onCollections={onCollections}
-          onSizes={() => setSheet('sizes')}
+          onSizes={() => navigate({ name: 'frames' })}
         />
       )}
-      {sheet === 'sizes' && <SizesScreen onClose={() => setSheet(null)} />}
     </>
   )
 }

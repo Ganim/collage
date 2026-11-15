@@ -1,11 +1,14 @@
 import type { Account } from '../account/account'
 import { AccountHeader } from './AccountHeader'
 import { CollectionsTab } from './CollectionsTab'
+import { FramesTab } from './FramesTab'
 import { MouldingsTab } from './MouldingsTab'
 import { Tabs, panelId, tabId, type TabName } from './Tabs'
 
 interface HomeScreenProps {
   tab: TabName
+  /** On the Frames tab, the folder the route names. */
+  folderId?: string
   account: Account
   onSignOut: () => void
   /** Shows in the editor a collection already open there. */
@@ -15,7 +18,14 @@ interface HomeScreenProps {
 }
 
 /** The account on top, the three sections below it, and the active one's content. */
-export function HomeScreen({ tab, account, onSignOut, onOpened, onOpen }: HomeScreenProps) {
+export function HomeScreen({
+  tab,
+  folderId,
+  account,
+  onSignOut,
+  onOpened,
+  onOpen,
+}: HomeScreenProps) {
   return (
     <div className="home">
       <AccountHeader account={account} onSignOut={onSignOut} />
@@ -23,8 +33,7 @@ export function HomeScreen({ tab, account, onSignOut, onOpened, onOpen }: HomeSc
       <div className="home-panel" id={panelId} role="tabpanel" aria-labelledby={tabId(tab)}>
         {tab === 'collections' && <CollectionsTab onOpened={onOpened} onOpen={onOpen} />}
         {tab === 'mouldings' && <MouldingsTab />}
-        {/* Sizes and their folders come here next. */}
-        {tab === 'frames' && <div className="home-placeholder glass" />}
+        {tab === 'frames' && <FramesTab folderId={folderId} />}
       </div>
     </div>
   )

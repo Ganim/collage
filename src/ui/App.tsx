@@ -107,6 +107,7 @@ function Workspace({ account, onSignOut }: { account: Account; onSignOut: () => 
       screen = (
         <HomeScreen
           tab={route.name === 'mouldings' || route.name === 'frames' ? route.name : 'collections'}
+          folderId={route.name === 'frames' ? route.folderId : undefined}
           account={account}
           onSignOut={onSignOut}
           onOpened={showOpened}

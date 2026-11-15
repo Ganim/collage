@@ -1,9 +1,10 @@
 import { ArrowLeftRight } from 'lucide-react'
-import { useState, type FormEvent } from 'react'
-import { FRAME_PRESETS } from '../../core/presets'
-import type { Size } from '../../core/types'
+import { useId, useState, type FormEvent } from 'react'
+import type { SizePreset } from '../../core/presets'
+import type { SavedSize, Size } from '../../core/types'
 import { useEditor } from '../../state/editor'
 import { BottomSheet } from '../components/BottomSheet'
+import { groupSizes, isPreset, type SizeGroup } from '../home/folders'
 import { t } from '../i18n'
 import { parseCm, sizeListText } from './sizeText'
 
@@ -16,8 +17,38 @@ interface SizeSheetProps {
 
 const swapped = (s: Size): Size => ({ widthMm: s.heightMm, heightMm: s.widthMm })
 
+interface SizeGroupOptionsProps {
+  group: SizeGroup
+  shown: (s: Size) => Size
+  onChoose: (s: Size) => void
+}
+
+/** One folder's sizes under its name. */
+function SizeGroupOptions({ group, shown, onChoose }: SizeGroupOptionsProps) {
+  const titleId = useId()
+  const option = (size: SavedSize | SizePreset) => (
+    <button key={size.id} type="button" className="size-option" onClick={() => onChoose(size)}>
+      {isPreset(size) ? (
+        sizeListText(shown(size))
+      ) : (
+        <>
+          <span>{size.name}</span>
+          <small>{sizeListText(shown(size))}</small>
+        </>
+      )}
+    </button>
+  )
+  return (
+    <section aria-labelledby={titleId}>
+      <h3 id={titleId}>{group.name}</h3>
+      <div className="size-grid">{group.sizes.map(option)}</div>
+    </section>
+  )
+}
+
 export function SizeSheet({ mode, onClose, onSizeNotSaved }: SizeSheetProps) {
   const savedSizes = useEditor((s) => s.savedSizes)
+  const folders = useEditor((s) => s.folders)
   const addFrame = useEditor((s) => s.addFrame)
   const setActiveSize = useEditor((s) => s.setActiveSize)
   const flipActive = useEditor((s) => s.flipActive)
@@ -81,38 +112,16 @@ export function SizeSheet({ mode, onClose, onSizeNotSaved }: SizeSheetProps) {
         {t('sizeSheet.flip')}
       </button>
 
-      <h3>{t('sizeSheet.presets')}</h3>
-      <div className="size-grid">
-        {FRAME_PRESETS.map((preset) => (
-          <button
-            key={preset.id}
-            type="button"
-            className="size-option"
-            onClick={() => choose(shown(preset))}
-          >
-            {sizeListText(shown(preset))}
-          </button>
+      {groupSizes(folders, savedSizes)
+        .filter((group) => group.sizes.length > 0)
+        .map((group) => (
+          <SizeGroupOptions
+            key={group.id}
+            group={group}
+            shown={shown}
+            onChoose={(s) => choose(shown(s))}
+          />
         ))}
-      </div>
-
-      {savedSizes.length > 0 && (
-        <>
-          <h3>{t('sizeSheet.saved')}</h3>
-          <div className="size-grid">
-            {savedSizes.map((saved) => (
-              <button
-                key={saved.id}
-                type="button"
-                className="size-option"
-                onClick={() => choose(shown(saved))}
-              >
-                <span>{saved.name}</span>
-                <small>{sizeListText(shown(saved))}</small>
-              </button>
-            ))}
-          </div>
-        </>
-      )}
 
       <h3>{t('sizeSheet.custom')}</h3>
       <form className="custom-size" onSubmit={(e) => void submitCustom(e)}>

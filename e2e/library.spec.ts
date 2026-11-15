@@ -66,7 +66,7 @@ test('removing a frame takes a second tap', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Seu primeiro frame' })).toBeVisible()
 })
 
-test('a saved size shows in Meus tamanhos and can be deleted there', async ({ page }) => {
+test('the menu row Meus tamanhos opens the sizes, with the one just saved', async ({ page }) => {
   await page.getByRole('button', { name: 'Adicionar primeiro frame', exact: true }).click()
   await page.getByLabel('Largura (cm)').fill('9')
   await page.getByLabel('Altura (cm)').fill('12')
@@ -75,10 +75,12 @@ test('a saved size shows in Meus tamanhos and can be deleted there', async ({ pa
 
   await more(page).click()
   await menuItem(page, 'Meus tamanhos').click()
+  await expect(page).toHaveURL(/#\/frames$/)
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  const mine = page.getByRole('link', { name: 'Meus tamanhos', exact: true })
+  await expect(mine).toHaveAccessibleDescription('1 tamanho')
+  await mine.click()
   await expect(page.getByText('Mesa da sala')).toBeVisible()
-  await page.getByRole('button', { name: 'Apagar Mesa da sala', exact: true }).click()
-  await expect(page.getByText('Mesa da sala')).toHaveCount(0)
-  await expect(page.getByText('Nenhum tamanho salvo ainda.')).toBeVisible()
 })
 
 test('a second collection leaves the first one as it was', async ({ page }) => {
