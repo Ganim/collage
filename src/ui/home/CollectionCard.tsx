@@ -8,14 +8,20 @@ import { t } from '../i18n'
 import { EmptyFrameIllustration } from '../illustrations'
 import { usePhotoUrl } from '../usePhotoUrl'
 
-const details = (item: CollectionSummary) => {
+const counts = (item: CollectionSummary) => {
   const frames =
     item.frameCount === 0
       ? t('library.framesNone')
       : item.frameCount === 1
         ? t('library.framesOne')
         : t('library.framesMany', { count: item.frameCount })
-  return `${frames} · ${new Date(item.updatedAt).toLocaleDateString('pt-BR')}`
+  const photos =
+    item.photoCount === 0
+      ? t('library.photosNone')
+      : item.photoCount === 1
+        ? t('library.photosOne')
+        : t('library.photosMany', { count: item.photoCount })
+  return `${frames} · ${photos}`
 }
 
 function CoverPhoto({ photoId }: { photoId: string }) {
@@ -64,7 +70,8 @@ export function CollectionCard({
         </span>
         <span className="collection-name">{name}</span>
         <span className="collection-details" id={detailsId}>
-          {details(item)}
+          <span>{counts(item)}</span>
+          <span>{new Date(item.updatedAt).toLocaleDateString('pt-BR')}</span>
         </span>
       </button>
       <Kebab

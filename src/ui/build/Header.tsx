@@ -65,11 +65,16 @@ export function Header({ onLeave, onNotice }: HeaderProps) {
     })
 
   const collectionItems: KebabItem[] = [
-    { icon: Pencil, label: t('card.rename'), onClick: () => setSheet('rename') },
-    { icon: Copy, label: t('card.duplicate'), onClick: () => void duplicate(), disabled: busy },
+    { icon: Pencil, label: t('header.collectionRename'), onClick: () => setSheet('rename') },
+    {
+      icon: Copy,
+      label: t('header.collectionDuplicate'),
+      onClick: () => void duplicate(),
+      disabled: busy,
+    },
     {
       icon: Trash2,
-      label: t('card.delete'),
+      label: t('header.collectionDelete'),
       onClick: () => setSheet('delete'),
       danger: true,
       disabled: busy,

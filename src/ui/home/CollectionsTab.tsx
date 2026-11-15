@@ -180,6 +180,7 @@ export function CollectionsTab({ onOpened, onOpen }: CollectionsTabProps) {
 
   return (
     <>
+      <div className="home-import">{importButton}</div>
       {errorLine}
       <ul className="collection-grid">
         <li>
@@ -211,7 +212,6 @@ export function CollectionsTab({ onOpened, onOpen }: CollectionsTabProps) {
           />
         ))}
       </ul>
-      <div className="home-import">{importButton}</div>
     </>
   )
 }

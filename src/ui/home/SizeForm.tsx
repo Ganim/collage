@@ -3,6 +3,7 @@ import type { SavedSize } from '../../core/types'
 import { useEditor } from '../../state/editor'
 import { parseCm, sizeListText } from '../build/sizeText'
 import { BottomSheet } from '../components/BottomSheet'
+import { Select } from '../components/Select'
 import { t } from '../i18n'
 import { DEFAULTS_ID, MINE_ID, groupSizes } from './folders'
 
@@ -109,14 +110,16 @@ export function SizeForm({ editing, folderId, onClose }: SizeFormProps) {
         )}
         {/* Not wrapped: WebKit would add the options to the field's name. */}
         <div className="size-form-field custom-size-wide">
-          <label htmlFor={folderFieldId}>{t('sizeForm.folder')}</label>
-          <select id={folderFieldId} value={folder} onChange={(e) => setFolder(e.target.value)}>
-            {choices.map((g) => (
-              <option key={g.id} value={g.id}>
-                {g.name}
-              </option>
-            ))}
-          </select>
+          <label id={`${folderFieldId}-label`} htmlFor={folderFieldId}>
+            {t('sizeForm.folder')}
+          </label>
+          <Select
+            id={folderFieldId}
+            labelledBy={`${folderFieldId}-label`}
+            value={folder}
+            options={choices.map((g) => ({ value: g.id, label: g.name }))}
+            onChange={setFolder}
+          />
         </div>
         {failed && (
           <p className="custom-size-error custom-size-wide" role="status">

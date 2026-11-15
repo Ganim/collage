@@ -284,3 +284,26 @@ test('the screen never scrolls as a page', async ({ page }) => {
   }))
   expect(overflow).toEqual({ x: 0, y: 0 })
 })
+
+test('a tick marks photos already in a frame, and the grid shows them all', async ({ page }) => {
+  await uploadPhotos(page, [
+    await makeJpeg(page, 400, 600, '#a8552f'),
+    await makeJpeg(page, 400, 600, '#2f5fa8'),
+  ])
+  await page.getByRole('button', { name: 'Adicionar frame', exact: true }).click()
+  await page.getByRole('button', { name: '10×15 cm', exact: true }).click()
+  await page.getByRole('button', { name: 'Colocar foto-1.jpg no frame', exact: true }).click()
+
+  const used = 'Colocar foto-1.jpg no frame (já está em um frame)'
+  await expect(page.getByRole('button', { name: used, exact: true })).toBeVisible()
+  await expect(
+    page.getByRole('button', { name: 'Colocar foto-2.jpg no frame', exact: true }),
+  ).toBeVisible()
+
+  await page.getByRole('button', { name: 'Ver todas as fotos', exact: true }).click()
+  const grid = page.getByRole('dialog', { name: 'Suas fotos' })
+  await expect(grid.getByText('1 de 2 já estão em frames')).toBeVisible()
+  await expect(grid.getByRole('button', { name: used, exact: true })).toBeVisible()
+  await grid.getByRole('button', { name: 'Colocar foto-2.jpg no frame', exact: true }).click()
+  await expect(grid).toHaveCount(0)
+})

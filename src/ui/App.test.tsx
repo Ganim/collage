@@ -38,6 +38,6 @@ describe('App', () => {
     render(<App />)
     expect(await screen.findByText('Essa coleção não foi encontrada.')).toBeVisible()
     expect(location.hash).toBe('#/colecoes')
-    expect(screen.getByRole('button', { name: 'Nova coleção' })).toBeVisible()
+    expect(await screen.findByRole('button', { name: 'Nova coleção' })).toBeVisible()
   })
 })

@@ -80,7 +80,8 @@ test('creates a collection and opens the editor', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Seu primeiro frame' })).toBeVisible()
 
   await goHome(page)
-  await expect(page.getByText(/^Nenhum frame · \d{2}\/\d{2}\/\d{4}$/)).toBeVisible()
+  await expect(page.getByText('Nenhum frame · nenhuma foto', { exact: true })).toBeVisible()
+  await expect(page.getByText(/^\d{2}\/\d{2}\/\d{4}$/)).toBeVisible()
 })
 
 test('empty state invites the first collection', async ({ page }) => {
@@ -175,7 +176,7 @@ test('opens a .collage file from the list', async ({ page }) => {
   await goHome(page)
   await removeFromCard(page, 'Maio')
 
-  await page.getByLabel('Abrir de um arquivo').setInputFiles({
+  await page.getByLabel('Importar coleção').setInputFiles({
     name: 'Maio.collage',
     mimeType: 'application/zip',
     buffer: file,
@@ -189,7 +190,7 @@ test('an invalid file shows a message and changes nothing', async ({ page }) => 
   await openNewCollection(page)
   await nameOpenCollection(page, 'Maio')
   await goHome(page)
-  await page.getByLabel('Abrir de um arquivo').setInputFiles({
+  await page.getByLabel('Importar coleção').setInputFiles({
     name: 'nota.txt',
     mimeType: 'text/plain',
     buffer: Buffer.from('isto não é uma coleção'),
@@ -247,7 +248,7 @@ test.describe('the back gesture after leaving the editor', () => {
   test('delete then the gesture does not show the not-found notice', async ({ page }) => {
     await fromTheList(page)
     await page.getByRole('button', { name: 'Mais opções', exact: true }).click()
-    await button(page, 'Excluir').click()
+    await button(page, 'Excluir coleção').click()
     await page
       .getByRole('dialog', { name: /^Excluir .+\?$/ })
       .getByRole('button', { name: 'Excluir', exact: true })

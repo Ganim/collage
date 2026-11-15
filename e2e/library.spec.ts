@@ -45,7 +45,7 @@ test('header shows back, name, share and the menu', async ({ page }) => {
 test('the menu has the collection options and, with a frame, the frame ones', async ({ page }) => {
   await editorMenu(page).click()
   const sheet = menuSheet(page)
-  for (const name of ['Renomear', 'Duplicar', 'Excluir']) {
+  for (const name of ['Renomear coleção', 'Duplicar coleção', 'Excluir coleção']) {
     await expect(sheet.getByRole('button', { name, exact: true })).toBeVisible()
   }
   for (const name of ['Duplicar frame', 'Remover frame', 'Coleções', 'Salvar em arquivo']) {
@@ -56,7 +56,13 @@ test('the menu has the collection options and, with a frame, the frame ones', as
 
   await frameWithPhoto(page)
   await editorMenu(page).click()
-  for (const name of ['Renomear', 'Duplicar', 'Excluir', 'Duplicar frame', 'Remover frame']) {
+  for (const name of [
+    'Renomear coleção',
+    'Duplicar coleção',
+    'Excluir coleção',
+    'Duplicar frame',
+    'Remover frame',
+  ]) {
     await expect(sheet.getByRole('button', { name, exact: true })).toBeVisible()
   }
   await expect(sheet.getByRole('button', { name: 'Meus tamanhos', exact: true })).toHaveCount(0)
@@ -67,7 +73,7 @@ test('the menu has the collection options and, with a frame, the frame ones', as
 
 test('renames from the menu and from the name', async ({ page }) => {
   await editorMenu(page).click()
-  await menuItem(page, 'Renomear').click()
+  await menuItem(page, 'Renomear coleção').click()
   await page.getByLabel('Nome', { exact: true }).fill('  Praia  ')
   await menuItem(page, 'Salvar').click()
   await expect(collectionName(page)).toHaveText('Praia')
@@ -85,7 +91,7 @@ test('duplicates the collection and opens the copy', async ({ page }) => {
   await nameOpenCollection(page, 'Maio')
   const original = page.url()
   await editorMenu(page).click()
-  await menuItem(page, 'Duplicar').click()
+  await menuItem(page, 'Duplicar coleção').click()
 
   await expect(collectionName(page)).toHaveText('Maio (cópia)')
   await expect(page).toHaveURL(/#\/c\/[^/]+$/)
@@ -104,14 +110,14 @@ test('deletes the collection after confirming and returns to the list', async ({
   await nameOpenCollection(page, 'Junho')
 
   await editorMenu(page).click()
-  await menuItem(page, 'Excluir').click()
+  await menuItem(page, 'Excluir coleção').click()
   const confirm = page.getByRole('dialog', { name: 'Excluir Junho?' })
   await confirm.getByRole('button', { name: 'Cancelar', exact: true }).click()
   await expect(confirm).toHaveCount(0)
   await expect(collectionName(page)).toHaveText('Junho')
 
   await editorMenu(page).click()
-  await menuItem(page, 'Excluir').click()
+  await menuItem(page, 'Excluir coleção').click()
   await confirm.getByRole('button', { name: 'Excluir', exact: true }).click()
   await expect(page).toHaveURL(/#\/colecoes$/)
   await expect(menuItem(page, 'Maio')).toBeVisible()
@@ -182,6 +188,36 @@ test('removing a frame asks first', async ({ page }) => {
   await menuItem(page, 'Remover frame').click()
   await confirm.getByRole('button', { name: 'Remover', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Seu primeiro frame' })).toBeVisible()
+})
+
+test('holding the frame opens its menu: duplicate, or remove after asking', async ({ page }) => {
+  await frameWithPhoto(page)
+  const frame = frameLabel(page, 'Frame 1 de 1')
+  const box = (await frame.boundingBox())!
+  const at = { clientX: box.x + box.width / 2, clientY: box.y + box.height / 2 }
+  const hold = async () => {
+    await frame.dispatchEvent('pointerdown', { pointerType: 'touch', isPrimary: true, ...at })
+    await page.waitForTimeout(700)
+    await frame.dispatchEvent('pointerup', { pointerType: 'touch', isPrimary: true, ...at })
+  }
+  const menu = page.getByRole('dialog', { name: 'Este frame' })
+
+  await hold()
+  await menu.getByRole('button', { name: 'Duplicar frame', exact: true }).click()
+  await expect(menu).toHaveCount(0)
+  await expect(frameLabel(page, 'Frame 2 de 2')).toBeAttached()
+
+  // A hold is not a tap: the frame did not go into editing.
+  await expect(page.getByRole('button', { name: 'OK', exact: true })).toHaveCount(0)
+
+  const second = frameLabel(page, 'Frame 2 de 2')
+  await second.click({ button: 'right' })
+  await menu.getByRole('button', { name: 'Remover frame', exact: true }).click()
+  await page
+    .getByRole('dialog', { name: 'Remover este frame?' })
+    .getByRole('button', { name: 'Remover', exact: true })
+    .click()
+  await expect(frameLabel(page, 'Frame 1 de 1')).toBeAttached()
 })
 
 test('a size saved in the editor is listed under Meus tamanhos', async ({ page }) => {

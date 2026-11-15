@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef } from 'react'
 import { useEditor } from '../../state/editor'
 import { EditLayer } from '../edit/EditLayer'
 import { t } from '../i18n'
+import { useFrameMenu } from './FrameMenu'
 import { FrameView } from './FrameView'
 
 export function Carousel() {
@@ -12,6 +13,7 @@ export function Carousel() {
   const selectedId = useEditor((s) => s.selectedLayerId)
   const enterEdit = useEditor((s) => s.enterEdit)
   const exitEdit = useEditor((s) => s.exitEdit)
+  const frameMenu = useFrameMenu(!editing)
   const scrollerRef = useRef<HTMLElement>(null)
   // A drag that begins on the frame and ends past it is not a tap outside.
   const pressedOutside = useRef(false)
@@ -70,6 +72,7 @@ export function Carousel() {
             key={frame.id}
             data-frame-id={frame.id}
             className={active ? 'slide slide--active' : 'slide'}
+            {...(active ? frameMenu.handlers : {})}
           >
             <FrameView
               frame={frame}
@@ -82,6 +85,7 @@ export function Carousel() {
           </div>
         )
       })}
+      {frameMenu.sheets}
     </section>
   )
 }

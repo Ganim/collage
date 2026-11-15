@@ -2,7 +2,14 @@ import { readFile } from 'node:fs/promises'
 import { inflateSync } from 'node:zlib'
 import { expect, type Download, type Page } from '@playwright/test'
 import { PDFDocument, PDFName, PDFRawStream } from 'pdf-lib'
-import { makeJpeg, openNewCollection, savedCollection, test, uploadPhotos } from './helpers'
+import {
+  chooseOption,
+  makeJpeg,
+  openNewCollection,
+  savedCollection,
+  test,
+  uploadPhotos,
+} from './helpers'
 
 const COLORS = ['#a8552f', '#2f5fa8', '#6a8f3a', '#7a3f8f', '#b5862b', '#3f8f7a']
 
@@ -34,7 +41,8 @@ async function photoFrames(page: Page, count: number) {
   for (let i = 1; i <= count; i++) await addFrameWithPhoto(page, '10×15 cm', i, i)
 }
 
-const openSheet = (page: Page) => page.getByRole('button', { name: 'Compartilhar', exact: true }).click()
+const openSheet = (page: Page) =>
+  page.getByRole('button', { name: 'Compartilhar', exact: true }).click()
 
 async function generated(page: Page) {
   await expect(generateButton(page)).toBeEnabled()
@@ -227,7 +235,7 @@ test('choosing A3 lays the frames out again', async ({ page }) => {
   await expect(page.getByText(/^2 folhas · \d+%$/)).toBeVisible()
   await expect(sheets(page)).toHaveCount(2)
 
-  await page.getByRole('combobox', { name: 'Papel' }).selectOption('a3')
+  await chooseOption(page, 'Papel', 'A3')
   await expect(page.getByText(/^1 folha · \d+%$/)).toBeVisible()
   await expect(sheets(page)).toHaveCount(1)
   await expect.poll(() => savedPaper(page)).toMatchObject({ widthMm: 297, heightMm: 420 })
@@ -238,7 +246,7 @@ test('Personalizado reveals width and height, read in cm with a comma', async ({
   await openSheet(page)
   await expect(page.getByLabel('Largura (cm)')).toHaveCount(0)
 
-  await page.getByRole('combobox', { name: 'Papel' }).selectOption('custom')
+  await chooseOption(page, 'Papel', 'Personalizado')
   await expect(page.getByLabel('Largura (cm)')).toHaveValue('21')
   await page.getByLabel('Largura (cm)').fill('25,5')
   await page.getByLabel('Altura (cm)').fill('30')
@@ -413,7 +421,7 @@ test('a frame larger than the paper is an error and blocks generation', async ({
   await expect(generateButton(page)).toBeDisabled()
 
   // A paper it fits on clears the error.
-  await page.getByRole('combobox', { name: 'Papel' }).selectOption('custom')
+  await chooseOption(page, 'Papel', 'Personalizado')
   await page.getByLabel('Largura (cm)').fill('40')
   await page.getByLabel('Altura (cm)').fill('40')
   await expect(page.getByText('1 folha · 56%', { exact: true })).toBeVisible()
@@ -555,7 +563,7 @@ test('a file built before the paper changes is not delivered: it is built again'
   await page.getByRole('button', { name: 'Salvar em arquivo', exact: true }).click()
   await expect(page.getByRole('button', { name: 'Baixar arquivo', exact: true })).toBeVisible()
 
-  await page.getByRole('combobox', { name: 'Papel' }).selectOption('a3')
+  await chooseOption(page, 'Papel', 'A3')
   await expect(page.getByRole('button', { name: 'Baixar arquivo', exact: true })).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Salvar em arquivo', exact: true })).toBeVisible()
 })

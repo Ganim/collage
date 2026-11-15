@@ -1,5 +1,5 @@
 import { expect, type Page } from '@playwright/test'
-import { openNewCollection, test } from './helpers'
+import { chooseOption, openNewCollection, test } from './helpers'
 
 const button = (page: Page, name: string) => page.getByRole('button', { name, exact: true })
 const folderLink = (page: Page, name: string) => page.getByRole('link', { name, exact: true })
@@ -35,9 +35,7 @@ test('creates a folder and a size inside it', async ({ page }) => {
   await expect(page.locator('[data-illustration="empty-folder"]')).toBeVisible()
 
   await button(page, 'Novo tamanho').click()
-  await expect(page.getByLabel('Pasta', { exact: true }).locator('option:checked')).toHaveText(
-    'Quarto',
-  )
+  await expect(page.getByRole('combobox', { name: 'Pasta', exact: true })).toHaveText('Quarto')
   await fillSize(page, 'Cabeceira', '9', '12')
   await expect(sizeRow(page, 'Cabeceira')).toContainText('9×12 cm')
 
@@ -99,7 +97,7 @@ test('edits and deletes a size with confirmation', async ({ page }) => {
   await createFolder(page, 'Quarto')
   await page.getByRole('link', { name: 'Voltar', exact: true }).click()
   await button(page, 'Novo tamanho').click()
-  await expect(page.getByLabel('Pasta', { exact: true }).locator('option:checked')).toHaveText(
+  await expect(page.getByRole('combobox', { name: 'Pasta', exact: true })).toHaveText(
     'Meus tamanhos',
   )
   await fillSize(page, 'Mesa', '9', '12')
@@ -111,7 +109,7 @@ test('edits and deletes a size with confirmation', async ({ page }) => {
   const form = page.getByRole('dialog', { name: 'Editar tamanho' })
   await expect(form.getByLabel('Nome', { exact: true })).toHaveValue('Mesa')
   await form.getByLabel('Nome', { exact: true }).fill('Mesa da sala')
-  await form.getByLabel('Pasta', { exact: true }).selectOption({ label: 'Quarto' })
+  await chooseOption(form, 'Pasta', 'Quarto')
   await form.getByRole('button', { name: 'Salvar', exact: true }).click()
   await expect(form).toHaveCount(0)
   await expect(page.getByText('Nenhum tamanho nesta pasta')).toBeVisible()
@@ -155,4 +153,17 @@ test('the editor size picker shows sizes by folder', async ({ page }) => {
     .getByRole('button', { name: /Cabeceira/ })
     .click()
   await expect(page.getByRole('button', { name: '9 × 12 cm' })).toBeVisible()
+})
+
+test('Escape closes the folder list first, then the form', async ({ page }) => {
+  await page.goto('/#/frames')
+  await button(page, 'Novo tamanho').click()
+  const form = page.getByRole('dialog', { name: 'Novo tamanho' })
+  await form.getByRole('combobox', { name: 'Pasta', exact: true }).click()
+  await expect(form.getByRole('listbox')).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(form.getByRole('listbox')).toHaveCount(0)
+  await expect(form).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(form).toHaveCount(0)
 })

@@ -67,9 +67,14 @@ export function FramesTab({ folderId }: { folderId?: string }) {
           <FolderPlus size={18} aria-hidden="true" />
           {t('frames.newFolder')}
         </button>
-        <button type="button" className="primary-button" onClick={() => setSheet('size')}>
+        <button
+          type="button"
+          className="primary-button"
+          aria-label={t('frames.newSize')}
+          onClick={() => setSheet('size')}
+        >
           <Plus size={18} strokeWidth={2.5} aria-hidden="true" />
-          {t('frames.newSize')}
+          {t('frames.newSizeShort')}
         </button>
       </div>
       {failed && (

@@ -1,9 +1,9 @@
-import { ChevronDown } from 'lucide-react'
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { PAPER_PRESETS } from '../../core/presets'
 import type { Paper } from '../../core/types'
 import { useEditor } from '../../state/editor'
 import { parseCm, parseMm } from '../build/sizeText'
+import { Select } from '../components/Select'
 import { t } from '../i18n'
 
 const CUSTOM = 'custom'
@@ -49,6 +49,7 @@ interface PaperControlsProps {
 }
 
 export function PaperControls({ paper, onValidityChange }: PaperControlsProps) {
+  const paperLabelId = useId()
   const setPaper = useEditor((s) => s.setPaper)
   const [draft, setDraft] = useState(() => initialDraft(paper))
   const values = readDraft(draft)
@@ -79,20 +80,21 @@ export function PaperControls({ paper, onValidityChange }: PaperControlsProps) {
 
   return (
     <div className="print-controls">
-      <label className="print-field print-field--wide">
-        {t('print.paper')}
-        <span className="print-select">
-          <select value={draft.choice} onChange={(e) => choose(e.target.value)}>
-            {PAPER_PRESETS.map((preset) => (
-              <option key={preset.id} value={preset.id}>
-                {preset.id === 'letter' ? t('print.letter') : preset.label}
-              </option>
-            ))}
-            <option value={CUSTOM}>{t('print.custom')}</option>
-          </select>
-          <ChevronDown size={18} />
-        </span>
-      </label>
+      <div className="print-field print-field--wide">
+        <span id={paperLabelId}>{t('print.paper')}</span>
+        <Select
+          labelledBy={paperLabelId}
+          value={draft.choice}
+          options={[
+            ...PAPER_PRESETS.map((preset) => ({
+              value: preset.id,
+              label: preset.id === 'letter' ? t('print.letter') : preset.label,
+            })),
+            { value: CUSTOM, label: t('print.custom') },
+          ]}
+          onChange={choose}
+        />
+      </div>
       {custom && (
         <>
           <label className="print-field">

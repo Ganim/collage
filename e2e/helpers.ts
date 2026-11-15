@@ -4,6 +4,7 @@ import {
   test as base,
   type BrowserContext,
   type Download,
+  type Locator,
   type Page,
 } from '@playwright/test'
 
@@ -184,4 +185,10 @@ export async function exportCollection(page: Page): Promise<Download> {
   await page.getByRole('button', { name: 'Voltar', exact: true }).click()
   await expect(page).toHaveURL(/#\/c\/[^/]+$/)
   return download
+}
+
+/** Picks an option in one of the app's selects, the way a person does: open it, tap the option. */
+export async function chooseOption(scope: Page | Locator, field: string, option: string) {
+  await scope.getByRole('combobox', { name: field, exact: true }).click()
+  await scope.getByRole('option', { name: option, exact: true }).click()
 }
