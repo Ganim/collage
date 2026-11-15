@@ -8,12 +8,13 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "test": "vitest run",
-    "lint": "eslint src e2e eslint.config.js vite.config.ts playwright.config.ts",
+    "lint": "eslint src e2e server eslint.config.js vite.config.ts vite-auth-mock.ts playwright.config.ts",
     "format": "prettier --write src",
     "format:check": "prettier --check src",
     "build:wasm": "wasm-pack build crates/packing --target web --out-dir ../../src/packing/wasm --no-pack -- --features wasm",
     "typecheck": "tsc --noEmit && tsc --noEmit -p e2e",
-    "e2e": "playwright test"
+    "e2e": "playwright test",
+    "test:server": "node --test \"server/*.test.mjs\""
   },
   "dependencies": {
     "@use-gesture/react": "^10.3.1",

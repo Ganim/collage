@@ -2,11 +2,13 @@
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
 import { VitePWA } from 'vite-plugin-pwa'
+import { authMock } from './vite-auth-mock'
 
 export default defineConfig({
   base: '/',
   plugins: [
     react(),
+    authMock(),
     VitePWA({
       // A release waits for the next launch: taking over an open page would delete the
       // files it still has to load, such as the workers behind the PDF.
@@ -27,7 +29,10 @@ export default defineConfig({
           { src: 'icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
         ],
       },
-      workbox: { globPatterns: ['**/*.{js,css,html,wasm,png,svg}'] },
+      workbox: {
+        globPatterns: ['**/*.{js,css,html,wasm,png,svg}'],
+        navigateFallbackDenylist: [/^\/api\//],
+      },
     }),
   ],
   test: {
