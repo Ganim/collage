@@ -286,6 +286,7 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
             folder: deletionTimes(libraryTombs.filter((t) => t.kind === 'folder')),
             collection: deletionTimes(collectionTombs),
           },
+          detached: { collection: {} },
         },
         remoteLibrary,
       )

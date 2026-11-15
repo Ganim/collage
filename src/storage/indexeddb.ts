@@ -266,6 +266,7 @@ export async function createIdbStore(
           coverPhotoId:
             c.frames.find((f) => f.layers.length > 0)?.layers[0]?.photoId ?? c.photoIds[0] ?? null,
           photoCount: c.photoIds.length,
+          localOnly: states[c.id]?.localOnly === true,
         }))
     },
     deleteCollection: async (id) => void (await removeCollection(db, id, true)),
@@ -344,6 +345,21 @@ export async function createIdbStore(
         const sync = tx.objectStore('sync')
         await sync.put({ ...((await sync.get(id)) ?? { dirty: false }), ...patch }, id)
       }),
+    setLocalOnly: (id, localOnly) =>
+      write(db, ['sync'], async (tx) => {
+        const sync = tx.objectStore('sync')
+        const state: SyncState = { ...((await sync.get(id)) ?? { dirty: false }) }
+        if (localOnly) {
+          await sync.put({ ...state, localOnly: true }, id)
+          return
+        }
+        // Sent again: a new file, since the old one went to the Drive's trash.
+        delete state.localOnly
+        delete state.remoteFileId
+        delete state.remoteVersion
+        delete state.remoteMd5
+        await sync.put({ ...state, dirty: true }, id)
+      }),
     listTombstones: () => db.getAll('tombstones'),
     clearTombstones: (keys) =>
       write(db, ['tombstones'], async (tx) => {
@@ -359,7 +375,7 @@ export async function createIdbStore(
         // A local edit wins until the next pass weighs it against the Drive's version.
         if (exists && current?.dirty) return
         await tx.objectStore('collections').put(c)
-        await sync.put(state, c.id)
+        await sync.put({ ...state, lastSyncedAt: Date.now() }, c.id)
         wrote = true
       })
       return wrote
@@ -385,6 +401,7 @@ export async function createIdbStore(
             remoteFileId: fileId,
             remoteVersion: version,
             ...(md5 === undefined ? {} : { remoteMd5: md5 }),
+            lastSyncedAt: Date.now(),
             // An edit saved during the upload is not on the Drive yet.
             dirty: current.updatedAt !== uploadedUpdatedAt,
           },

@@ -14,6 +14,8 @@ export interface CollectionSummary {
   /** First background layer of the first frame that has layers, else the first photo, else null. */
   coverPhotoId: string | null
   photoCount: number
+  /** Kept on this device only: left out of the Drive sync. */
+  localOnly: boolean
 }
 
 /** The account the app is signed in with. */
@@ -32,6 +34,10 @@ export interface SyncState {
   remoteMd5?: string
   /** Changed locally since the last upload. */
   dirty: boolean
+  /** When this device last uploaded or downloaded the collection (this device's clock). */
+  lastSyncedAt?: number
+  /** Left out of the Drive sync: never uploaded nor downloaded, and never deleted by the sync. */
+  localOnly?: boolean
 }
 
 export type SaveOutcome = 'saved' | { conflictCopyId: string }
@@ -108,8 +114,15 @@ export interface Store {
   listTombstones(): Promise<Tombstone[]>
   clearTombstones(keys: { kind: Tombstone['kind']; id: string }[]): Promise<void>
   /**
-   * Writes a collection that came from the Drive, with `state` as is: not marked dirty. Skips it
-   * when the local one is dirty, so an edit is never overwritten; resolves to whether it wrote.
+   * Marking keeps remoteFileId, so the next pass can trash the Drive file. Unmarking forgets the
+   * Drive file (remoteFileId, remoteVersion, remoteMd5) and marks the collection dirty, so it
+   * uploads as a new file. A missing state starts as not dirty.
+   */
+  setLocalOnly(id: string, localOnly: boolean): Promise<void>
+  /**
+   * Writes a collection that came from the Drive, with `state` as is (stamped with lastSyncedAt):
+   * not marked dirty. Skips it when the local one is dirty, so an edit is never overwritten;
+   * resolves to whether it wrote.
    */
   putRemoteCollection(c: Collection, state: SyncState): Promise<boolean>
   /**
@@ -124,9 +137,10 @@ export interface Store {
     remoteVersion: string,
   ): Promise<void>
   /**
-   * After an upload: records the Drive file and clears dirty, unless the collection changed since
-   * the uploaded copy (its updatedAt differs), in which case it stays dirty. A collection deleted
-   * meanwhile is left alone. `md5` is that of the bytes uploaded; without it none is kept.
+   * After an upload: records the Drive file, stamps lastSyncedAt and clears dirty, unless the
+   * collection changed since the uploaded copy (its updatedAt differs), in which case it stays
+   * dirty. A collection deleted meanwhile is left alone. `md5` is that of the bytes uploaded;
+   * without it none is kept.
    */
   markPushed(
     id: string,

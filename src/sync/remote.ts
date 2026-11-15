@@ -77,6 +77,8 @@ export function toLibrary(value: unknown): LibraryFile | null {
       folder: record(deleted.folder),
       collection: record(deleted.collection),
     },
+    // A file from before detachments existed has none.
+    detached: { collection: record(record(v.detached).collection) },
   }
 }
 
@@ -85,7 +87,8 @@ export const isEmptyLibrary = (lib: LibraryFile) =>
   lib.folders.length === 0 &&
   Object.keys(lib.deleted.size).length === 0 &&
   Object.keys(lib.deleted.folder).length === 0 &&
-  Object.keys(lib.deleted.collection).length === 0
+  Object.keys(lib.deleted.collection).length === 0 &&
+  Object.keys(lib.detached.collection).length === 0
 
 export function deletionTimes(tombstones: Tombstone[]): Record<string, number> {
   return Object.fromEntries(tombstones.map((t) => [t.id, t.at]))

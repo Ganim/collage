@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { forgetCollectionDeletion, mergeLibrary, type LibraryFile } from './library'
+import {
+  forgetCollectionDeletion,
+  forgetCollectionDetachment,
+  mergeLibrary,
+  recordCollectionDetachment,
+  type LibraryFile,
+} from './library'
+import { isEmptyLibrary, toLibrary } from './remote'
 import type { SavedSize } from '../core/types'
 
 const size = (id: string, updatedAt?: number, extra: Partial<SavedSize> = {}): SavedSize =>
@@ -8,6 +15,7 @@ const lib = (over: Partial<LibraryFile> = {}): LibraryFile => ({
   sizes: [],
   folders: [],
   deleted: { size: {}, folder: {}, collection: {} },
+  detached: { collection: {} },
   ...over,
 })
 const deleted = (d: Partial<LibraryFile['deleted']>) => ({
@@ -134,6 +142,61 @@ describe('mergeLibrary', () => {
     expect(m.sizes).toHaveLength(1)
     expect('folderId' in m.sizes[0]!).toBe(false)
     expect(m.sizes[0]!.updatedAt).toBe(9)
+  })
+})
+
+describe('detached collections', () => {
+  it('merges detachments taking the max timestamp per id', () => {
+    const m = mergeLibrary(
+      lib({ detached: { collection: { c: 4, d: 1 } } }),
+      lib({ detached: { collection: { c: 7, e: 2 } } }),
+    )
+    expect(m.detached.collection).toEqual({ c: 7, d: 1, e: 2 })
+  })
+
+  it('keeps the local detachments when there is no remote', () => {
+    expect(mergeLibrary(lib({ detached: { collection: { c: 4 } } }), null).detached).toEqual({
+      collection: { c: 4 },
+    })
+  })
+
+  it('a detachment never removes anything nor touches deletion records', () => {
+    const m = mergeLibrary(
+      lib({ sizes: [size('c', 1)], deleted: deleted({ collection: { x: 3 } }) }),
+      lib({ detached: { collection: { c: 9, x: 9 } } }),
+    )
+    expect(m.sizes.map((s) => s.id)).toEqual(['c'])
+    expect(m.deleted.collection).toEqual({ x: 3 })
+  })
+
+  it('an old library file without detached reads as none', () => {
+    const old = {
+      sizes: [],
+      folders: [],
+      deleted: { size: {}, folder: {}, collection: { a: 1 } },
+    }
+    expect(toLibrary(old)?.detached).toEqual({ collection: {} })
+    expect(toLibrary({ ...old, detached: { collection: { b: 2 } } })?.detached).toEqual({
+      collection: { b: 2 },
+    })
+    expect(toLibrary({ ...old, detached: 'junk' })?.detached).toEqual({ collection: {} })
+    expect(mergeLibrary(lib(), old as unknown as LibraryFile).detached).toEqual({
+      collection: {},
+    })
+  })
+
+  it('a library with only detachments is not empty', () => {
+    expect(isEmptyLibrary(lib())).toBe(true)
+    expect(isEmptyLibrary(lib({ detached: { collection: { a: 1 } } }))).toBe(false)
+  })
+
+  it('records and forgets one detachment without touching the input', () => {
+    const l = lib({ detached: { collection: { a: 1 } } })
+    const recorded = recordCollectionDetachment(l, 'b', 5)
+    expect(recorded.detached).toEqual({ collection: { a: 1, b: 5 } })
+    expect(recordCollectionDetachment(recorded, 'b', 3).detached.collection.b).toBe(5)
+    expect(forgetCollectionDetachment(recorded, 'a').detached).toEqual({ collection: { b: 5 } })
+    expect(l.detached).toEqual({ collection: { a: 1 } })
   })
 })
 

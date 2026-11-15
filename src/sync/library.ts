@@ -8,6 +8,11 @@ export interface LibraryFile {
     folder: Record<string, number>
     collection: Record<string, number>
   }
+  /**
+   * Collections removed from the Drive ("Remover do Drive"), by when. Unlike a deletion, it never
+   * removes anything: other devices keep their copy, marked local-only.
+   */
+  detached: { collection: Record<string, number> }
 }
 
 type Stamped = { id: string; updatedAt?: number }
@@ -50,6 +55,7 @@ export function mergeLibrary(local: LibraryFile, remote: LibraryFile | null): Li
     sizes: [],
     folders: [],
     deleted: { size: {}, folder: {}, collection: {} },
+    detached: { collection: {} },
   }
   const sizes = mergeItems(local.sizes, r.sizes, mergeTimes(local.deleted.size, r.deleted.size))
   const folders = mergeItems(
@@ -71,6 +77,13 @@ export function mergeLibrary(local: LibraryFile, remote: LibraryFile | null): Li
       // Collections are not stored in the library file, so their tombstones are only unioned.
       collection: mergeTimes(local.deleted.collection, r.deleted.collection),
     },
+    // Tolerates a file written before detachments existed.
+    detached: {
+      collection: mergeTimes(
+        (local.detached as LibraryFile['detached'] | undefined)?.collection ?? {},
+        (r.detached as LibraryFile['detached'] | undefined)?.collection ?? {},
+      ),
+    },
   }
 }
 
@@ -82,4 +95,16 @@ export function forgetCollectionDeletion(lib: LibraryFile, id: string): LibraryF
   const collection = { ...lib.deleted.collection }
   delete collection[id]
   return { ...lib, deleted: { ...lib.deleted, collection } }
+}
+
+/** Records that a collection was removed from the Drive at `at`; an older record never wins. */
+export function recordCollectionDetachment(lib: LibraryFile, id: string, at: number): LibraryFile {
+  return { ...lib, detached: { collection: mergeTimes(lib.detached.collection, { [id]: at }) } }
+}
+
+/** Drops a collection's detachment record: the plan's `forgetDetached`, once it is sent again. */
+export function forgetCollectionDetachment(lib: LibraryFile, id: string): LibraryFile {
+  const collection = { ...lib.detached.collection }
+  delete collection[id]
+  return { ...lib, detached: { collection } }
 }
