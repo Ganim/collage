@@ -13,7 +13,7 @@ export default defineConfig({
       // A release waits for the next launch: taking over an open page would delete the
       // files it still has to load, such as the workers behind the PDF.
       registerType: 'prompt',
-      includeAssets: ['apple-touch-icon.png'],
+      includeAssets: ['apple-touch-icon.png', 'favicon.svg', 'favicon-48.png'],
       manifest: {
         name: 'Collage',
         short_name: 'Collage',
