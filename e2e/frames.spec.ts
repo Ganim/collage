@@ -45,7 +45,7 @@ test('creates a folder and a size inside it', async ({ page }) => {
   await expect(page).toHaveURL(/#\/frames$/)
   await expect(folderLink(page, 'Quarto')).toHaveAccessibleDescription('1 tamanho')
   await expect(folderLink(page, 'Tamanhos padrão')).toHaveAccessibleDescription('6 tamanhos')
-  await expect(folderLink(page, 'Meus tamanhos')).toHaveAccessibleDescription('0 tamanhos')
+  await expect(folderLink(page, 'Meus tamanhos')).toHaveAccessibleDescription('Nenhum tamanho')
 
   await page.reload()
   await folderLink(page, 'Quarto').click()

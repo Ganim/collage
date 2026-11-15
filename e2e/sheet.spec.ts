@@ -546,3 +546,16 @@ test.describe('sharing', () => {
     expect((await downloading).suggestedFilename()).toMatch(/\.pdf$/)
   })
 })
+
+test('a file built before the paper changes is not delivered: it is built again', async ({
+  page,
+}) => {
+  await photoFrames(page, 1)
+  await openSheet(page)
+  await page.getByRole('button', { name: 'Salvar em arquivo', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Baixar arquivo', exact: true })).toBeVisible()
+
+  await page.getByRole('combobox', { name: 'Papel' }).selectOption('a3')
+  await expect(page.getByRole('button', { name: 'Baixar arquivo', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Salvar em arquivo', exact: true })).toBeVisible()
+})

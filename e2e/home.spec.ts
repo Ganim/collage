@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import { expect, type Page } from '@playwright/test'
 import {
+  collectionName,
   exportCollection,
   frameLabel,
   frameWithPhoto,
@@ -50,6 +51,28 @@ test('shows the account and signs out after confirming', async ({ page, context 
   await expect(button(page, 'Entrar com Google')).toBeVisible()
 })
 
+test('signing out offline says entering again needs internet', async ({ page, context }) => {
+  await page.goto('/#/colecoes')
+  await expect(button(page, 'Nova coleção')).toBeVisible()
+  const confirm = page.getByRole('dialog', { name: 'Sair da conta?' })
+  const offlineLine = confirm.getByText(
+    'Você está sem internet. Para entrar de novo, vai precisar de conexão.',
+  )
+
+  await button(page, 'Sua conta').click()
+  await button(page, 'Sair').click()
+  await expect(confirm.getByText('Suas coleções continuam neste aparelho.')).toBeVisible()
+  await expect(offlineLine).toHaveCount(0)
+  await button(page, 'Cancelar').click()
+
+  await context.setOffline(true)
+  await button(page, 'Sua conta').click()
+  await button(page, 'Sair').click()
+  await expect(offlineLine).toBeVisible()
+  await button(page, 'Cancelar').click()
+  await context.setOffline(false)
+})
+
 test('creates a collection and opens the editor', async ({ page }) => {
   await page.goto('/#/colecoes')
   await button(page, 'Nova coleção').click()
@@ -57,7 +80,7 @@ test('creates a collection and opens the editor', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Seu primeiro frame' })).toBeVisible()
 
   await goHome(page)
-  await expect(page.getByText(/^0 frames · \d{2}\/\d{2}\/\d{4}$/)).toBeVisible()
+  await expect(page.getByText(/^Nenhum frame · \d{2}\/\d{2}\/\d{4}$/)).toBeVisible()
 })
 
 test('empty state invites the first collection', async ({ page }) => {
@@ -112,10 +135,14 @@ test('deleting the open collection leaves the others as they were', async ({ pag
   await button(page, 'Nova coleção').click()
   await expect(page.getByRole('heading', { name: 'Seu primeiro frame' })).toBeVisible()
   await nameOpenCollection(page, 'Junho')
+  const junho = new URL(page.url()).hash
   await goHome(page)
 
   await removeFromCard(page, 'Junho')
-  await page.reload()
+  // An old link to it (the address it had, without reloading) lands on the list.
+  await page.evaluate((hash) => (location.hash = hash), junho)
+  await expect(page).toHaveURL(/#\/colecoes$/)
+  await expect(page.getByText('Essa coleção não foi encontrada.')).toBeVisible()
   await expect(card(page, 'Maio')).toBeVisible()
   await expect(card(page, 'Junho')).toHaveCount(0)
   await card(page, 'Maio').click()
@@ -196,4 +223,49 @@ test('a list that cannot be read offers a retry', async ({ page, context }) => {
   await button(page, 'Tentar de novo').click()
   await card(page, 'Maio').click()
   await expect(page.getByRole('heading', { name: 'Seu primeiro frame' })).toBeVisible()
+  await expect(collectionName(page)).toHaveText('Maio')
+})
+
+test.describe('the back gesture after leaving the editor', () => {
+  /** Mouldings first, so going back past the list lands somewhere visible. */
+  async function fromTheList(page: Page) {
+    await page.goto('/#/molduras')
+    await page.getByRole('tab', { name: 'Coleções' }).click()
+    await expect(page).toHaveURL(/#\/colecoes$/)
+    await button(page, 'Nova coleção').click()
+    await expect(page.getByRole('heading', { name: 'Seu primeiro frame' })).toBeVisible()
+  }
+
+  test('back then the gesture does not reopen the collection', async ({ page }) => {
+    await fromTheList(page)
+    await goHome(page)
+    await page.goBack()
+    await expect(page).toHaveURL(/#\/molduras$/)
+    await expect(page.getByRole('heading', { name: 'Em breve' })).toBeVisible()
+  })
+
+  test('delete then the gesture does not show the not-found notice', async ({ page }) => {
+    await fromTheList(page)
+    await page.getByRole('button', { name: 'Mais opções', exact: true }).click()
+    await button(page, 'Excluir').click()
+    await page
+      .getByRole('dialog', { name: /^Excluir .+\?$/ })
+      .getByRole('button', { name: 'Excluir', exact: true })
+      .click()
+    await expect(page).toHaveURL(/#\/colecoes$/)
+    await page.goBack()
+    await expect(page).toHaveURL(/#\/molduras$/)
+    await expect(page.getByText('Essa coleção não foi encontrada.')).toHaveCount(0)
+  })
+
+  test('share, back, then the gesture reaches the list', async ({ page }) => {
+    await fromTheList(page)
+    await button(page, 'Compartilhar').click()
+    await expect(page).toHaveURL(/#\/c\/[^/]+\/compartilhar$/)
+    await button(page, 'Voltar').click()
+    await expect(page).toHaveURL(/#\/c\/[^/]+$/)
+    await page.goBack()
+    await expect(page).toHaveURL(/#\/colecoes$/)
+    await expect(button(page, 'Nova coleção')).toBeVisible()
+  })
 })

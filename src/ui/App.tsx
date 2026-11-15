@@ -7,7 +7,7 @@ import { BuildScreen } from './build/BuildScreen'
 import { HomeScreen } from './home/HomeScreen'
 import { t, type MessageKey } from './i18n'
 import { InstallHint } from './install/InstallHint'
-import { useRoute, type Route } from './router'
+import { leaveTo, useRoute, type Route } from './router'
 import { SheetScreen } from './sheet/SheetScreen'
 import { StartScreen } from './start/StartScreen'
 
@@ -35,6 +35,7 @@ function Workspace({ account, onSignOut }: { account: Account; onSignOut: () => 
   const saveStatus = useEditor((s) => s.saveStatus)
   const loadFailed = useEditor((s) => s.loadFailed)
   const currentId = useEditor((s) => s.collection.id)
+  const storageBlocked = useEditor((s) => s.storageBlocked)
   const [route, navigate] = useRoute()
   // Until sizes and folders are in, the screens would flash empty on every visit.
   const [ready, setReady] = useState(false)
@@ -126,18 +127,22 @@ function Workspace({ account, onSignOut }: { account: Account; onSignOut: () => 
     navigate,
   ])
 
-  /** Takes the editor off this collection, then shows the list; a failure without a message stays. */
+  /**
+   * Takes the editor off this collection, then shows the list in place of the editor in the
+   * history. A failure without a message stays in the editor; false says it did not leave.
+   */
   const leave = async (id: string, action: () => Promise<void>, failure?: MessageKey) => {
     setLeavingId(id)
     try {
       await action()
-      navigate({ name: 'collections' })
+      leaveTo({ name: 'collections' })
+      return true
     } catch (e) {
       console.error(e)
-      if (failure) {
-        navigate({ name: 'collections' })
-        setNotice(failure)
-      }
+      if (!failure) return false
+      leaveTo({ name: 'collections' })
+      setNotice(failure)
+      return true
     } finally {
       setLeavingId(null)
     }
@@ -178,17 +183,20 @@ function Workspace({ account, onSignOut }: { account: Account; onSignOut: () => 
     } else if (wantedId === shownId) {
       screen =
         route.name === 'share' ? (
-          <SheetScreen
-            onBack={() => navigate({ name: 'editor', id: wantedId }, { replace: true })}
-          />
+          <SheetScreen onBack={() => leaveTo({ name: 'editor', id: wantedId })} />
         ) : (
-          <BuildScreen onLeave={(action, failure) => void leave(wantedId, action, failure)} />
+          <BuildScreen onLeave={(action, failure) => leave(wantedId, action, failure)} />
         )
     }
   }
 
   return (
     <main className="app">
+      {storageBlocked && (
+        <p className="banner" role="alert">
+          {t('storage.blocked')}
+        </p>
+      )}
       {saveFailed && (
         <p className="banner" role="alert">
           {t('banner.saveFailed')}

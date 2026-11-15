@@ -228,6 +228,9 @@ test('a full device shows a persistent warning', async ({ page }) => {
   await page.getByRole('button', { name: 'Voltar para coleções', exact: true }).click()
   await expect(page).toHaveURL(/#\/c\/[^/]+$/)
   await expect(frame(page, 3, 3)).toBeVisible()
+  await expect(page.getByRole('status')).toHaveText(
+    'Não foi possível salvar esta coleção. Ela continua aberta; tente voltar de novo.',
+  )
 })
 
 test('on a full device, another collection link keeps the work open without a not-found notice', async ({

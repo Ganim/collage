@@ -53,15 +53,40 @@ function subscribe(onChange: () => void) {
 
 const currentHash = () => location.hash
 
+/** What the app writes into the history entries it adds. */
+interface EntryState {
+  /** The address of the entry this one was added on top of. */
+  collageFrom?: string
+}
+
+const entryState = (): EntryState | null =>
+  typeof history.state === 'object' ? (history.state as EntryState | null) : null
+
+// pushState and replaceState do not announce themselves, so the listeners are told here.
+const announce = () => window.dispatchEvent(new HashChangeEvent('hashchange'))
+
 export function navigate(r: Route, opts: { replace?: boolean } = {}): void {
   const hash = routeHash(r)
   if (opts.replace) {
-    // replaceState does not announce itself, so the listeners are told here.
     history.replaceState(history.state, '', hash)
-    window.dispatchEvent(new HashChangeEvent('hashchange'))
-  } else {
-    location.hash = hash
+    announce()
+  } else if (hash !== location.hash) {
+    const state: EntryState = { collageFrom: location.hash }
+    history.pushState(state, '', hash)
+    announce()
   }
+}
+
+/**
+ * Leaves the current screen for `to` so that the back gesture does not return to it: the
+ * current entry becomes `to`, and when the entry before it already is `to`, the app steps
+ * back onto that one. Either way nothing in the history points at the screen that was left.
+ */
+export function leaveTo(to: Route): void {
+  const hash = routeHash(to)
+  const from = entryState()?.collageFrom
+  navigate(to, { replace: true })
+  if (from !== undefined && routeHash(parseHash(from)) === hash) history.back()
 }
 
 export function useRoute(): [Route, (r: Route, opts?: { replace?: boolean }) => void] {

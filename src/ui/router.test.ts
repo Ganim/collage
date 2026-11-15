@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseHash, routeHash, type Route } from './router'
+import { leaveTo, navigate, parseHash, routeHash, type Route } from './router'
 
 describe('router', () => {
   const routes: [Route, string][] = [
@@ -34,5 +34,41 @@ describe('router', () => {
   it('keeps ids with unusual characters intact', () => {
     const route: Route = { name: 'editor', id: 'a b/c' }
     expect(parseHash(routeHash(route))).toEqual(route)
+  })
+})
+
+describe('leaving a screen', () => {
+  const steppedBack = () =>
+    new Promise<void>((resolve) =>
+      window.addEventListener('popstate', () => resolve(), { once: true }),
+    )
+
+  it('steps back onto the entry it came from, so back does not return', async () => {
+    navigate({ name: 'collections' }, { replace: true })
+    const length = history.length
+    navigate({ name: 'editor', id: 'x' })
+    expect(history.length).toBe(length + 1)
+    const back = steppedBack()
+    leaveTo({ name: 'collections' })
+    expect(location.hash).toBe('#/colecoes')
+    await back
+    expect(location.hash).toBe('#/colecoes')
+    expect((history.state as { collageFrom?: string } | null)?.collageFrom).not.toBe('#/c/x')
+  })
+
+  it('takes the place of the screen it leaves when it came from somewhere else', () => {
+    navigate({ name: 'editor', id: 'x' }, { replace: true })
+    navigate({ name: 'editor', id: 'copy' })
+    const length = history.length
+    leaveTo({ name: 'collections' })
+    expect(history.length).toBe(length)
+    expect(location.hash).toBe('#/colecoes')
+  })
+
+  it('does not add an entry for the address already shown', () => {
+    navigate({ name: 'collections' }, { replace: true })
+    const length = history.length
+    navigate({ name: 'collections' })
+    expect(history.length).toBe(length)
   })
 })

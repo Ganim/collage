@@ -1,25 +1,38 @@
 import { FileDown } from 'lucide-react'
 import { useState } from 'react'
-import { useEditor } from '../../state/editor'
+import type { Collection } from '../../core/types'
+import { getEditorState, useEditor } from '../../state/editor'
 import { t } from '../i18n'
 import { deliverFile, safeFileName } from './deliver'
 
 const COLLECTION_TYPE = 'application/octet-stream'
 
+/** Same content; a save only stamps a new updatedAt on a copy, so that is left out. */
+const sameContent = (a: Collection, b: Collection) =>
+  a.id === b.id &&
+  a.name === b.name &&
+  a.frames === b.frames &&
+  a.photoIds === b.photoIds &&
+  a.paper === b.paper
+
 /** Saves the open collection as a .collage file, to open again later or on another device. */
 export function SaveFileSection() {
-  const name = useEditor((s) => s.collection.name)
+  const collection = useEditor((s) => s.collection)
   const exportActive = useEditor((s) => s.exportActive)
   const [building, setBuilding] = useState(false)
   // Built first and delivered on a second tap: iOS only shares right after a touch.
-  const [bundle, setBundle] = useState<Blob | null>(null)
+  const [built, setBundle] = useState<{ blob: Blob; of: Collection } | null>(null)
   const [failed, setFailed] = useState(false)
+  // A file built before any change (the paper, a photo that landed) is never handed out.
+  const bundle = built && sameContent(built.of, collection) ? built.blob : null
 
   const build = async () => {
     setBuilding(true)
     setFailed(false)
     try {
-      setBundle(await exportActive())
+      const of = getEditorState().collection
+      const blob = await exportActive()
+      setBundle({ blob, of })
     } catch (e) {
       console.error(e)
       setFailed(true)
@@ -31,7 +44,11 @@ export function SaveFileSection() {
   const deliver = async (blob: Blob) => {
     setFailed(false)
     try {
-      const result = await deliverFile(blob, safeFileName(name, 'collage'), COLLECTION_TYPE)
+      const result = await deliverFile(
+        blob,
+        safeFileName(collection.name, 'collage'),
+        COLLECTION_TYPE,
+      )
       // A file that went out stands for the collection as it was: the next one is built again.
       if (result !== 'cancelled') setBundle(null)
     } catch (e) {

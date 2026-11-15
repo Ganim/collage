@@ -22,6 +22,8 @@
   --glass-strong: rgba(253, 244, 255, 0.95);
   --glass-border: 1px solid rgba(255, 255, 255, 0.7);
   --glass-blur: blur(18px) saturate(1.4);
+  /* Bottom sheets sit over photos: nothing behind may show through their rows. */
+  --sheet-surface: var(--fuchsia-50);
 
   --radius-card: 24px;
   --radius-pill: 999px;

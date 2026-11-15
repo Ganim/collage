@@ -4,6 +4,8 @@ import { BottomSheet } from './BottomSheet'
 interface ConfirmSheetProps {
   title: string
   body: string
+  /** A second line under the body, for a circumstance worth knowing before going ahead. */
+  note?: string
   confirmLabel: string
   danger?: boolean
   onConfirm: () => void
@@ -14,6 +16,7 @@ interface ConfirmSheetProps {
 export function ConfirmSheet({
   title,
   body,
+  note,
   confirmLabel,
   danger = false,
   onConfirm,
@@ -22,6 +25,7 @@ export function ConfirmSheet({
   return (
     <BottomSheet title={title} onClose={onClose}>
       <p className="confirm-body">{body}</p>
+      {note && <p className="confirm-body">{note}</p>}
       <div className="sheet-buttons">
         <button type="button" className="secondary-button" onClick={onClose}>
           {t('common.cancel')}

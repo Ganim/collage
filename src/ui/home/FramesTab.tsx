@@ -9,7 +9,11 @@ import { groupSizes, type SizeGroup } from './folders'
 import { SizeForm } from './SizeForm'
 
 const sizeCount = (count: number) =>
-  count === 1 ? t('frames.sizesOne') : t('frames.sizesMany', { count })
+  count === 0
+    ? t('frames.sizesNone')
+    : count === 1
+      ? t('frames.sizesOne')
+      : t('frames.sizesMany', { count })
 
 function FolderCard({ group }: { group: SizeGroup }) {
   const countId = useId()

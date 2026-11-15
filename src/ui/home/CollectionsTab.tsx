@@ -1,6 +1,6 @@
 import { FolderInput, Plus } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
-import { getEditorState, useEditor } from '../../state/editor'
+import { getEditorState, ImportNotOpenedError, useEditor } from '../../state/editor'
 import { StorageFullError, type CollectionSummary } from '../../storage/store'
 import { t, type MessageKey } from '../i18n'
 import { EmptyCollectionsIllustration } from '../illustrations'
@@ -86,10 +86,21 @@ export function CollectionsTab({ onOpened, onOpen }: CollectionsTabProps) {
   const importFile = (file: File) =>
     run(
       async () => {
-        await importCollection(file)
+        try {
+          await importCollection(file)
+        } catch (e) {
+          // It is stored even so: the list shows it.
+          if (e instanceof ImportNotOpenedError) await refresh()
+          throw e
+        }
         onOpened(getEditorState().collection.id)
       },
-      (e) => (e instanceof StorageFullError ? 'library.importFull' : 'library.importInvalid'),
+      (e) =>
+        e instanceof ImportNotOpenedError
+          ? 'library.importNotOpened'
+          : e instanceof StorageFullError
+            ? 'library.importFull'
+            : 'library.importInvalid',
     )
 
   const change = (action: () => Promise<unknown>, failure: MessageKey) =>

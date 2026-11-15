@@ -658,9 +658,7 @@ p {
   border: var(--glass-border);
   border-bottom: 0;
   border-radius: var(--radius-card) var(--radius-card) 0 0;
-  background: var(--glass-strong);
-  -webkit-backdrop-filter: var(--glass-blur);
-  backdrop-filter: var(--glass-blur);
+  background: var(--sheet-surface);
   color: var(--plum-900);
   overflow-y: auto;
   overscroll-behavior: contain;

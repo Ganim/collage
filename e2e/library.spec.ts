@@ -60,6 +60,9 @@ test('the menu has the collection options and, with a frame, the frame ones', as
     await expect(sheet.getByRole('button', { name, exact: true })).toBeVisible()
   }
   await expect(sheet.getByRole('button', { name: 'Meus tamanhos', exact: true })).toHaveCount(0)
+  // The frame behind must not show through the rows.
+  const background = await sheet.evaluate((el) => getComputedStyle(el).backgroundColor)
+  expect(background).toMatch(/^rgb\(/)
 })
 
 test('renames from the menu and from the name', async ({ page }) => {

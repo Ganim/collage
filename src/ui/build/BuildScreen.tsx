@@ -14,8 +14,8 @@ import { SizeSwitch } from './SizeSwitch'
 const NOTICE_MS = 6000
 
 interface BuildScreenProps {
-  /** Runs what takes the editor off this collection, then shows the list. */
-  onLeave: (action: () => Promise<void>, failure?: MessageKey) => void
+  /** Runs what takes the editor off this collection, then shows the list; false if it stayed. */
+  onLeave: (action: () => Promise<void>, failure?: MessageKey) => Promise<boolean>
 }
 
 export function BuildScreen({ onLeave }: BuildScreenProps) {

@@ -1,5 +1,5 @@
 import { ChevronLeft, Copy, CopyPlus, Pencil, Share, Trash2 } from 'lucide-react'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useEditor } from '../../state/editor'
 import { ConfirmSheet } from '../components/ConfirmSheet'
 import { Kebab, type KebabItem } from '../components/Kebab'
@@ -10,9 +10,10 @@ import { navigate } from '../router'
 interface HeaderProps {
   /**
    * Runs what takes the editor off this collection (closing or deleting it), then shows the
-   * list. Without a failure message, a failed action keeps the editor where it is.
+   * list. Without a failure message, a failed action keeps the editor where it is and
+   * resolves false.
    */
-  onLeave: (action: () => Promise<void>, failure?: MessageKey) => void
+  onLeave: (action: () => Promise<void>, failure?: MessageKey) => Promise<boolean>
   onNotice: (text: string) => void
 }
 
@@ -29,22 +30,50 @@ export function Header({ onLeave, onNotice }: HeaderProps) {
   const duplicateActive = useEditor((s) => s.duplicateActive)
   const removeActive = useEditor((s) => s.removeActive)
   const [sheet, setSheet] = useState<'rename' | 'delete' | 'removeFrame' | null>(null)
+  /** Back, duplicate and delete run one at a time. */
+  const [busy, setBusy] = useState(false)
+  // Two taps before the next render would both see busy as false.
+  const running = useRef(false)
   const shownName = name || t('library.unnamed')
 
-  const duplicate = async () => {
+  const run = async (action: () => Promise<void>) => {
+    if (running.current) return
+    running.current = true
+    setBusy(true)
     try {
-      const copyId = await duplicateCollection(id)
-      navigate({ name: 'editor', id: copyId })
-    } catch (e) {
-      console.error(e)
-      onNotice(t('card.duplicateFailed'))
+      await action()
+    } finally {
+      running.current = false
+      setBusy(false)
     }
   }
 
+  const duplicate = () =>
+    run(async () => {
+      try {
+        const copyId = await duplicateCollection(id)
+        navigate({ name: 'editor', id: copyId })
+      } catch (e) {
+        console.error(e)
+        onNotice(t('card.duplicateFailed'))
+      }
+    })
+
+  const back = () =>
+    run(async () => {
+      if (!(await onLeave(closeCollection))) onNotice(t('header.backFailed'))
+    })
+
   const collectionItems: KebabItem[] = [
     { icon: Pencil, label: t('card.rename'), onClick: () => setSheet('rename') },
-    { icon: Copy, label: t('card.duplicate'), onClick: () => void duplicate() },
-    { icon: Trash2, label: t('card.delete'), onClick: () => setSheet('delete'), danger: true },
+    { icon: Copy, label: t('card.duplicate'), onClick: () => void duplicate(), disabled: busy },
+    {
+      icon: Trash2,
+      label: t('card.delete'),
+      onClick: () => setSheet('delete'),
+      danger: true,
+      disabled: busy,
+    },
   ]
   const frameItems: KebabItem[] = [
     { icon: CopyPlus, label: t('header.frameDuplicate'), onClick: duplicateActive },
@@ -62,7 +91,8 @@ export function Header({ onLeave, onNotice }: HeaderProps) {
         type="button"
         className="icon-button header-back"
         aria-label={t('header.back')}
-        onClick={() => onLeave(closeCollection)}
+        disabled={busy}
+        onClick={() => void back()}
       >
         <ChevronLeft size={26} />
       </button>
@@ -110,7 +140,11 @@ export function Header({ onLeave, onNotice }: HeaderProps) {
           body={t('card.deleteBody')}
           confirmLabel={t('card.delete')}
           danger
-          onConfirm={() => onLeave(() => deleteCollection(id), 'card.deleteFailed')}
+          onConfirm={() =>
+            void run(async () => {
+              await onLeave(() => deleteCollection(id), 'card.deleteFailed')
+            })
+          }
           onClose={() => setSheet(null)}
         />
       )}

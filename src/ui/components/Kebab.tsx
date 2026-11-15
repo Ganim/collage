@@ -7,6 +7,8 @@ export interface KebabItem {
   label: string
   onClick: () => void
   danger?: boolean
+  /** Shown but not usable, e.g. while another action runs. */
+  disabled?: boolean
 }
 
 interface KebabProps {
@@ -14,10 +16,12 @@ interface KebabProps {
   label: string
   /** Each group is set apart from the next by a line. */
   items: KebabItem[][]
+  /** Every option is off, and so is the button, while an action runs. */
+  disabled?: boolean
 }
 
 /** The ⋮ button: its options open in a bottom sheet, and choosing one closes it. */
-export function Kebab({ label, items }: KebabProps) {
+export function Kebab({ label, items, disabled = false }: KebabProps) {
   const [open, setOpen] = useState(false)
 
   return (
@@ -26,6 +30,7 @@ export function Kebab({ label, items }: KebabProps) {
         type="button"
         className="icon-button kebab-button"
         aria-label={label}
+        disabled={disabled}
         onClick={() => setOpen(true)}
       >
         <EllipsisVertical size={22} />
@@ -36,11 +41,12 @@ export function Kebab({ label, items }: KebabProps) {
             {items.map((group, g) => (
               <Fragment key={g}>
                 {g > 0 && <li className="menu-separator" role="separator" />}
-                {group.map(({ icon: Icon, label: itemLabel, onClick, danger }) => (
+                {group.map(({ icon: Icon, label: itemLabel, onClick, danger, disabled: off }) => (
                   <li key={itemLabel}>
                     <button
                       type="button"
                       className={danger ? 'menu-row menu-row--danger' : 'menu-row'}
+                      disabled={disabled || off}
                       onClick={() => {
                         setOpen(false)
                         onClick()

@@ -71,6 +71,8 @@ export function AccountHeader({ account, onSignOut }: AccountHeaderProps) {
         <ConfirmSheet
           title={t('account.signOutTitle')}
           body={t('account.signOutBody')}
+          // Without internet, entering again has to wait for a connection.
+          note={navigator.onLine === false ? t('account.signOutOffline') : undefined}
           confirmLabel={t('account.signOut')}
           onConfirm={onSignOut}
           onClose={() => setSheet(null)}

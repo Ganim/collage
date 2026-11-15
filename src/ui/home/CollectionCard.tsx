@@ -10,9 +10,11 @@ import { usePhotoUrl } from '../usePhotoUrl'
 
 const details = (item: CollectionSummary) => {
   const frames =
-    item.frameCount === 1
-      ? t('library.framesOne')
-      : t('library.framesMany', { count: item.frameCount })
+    item.frameCount === 0
+      ? t('library.framesNone')
+      : item.frameCount === 1
+        ? t('library.framesOne')
+        : t('library.framesMany', { count: item.frameCount })
   return `${frames} · ${new Date(item.updatedAt).toLocaleDateString('pt-BR')}`
 }
 
@@ -67,6 +69,7 @@ export function CollectionCard({
       </button>
       <Kebab
         label={t('card.options', { name })}
+        disabled={disabled}
         items={[
           [
             { icon: Pencil, label: t('card.rename'), onClick: () => setSheet('rename') },
