@@ -349,15 +349,14 @@ export async function createIdbStore(
       write(db, ['sync'], async (tx) => {
         const sync = tx.objectStore('sync')
         const state: SyncState = { ...((await sync.get(id)) ?? { dirty: false }) }
+        delete state.resent
         if (localOnly) {
           await sync.put({ ...state, localOnly: true }, id)
           return
         }
-        // Sent again: a new file, since the old one went to the Drive's trash.
         delete state.localOnly
-        delete state.remoteFileId
-        delete state.remoteVersion
-        delete state.remoteMd5
+        // The removal has not run yet: its file may still be on the Drive, so it is kept.
+        if (state.remoteFileId !== undefined) state.resent = true
         await sync.put({ ...state, dirty: true }, id)
       }),
     listTombstones: () => db.getAll('tombstones'),
@@ -395,6 +394,7 @@ export async function createIdbStore(
         const state: SyncState = { ...((await sync.get(id)) ?? { dirty: false }) }
         // An MD5 of an older upload no longer names what is on the Drive.
         delete state.remoteMd5
+        delete state.resent
         await sync.put(
           {
             ...state,

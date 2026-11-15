@@ -36,6 +36,12 @@ export interface SyncState {
   dirty: boolean
   /** Left out of the Drive sync: never uploaded nor downloaded, and never deleted by the sync. */
   localOnly?: boolean
+  /**
+   * Sent to the Drive again while the removal of its file was still pending: the next pass uploads
+   * it whether that file is still there or not, and drops the removal record. Cleared by the
+   * upload.
+   */
+  resent?: boolean
 }
 
 export type SaveOutcome = 'saved' | { conflictCopyId: string }
@@ -112,9 +118,10 @@ export interface Store {
   listTombstones(): Promise<Tombstone[]>
   clearTombstones(keys: { kind: Tombstone['kind']; id: string }[]): Promise<void>
   /**
-   * Marking keeps remoteFileId, so the next pass can trash the Drive file. Unmarking forgets the
-   * Drive file (remoteFileId, remoteVersion, remoteMd5) and marks the collection dirty, so it
-   * uploads as a new file. A missing state starts as not dirty.
+   * Marking keeps remoteFileId, so the next pass can trash the Drive file. Unmarking marks the
+   * collection dirty, so it uploads again: as a new file once the removal ran (it forgot the file),
+   * or over the same file while the removal is still pending (remoteFileId kept, `resent` set).
+   * A missing state starts as not dirty.
    */
   setLocalOnly(id: string, localOnly: boolean): Promise<void>
   /**

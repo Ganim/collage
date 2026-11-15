@@ -623,7 +623,27 @@ describe('sync bookkeeping', () => {
     expect((await store.getSyncStates()).c1).toMatchObject({ localOnly: true, dirty: true })
   })
 
-  it('setLocalOnly(false) makes the collection upload as a new file', async () => {
+  it('setLocalOnly(false) after the removal ran makes the collection upload as a new file', async () => {
+    await store.setOwner(ANA)
+    await store.saveCollection(collection('c1', []))
+    await store.markPushed('c1', 1000, 'r1', '4', 'm1')
+    await store.setLocalOnly('c1', true)
+    // What the pass does once the file is in the Drive's trash.
+    await store.setSyncState('c1', {
+      remoteFileId: undefined,
+      remoteVersion: undefined,
+      remoteMd5: undefined,
+    })
+    await store.setLocalOnly('c1', false)
+    const state = (await store.getSyncStates()).c1
+    expect(state).toMatchObject({ ownerId: 'ana', ownerEmail: ANA.email, dirty: true })
+    expect(state?.remoteFileId).toBeUndefined()
+    expect(state?.localOnly).toBeUndefined()
+    expect(state?.resent).toBeUndefined()
+    expect((await store.listCollections())[0]?.localOnly).toBe(false)
+  })
+
+  it('setLocalOnly(false) before the removal ran keeps the Drive file, marked as sent again', async () => {
     await store.setOwner(ANA)
     await store.saveCollection(collection('c1', []))
     await store.markPushed('c1', 1000, 'r1', '4', 'm1')
@@ -632,9 +652,20 @@ describe('sync bookkeeping', () => {
     expect((await store.getSyncStates()).c1).toEqual({
       ownerId: 'ana',
       ownerEmail: ANA.email,
+      remoteFileId: 'r1',
+      remoteVersion: '4',
+      remoteMd5: 'm1',
       dirty: true,
+      resent: true,
     })
     expect((await store.listCollections())[0]?.localOnly).toBe(false)
+
+    // Removed again: no longer sent again. Uploaded: the mark goes too.
+    await store.setLocalOnly('c1', true)
+    expect((await store.getSyncStates()).c1?.resent).toBeUndefined()
+    await store.setLocalOnly('c1', false)
+    await store.markPushed('c1', 1000, 'r1', '5', 'm2')
+    expect((await store.getSyncStates()).c1?.resent).toBeUndefined()
   })
 
   it('setLocalOnly on a collection without a sync state starts one', async () => {

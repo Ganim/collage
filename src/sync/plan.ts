@@ -15,7 +15,8 @@ import type { SyncState, Tombstone } from '../storage/store'
  * is what the removing device needs for detachRemote.)
  *
  * `forgetDetached(id)`: drop id from library.json `detached.collection`
- * (forgetCollectionDetachment); planned with the push of a collection sent again ("Enviar").
+ * (forgetCollectionDetachment); planned with the push of a collection sent again ("Enviar"): one
+ * whose removal ran (no remoteFileId) or was still pending (`resent`).
  */
 export type Action =
   | { kind: 'push'; id: string }
@@ -77,7 +78,7 @@ export function planCollections(input: PlanInput): Action[] {
     // 3. Removed from the Drive elsewhere: a synced copy whose file is gone is kept here,
     // local-only, even when edited. While the file is still listed, the sync goes on as usual.
     if (state && id in remoteDetached) {
-      if (state.remoteFileId === undefined) {
+      if (state.remoteFileId === undefined || state.resent) {
         // Sent again from this device ("Enviar"): upload, and drop the record.
         actions.push(...planSynced(id, state, file, remoteDeleted), { kind: 'forgetDetached', id })
         continue
@@ -123,8 +124,11 @@ function planSynced(
   if (state && file) {
     // A new version holding exactly what this device sent last (only the Drive's metadata moved)
     // is no change of content.
+    // Another file of the id (sent again elsewhere) is a change even at the same version: a
+    // file's versions start over.
     const sameContent = file.md5 !== undefined && file.md5 === state.remoteMd5
-    const remoteChanged = file.version !== state.remoteVersion && !sameContent
+    const unseen = file.fileId !== state.remoteFileId || file.version !== state.remoteVersion
+    const remoteChanged = unseen && !sameContent
     if (remoteChanged && state.dirty) {
       return [{ kind: 'conflict', id, fileId: file.fileId, version: file.version }]
     }

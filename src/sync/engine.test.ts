@@ -920,6 +920,61 @@ describe('remove from and send to the Drive', () => {
     expect((await b.getSyncStates()).c1?.localOnly).toBe(true)
   })
 
+  /** After A sent c1 again and edited it: one c1 on the Drive, no copy, and B gets the edit. */
+  async function expectSentAgainCleanly(): Promise<void> {
+    await a.saveCollection(collection('c1', ['p1', 'p2'], { name: 'De A', updatedAt: 2000 }))
+    await engineFor(a, drive).run()
+    expect(status().state).toBe('idle')
+    expect((await a.listCollections()).map((c) => c.name).sort()).toEqual(['Colecao c2', 'De A'])
+    const files = filesOf(drive, 'collection').filter((f) => f.appProperties.collectionId === 'c1')
+    expect(files).toHaveLength(1)
+    expect(JSON.parse(await files[0]!.body.text())).toMatchObject({ name: 'De A' })
+    expect((await a.getSyncStates()).c1).toMatchObject({ dirty: false, remoteFileId: files[0]!.id })
+    // No removal record left behind (there may be no library file at all).
+    if (filesOf(drive, 'library').length > 0)
+      expect((await libraryOnDrive()).detached.collection).toEqual({})
+
+    await engineFor(b, drive).run()
+    expect(status().state).toBe('idle')
+    expect((await b.getCollection('c1'))?.name).toBe('De A')
+    expect((await b.getSyncStates()).c1?.localOnly).toBeUndefined()
+  }
+
+  it('A removes and sends again before any pass; an edit then goes up without a copy', async () => {
+    await bothSynced()
+    const c1File = collectionFile('c1')
+    await a.setLocalOnly('c1', true)
+    await a.setLocalOnly('c1', false)
+    await expectSentAgainCleanly()
+    expect(drive.files.get(c1File.id)?.trashed).toBe(false)
+  })
+
+  it('A sends again after a removal cut short before the trash; an edit goes up without a copy', async () => {
+    await bothSynced()
+    await a.setLocalOnly('c1', true)
+    await engineFor(a, failingOnce(drive, 'trash', new DriveError('offline', 'down'))).run()
+    expect((await libraryOnDrive()).detached.collection).toEqual({ c1: NOW })
+    await a.setLocalOnly('c1', false)
+    await expectSentAgainCleanly()
+  })
+
+  it('A sends again after a removal cut short after the trash; an edit goes up without a copy', async () => {
+    await bothSynced()
+    const c1File = collectionFile('c1')
+    await a.setLocalOnly('c1', true)
+    // The pass stops between the trash and forgetting the file here.
+    const cut: Store = {
+      ...a,
+      setSyncState: (id, patch) =>
+        'remoteFileId' in patch ? Promise.reject(new Error('cut')) : a.setSyncState(id, patch),
+    }
+    await engineFor(cut, drive).run()
+    expect(drive.files.get(c1File.id)?.trashed).toBe(true)
+    expect((await a.getSyncStates()).c1?.remoteFileId).toBe(c1File.id)
+    await a.setLocalOnly('c1', false)
+    await expectSentAgainCleanly()
+  })
+
   it('A sends again; it goes up, and B stays local-only with its own copy', async () => {
     await bothSynced()
     await a.setLocalOnly('c1', true)

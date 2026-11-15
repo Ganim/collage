@@ -98,6 +98,22 @@ describe('planCollections', () => {
     ).toEqual([{ kind: 'push', id: 'a' }])
   })
 
+  it('rule 5: a different file of the id, even at the same version, is a remote change', () => {
+    // Sent again from another device after its removal: a new file whose version starts over.
+    expect(
+      plan({
+        local: { a: { dirty: false, remoteFileId: 'f1', remoteVersion: '1', remoteMd5: 'm1' } },
+        remote: { a: { fileId: 'f2', version: '1', md5: 'm2' } },
+      }),
+    ).toEqual([{ kind: 'pull', id: 'a', fileId: 'f2', version: '1' }])
+    expect(
+      plan({
+        local: { a: { dirty: true, remoteFileId: 'f1', remoteVersion: '1', remoteMd5: 'm1' } },
+        remote: { a: { fileId: 'f2', version: '1', md5: 'm2' } },
+      }),
+    ).toEqual([{ kind: 'conflict', id: 'a', fileId: 'f2', version: '1' }])
+  })
+
   it('rule 5: both changed is a conflict', () => {
     expect(
       plan({
@@ -288,6 +304,30 @@ describe('planCollections', () => {
         { kind: 'push', id: 'a' },
         { kind: 'forgetDetached', id: 'a' },
       ])
+    })
+
+    it('a collection sent again before its removal ran pushes and forgets its detachment', () => {
+      const resent = { dirty: true, resent: true, remoteFileId: 'f1', remoteVersion: '1' }
+      // The removal was cut short before the trash: the file is still there.
+      expect(
+        plan({
+          local: { a: resent },
+          remote: { a: { fileId: 'f1', version: '1' } },
+          remoteDetached: { a: 10 },
+        }),
+      ).toEqual([
+        { kind: 'push', id: 'a' },
+        { kind: 'forgetDetached', id: 'a' },
+      ])
+      // Cut short after the trash: the file is gone, yet the collection is not made local-only.
+      expect(plan({ local: { a: resent }, remoteDetached: { a: 10 } })).toEqual([
+        { kind: 'push', id: 'a' },
+        { kind: 'forgetDetached', id: 'a' },
+      ])
+      // The removal never started: a plain push over the same file.
+      expect(plan({ local: { a: resent }, remote: { a: { fileId: 'f1', version: '1' } } })).toEqual(
+        [{ kind: 'push', id: 'a' }],
+      )
     })
 
     it('a detachment record does not stop a pull of a file that exists', () => {
