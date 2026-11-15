@@ -2,6 +2,7 @@ import { FolderInput, Plus } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { getEditorState, ImportNotOpenedError, useEditor } from '../../state/editor'
 import { StorageFullError, type CollectionSummary } from '../../storage/store'
+import { setCollectionLocalOnly } from '../../sync/localOnly'
 import { useSyncStatus } from '../../sync/status'
 import { t, type MessageKey } from '../i18n'
 import { EmptyCollectionsIllustration } from '../illustrations'
@@ -212,6 +213,9 @@ export function CollectionsTab({ onOpened, onOpen }: CollectionsTabProps) {
               void change(() => duplicateCollection(item.id), 'card.duplicateFailed')
             }
             onDelete={() => void change(() => deleteCollection(item.id), 'card.deleteFailed')}
+            onSetLocalOnly={(localOnly) =>
+              void change(() => setCollectionLocalOnly(item.id, localOnly), 'drive.failed')
+            }
           />
         ))}
       </ul>

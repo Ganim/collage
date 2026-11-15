@@ -1,10 +1,21 @@
-import { ChevronLeft, Copy, CopyPlus, Pencil, Share, Trash2 } from 'lucide-react'
+import {
+  ChevronLeft,
+  CloudOff,
+  CloudUpload,
+  Copy,
+  CopyPlus,
+  Pencil,
+  Share,
+  Trash2,
+} from 'lucide-react'
 import { useRef, useState } from 'react'
 import { useEditor } from '../../state/editor'
 import { ConfirmSheet } from '../components/ConfirmSheet'
 import { Kebab, type KebabItem } from '../components/Kebab'
 import { RenameSheet } from '../components/RenameSheet'
 import { t, type MessageKey } from '../i18n'
+import { setCollectionLocalOnly, useDriveOn, useStoredLocalOnly } from '../../sync/localOnly'
+import { useSyncStatus } from '../../sync/status'
 import { navigate } from '../router'
 
 interface HeaderProps {
@@ -29,11 +40,17 @@ export function Header({ onLeave, onNotice }: HeaderProps) {
   const deleteCollection = useEditor((s) => s.deleteCollection)
   const duplicateActive = useEditor((s) => s.duplicateActive)
   const removeActive = useEditor((s) => s.removeActive)
-  const [sheet, setSheet] = useState<'rename' | 'delete' | 'removeFrame' | null>(null)
+  const [sheet, setSheet] = useState<'rename' | 'delete' | 'removeFrame' | 'removeDrive' | null>(
+    null,
+  )
   /** Back, duplicate and delete run one at a time. */
   const [busy, setBusy] = useState(false)
   // Two taps before the next render would both see busy as false.
   const running = useRef(false)
+  const driveOn = useDriveOn()
+  const changeCount = useSyncStatus((s) => s.changeCount)
+  const [driveChanges, setDriveChanges] = useState(0)
+  const localOnly = useStoredLocalOnly(id, changeCount + driveChanges)
   const shownName = name || t('library.unnamed')
 
   const run = async (action: () => Promise<void>) => {
@@ -59,6 +76,18 @@ export function Header({ onLeave, onNotice }: HeaderProps) {
       }
     })
 
+  const setLocalOnly = (value: boolean) =>
+    run(async () => {
+      try {
+        await setCollectionLocalOnly(id, value)
+        // No sync change tells the header about this one: read it again.
+        setDriveChanges((n) => n + 1)
+      } catch (e) {
+        console.error(e)
+        onNotice(t('drive.failed'))
+      }
+    })
+
   const back = () =>
     run(async () => {
       if (!(await onLeave(closeCollection))) onNotice(t('header.backFailed'))
@@ -72,6 +101,23 @@ export function Header({ onLeave, onNotice }: HeaderProps) {
       onClick: () => void duplicate(),
       disabled: busy,
     },
+    ...(driveOn
+      ? [
+          localOnly
+            ? {
+                icon: CloudUpload,
+                label: t('drive.send'),
+                onClick: () => void setLocalOnly(false),
+                disabled: busy,
+              }
+            : {
+                icon: CloudOff,
+                label: t('drive.remove'),
+                onClick: () => setSheet('removeDrive'),
+                disabled: busy,
+              },
+        ]
+      : []),
     {
       icon: Trash2,
       label: t('header.collectionDelete'),
@@ -150,6 +196,15 @@ export function Header({ onLeave, onNotice }: HeaderProps) {
               await onLeave(() => deleteCollection(id), 'card.deleteFailed')
             })
           }
+          onClose={() => setSheet(null)}
+        />
+      )}
+      {sheet === 'removeDrive' && (
+        <ConfirmSheet
+          title={t('drive.removeTitle', { name: shownName })}
+          body={t('drive.removeBody')}
+          confirmLabel={t('drive.removeConfirm')}
+          onConfirm={() => void setLocalOnly(true)}
           onClose={() => setSheet(null)}
         />
       )}

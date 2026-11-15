@@ -579,6 +579,17 @@ a.menu-row {
   overflow: hidden;
 }
 
+.collection-drive-mark {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  box-sizing: content-box;
+  padding: 3px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--plum-500);
+}
+
 .collection-cover img {
   display: block;
   width: 100%;

@@ -168,3 +168,61 @@ test.describe('an account without the Drive', () => {
     ).toBeVisible()
   })
 })
+
+test('removing a collection from the Drive keeps it on both devices, and sending it back restores it', async ({
+  playwright,
+}, testInfo) => {
+  const drive = createFakeDriveState()
+  const a = await newDevice(playwright, testInfo, 'a', { drive: true })
+  const b = await newDevice(playwright, testInfo, 'b', { drive: true })
+  await routeFakeDrive(a.context, drive)
+  await routeFakeDrive(b.context, drive)
+
+  try {
+    await a.page.goto('/#/colecoes')
+    await button(a.page, 'Nova coleção').click()
+    await expect(a.page.getByRole('heading', { name: 'Seu primeiro frame' })).toBeVisible()
+    await frameWithPhoto(a.page)
+    await nameOpenCollection(a.page, 'Viagem')
+    await goHome(a.page)
+    await syncNow(a.page)
+    await expect.poll(() => namesOnDrive(drive)).toEqual(['Viagem'])
+    await expect(a.page.getByRole('img', { name: 'Na sua conta' })).toBeVisible()
+
+    await b.page.goto('/#/colecoes')
+    await expect(button(b.page, 'Viagem')).toBeVisible()
+    await expect(b.page.getByRole('img', { name: 'Na sua conta' })).toBeVisible()
+
+    // A takes it off the Drive: it stays on A, and B marks it as only on that device.
+    await button(a.page, 'Opções de Viagem').click()
+    await button(a.page, 'Remover do Drive').click()
+    await a.page
+      .getByRole('dialog', { name: 'Remover Viagem do Drive?' })
+      .getByRole('button', { name: 'Remover do Drive', exact: true })
+      .click()
+    await expect(a.page.getByRole('img', { name: 'Só neste aparelho' })).toBeVisible()
+    await expect(
+      a.page.locator('.collection-details', { hasText: 'Só neste aparelho' }),
+    ).toBeVisible()
+    await syncNow(a.page)
+    await expect.poll(() => namesOnDrive(drive)).toEqual([])
+    await expect(button(a.page, 'Viagem')).toBeVisible()
+
+    await syncNow(b.page)
+    await expect(button(b.page, 'Viagem')).toBeVisible()
+    await expect(b.page.getByRole('img', { name: 'Só neste aparelho' })).toBeVisible()
+    await expect(
+      b.page.locator('.collection-details', { hasText: 'Só neste aparelho' }),
+    ).toBeVisible()
+
+    // A sends it back: the Drive has the file again.
+    await button(a.page, 'Opções de Viagem').click()
+    await button(a.page, 'Enviar para o Drive').click()
+    await expect(a.page.getByRole('img', { name: 'Na sua conta' })).toBeVisible()
+    await syncNow(a.page)
+    await expect.poll(() => namesOnDrive(drive)).toEqual(['Viagem'])
+  } finally {
+    await a.context.close()
+    await b.context.close()
+  }
+})
