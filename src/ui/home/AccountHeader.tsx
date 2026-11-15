@@ -1,10 +1,14 @@
-import { Heart, LogOut, RefreshCw } from 'lucide-react'
+import { CloudUpload, Heart, LogOut, RefreshCw } from 'lucide-react'
 import { useState } from 'react'
-import type { Account } from '../account/account'
+import { useSyncStatus } from '../../sync/status'
+import { syncNow } from '../../sync/useSync'
+import { signIn, type Account } from '../account/account'
 import { BottomSheet } from '../components/BottomSheet'
 import { ConfirmSheet } from '../components/ConfirmSheet'
 import { refreshApp } from '../account/refreshApp'
 import { t } from '../i18n'
+import { SyncBadge, useSyncSentence } from './SyncBadge'
+import { needsConnect } from './syncText'
 
 /** The account's photo, or its first letter on a fuchsia disc when there is none (or it fails). */
 function Avatar({ account, size }: { account: Account; size: 'small' | 'large' }) {
@@ -34,6 +38,9 @@ interface AccountHeaderProps {
 export function AccountHeader({ account, onSignOut }: AccountHeaderProps) {
   const [sheet, setSheet] = useState<'account' | 'signOut' | null>(null)
   const [refreshing, setRefreshing] = useState(false)
+  const connect = useSyncStatus(needsConnect)
+  const syncing = useSyncStatus((s) => s.state === 'syncing')
+  const sentence = useSyncSentence()
 
   return (
     <header className="account-header">
@@ -41,14 +48,17 @@ export function AccountHeader({ account, onSignOut }: AccountHeaderProps) {
         {t('app.name')}
         <Heart size={16} aria-hidden="true" />
       </h1>
-      <button
-        type="button"
-        className="avatar-button"
-        aria-label={t('account.open')}
-        onClick={() => setSheet('account')}
-      >
-        <Avatar account={account} size="small" />
-      </button>
+      <div className="account-actions">
+        <SyncBadge onOpen={() => setSheet('account')} />
+        <button
+          type="button"
+          className="avatar-button"
+          aria-label={t('account.open')}
+          onClick={() => setSheet('account')}
+        >
+          <Avatar account={account} size="small" />
+        </button>
+      </div>
 
       {sheet === 'account' && (
         <BottomSheet title={t('account.title')} onClose={() => setSheet(null)}>
@@ -60,6 +70,28 @@ export function AccountHeader({ account, onSignOut }: AccountHeaderProps) {
             </div>
           </div>
           <ul className="menu-list">
+            <li>
+              {connect ? (
+                <button type="button" className="menu-row" onClick={signIn}>
+                  <CloudUpload size={22} />
+                  {t('sync.connect')}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="menu-row"
+                  aria-describedby="sync-status-line"
+                  disabled={syncing}
+                  onClick={() => void syncNow()}
+                >
+                  <RefreshCw size={22} className={syncing ? 'spinning' : undefined} />
+                  {t('sync.now')}
+                </button>
+              )}
+              <p className="menu-row-status" id="sync-status-line" role="status">
+                {sentence}
+              </p>
+            </li>
             <li>
               <button
                 type="button"

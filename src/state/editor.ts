@@ -130,6 +130,12 @@ export interface EditorState {
   renameFolder(id: string, name: string): Promise<void>
   /** Its sizes go back to "Meus tamanhos". */
   deleteFolder(id: string): Promise<void>
+  /**
+   * After the sync changed the store: reads sizes and folders again and, when the open collection
+   * is among `changedIds` and has no unsaved edit, reads it again keeping the active frame if it
+   * still exists. A deleted one is closed (the app then shows the list with its notice).
+   */
+  reloadFromStore(changedIds: string[]): Promise<void>
 }
 
 function emptyCollection(takenNames: string[]): Collection {
@@ -667,6 +673,32 @@ export function createEditorStore(
         await store.deleteSize(id)
         set((s) => ({ savedSizes: s.savedSizes.filter((x) => x.id !== id) }))
       },
+
+      async reloadFromStore(changedIds) {
+        const [sizes, folders] = await Promise.all([store.listSizes(), store.listFolders()])
+        set({ savedSizes: sizes, folders })
+        const { collection, saveStatus } = get()
+        if (!changedIds.includes(collection.id)) return
+        // An edit not yet on disk wins: once saved it is dirty, and the next pass sorts it out.
+        if (revision !== queuedRevision || saveStatus !== 'saved') return
+        const token = loadToken
+        const rev = revision
+        const c = await store.getCollection(collection.id)
+        if (token !== loadToken || rev !== revision) return
+        if (!c) {
+          await startDraft()
+          return
+        }
+        const photos = c.photoIds.length > 0 ? await store.getPhotosMeta(c.photoIds) : {}
+        if (token !== loadToken || rev !== revision) return
+        loading = true
+        try {
+          // commit keeps the active frame, selection and mode where they still exist.
+          commit({ collection: c, photos })
+        } finally {
+          loading = false
+        }
+      },
     }
   })
 
@@ -754,6 +786,11 @@ function getAppStore(): StoreApi<EditorState> {
     appStore = created
   }
   return appStore
+}
+
+/** The app's editor store itself, for code outside React that follows its changes (the sync). */
+export function appEditor(): StoreApi<EditorState> {
+  return getAppStore()
 }
 
 export function useEditor<T>(selector: (state: EditorState) => T): T {

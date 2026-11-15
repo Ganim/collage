@@ -347,6 +347,29 @@ h2 {
   fill: var(--fuchsia-600);
 }
 
+.account-actions {
+  display: flex;
+  align-items: center;
+}
+
+/* The sync cloud, left of the avatar. */
+.sync-badge {
+  display: grid;
+  place-items: center;
+  width: var(--touch);
+  height: var(--touch);
+  border-radius: 50%;
+  color: var(--plum-500);
+}
+
+/* The sync status, under "Sincronizar agora" in the account menu. */
+.menu-row-status {
+  margin: -10px 0 6px 36px;
+  color: var(--plum-500);
+  font-size: var(--text-sm);
+  line-height: 1.4;
+}
+
 .avatar-button {
   display: grid;
   place-items: center;

@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import 'fake-indexeddb/auto'
 import { App } from './App'
 
@@ -39,5 +39,25 @@ describe('App', () => {
     expect(await screen.findByText('Essa coleção não foi encontrada.')).toBeVisible()
     expect(location.hash).toBe('#/colecoes')
     expect(await screen.findByRole('button', { name: 'Nova coleção' })).toBeVisible()
+  })
+  it('without Drive access, the cloud says so and the menu offers to connect', async () => {
+    serveMe(200, {
+      id: 'u1',
+      email: 'teste@exemplo.com',
+      name: 'Conta',
+      picture: null,
+      drive: false,
+    })
+    render(<App />)
+    // jsdom has no modal dialogs.
+    HTMLDialogElement.prototype.showModal ??= function (this: HTMLDialogElement) {
+      this.open = true
+    }
+    const badge = await screen.findByRole('button', { name: 'Só neste aparelho' })
+    fireEvent.click(badge)
+    expect(
+      await screen.findByRole('button', { name: 'Conectar ao Google Drive para sincronizar' }),
+    ).toBeVisible()
+    expect(screen.queryByRole('button', { name: 'Sincronizar agora' })).toBeNull()
   })
 })

@@ -50,6 +50,13 @@ const LAST_COLLECTION_KEY = 'lastCollectionId'
 const OWNER_KEY = 'owner'
 const LIBRARY_DIRTY_KEY = 'libraryDirty'
 
+const RESERVED_KEYS = new Set([LAST_COLLECTION_KEY, OWNER_KEY, LIBRARY_DIRTY_KEY])
+
+/** Preferences share the meta store with the store's own bookkeeping, which they must not touch. */
+function checkPreferenceKey(key: string): void {
+  if (RESERVED_KEYS.has(key)) throw new Error(`Reserved meta key: ${key}`)
+}
+
 const tombstoneKey = (kind: Tombstone['kind'], id: string) => `${kind}:${id}`
 
 function isQuota(e: unknown): boolean {
@@ -411,6 +418,14 @@ export async function createIdbStore(
             await sync.put({ ownerId: owner.id, ownerEmail: owner.email, dirty: true }, id)
         }
       }),
+    async getMeta(key) {
+      checkPreferenceKey(key)
+      return (await db.get('meta', key)) as string | boolean | undefined
+    },
+    setMeta: async (key, value) => {
+      checkPreferenceKey(key)
+      await write(db, ['meta'], async (tx) => void (await tx.objectStore('meta').put(value, key)))
+    },
   }
 }
 

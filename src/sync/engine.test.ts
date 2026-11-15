@@ -427,6 +427,15 @@ describe('sync engine between two devices', () => {
     expect(status().changedIds).toEqual(['c1'])
   })
 
+  it('run passes its priority on to the photo downloads', async () => {
+    await a.importCollection([photo('p1')], collection('c1', ['p1'], { updatedAt: 2000 }))
+    await a.importCollection([photo('p2')], collection('c2', ['p2'], { updatedAt: 1000 }))
+    await engineFor(a, drive).run()
+    decoded.length = 0
+    await engineFor(b, drive).run(['c2'])
+    expect(decoded).toEqual(['p2.png', 'p1.png'])
+  })
+
   it('concurrent runs join the same pass', async () => {
     await a.saveCollection(collection('c1', []))
     const engine = engineFor(a, drive)

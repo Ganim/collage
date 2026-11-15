@@ -260,6 +260,21 @@ const BIA = { id: 'bia', email: 'bia@example.com' }
 
 const ids = async (s: Store = store) => (await s.listCollections()).map((c) => c.id).sort()
 
+describe('meta preferences', () => {
+  it('stores and reads back a preference, undefined when never set', async () => {
+    expect(await store.getMeta('otherAccountAnswer:a:b')).toBeUndefined()
+    await store.setMeta('otherAccountAnswer:a:b', 'keep')
+    expect(await store.getMeta('otherAccountAnswer:a:b')).toBe('keep')
+    await store.setMeta('flag', true)
+    expect(await store.getMeta('flag')).toBe(true)
+  })
+
+  it("refuses the store's own keys", async () => {
+    await expect(store.setMeta('owner', 'x')).rejects.toThrow()
+    await expect(store.getMeta('owner')).rejects.toThrow()
+  })
+})
+
 describe('sync bookkeeping', () => {
   it('opens a v2 database with data at v3, keeping everything unowned', async () => {
     const name = 't-v2'

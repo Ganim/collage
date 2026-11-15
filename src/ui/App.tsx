@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useState } from 'react'
 import { getEditorState, useEditor } from '../state/editor'
 import { requestPersistentStorage } from '../storage/persist'
+import { useSync } from '../sync/useSync'
 import type { Account } from './account/account'
 import { useAccount } from './account/useAccount'
 import { BuildScreen } from './build/BuildScreen'
 import { HomeScreen } from './home/HomeScreen'
+import { OtherAccountSheet } from './home/OtherAccountSheet'
 import { t, type MessageKey } from './i18n'
 import { InstallHint } from './install/InstallHint'
 import { leaveTo, useRoute, type Route } from './router'
@@ -37,6 +39,7 @@ function Workspace({ account, onSignOut }: { account: Account; onSignOut: () => 
   const currentId = useEditor((s) => s.collection.id)
   const storageBlocked = useEditor((s) => s.storageBlocked)
   const [route, navigate] = useRoute()
+  useSync(account)
   // Until sizes and folders are in, the screens would flash empty on every visit.
   const [ready, setReady] = useState(false)
   /** The collection the route names, once it was opened in the editor. */
@@ -224,6 +227,7 @@ function Workspace({ account, onSignOut }: { account: Account; onSignOut: () => 
       )}
       {screen}
       {ready && <InstallHint />}
+      {ready && <OtherAccountSheet account={account} />}
     </main>
   )
 }

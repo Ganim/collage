@@ -2,6 +2,7 @@ import { FolderInput, Plus } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { getEditorState, ImportNotOpenedError, useEditor } from '../../state/editor'
 import { StorageFullError, type CollectionSummary } from '../../storage/store'
+import { useSyncStatus } from '../../sync/status'
 import { t, type MessageKey } from '../i18n'
 import { EmptyCollectionsIllustration } from '../illustrations'
 import { CollectionCard } from './CollectionCard'
@@ -26,6 +27,8 @@ export function CollectionsTab({ onOpened, onOpen }: CollectionsTabProps) {
   const [listFailed, setListFailed] = useState(false)
   const [error, setError] = useState<MessageKey | null>(null)
   const [busy, setBusy] = useState(false)
+  // Read again whenever the sync changed what is stored.
+  const changeCount = useSyncStatus((s) => s.changeCount)
 
   const refresh = useCallback(async () => {
     try {
@@ -50,7 +53,7 @@ export function CollectionsTab({ onOpened, onOpen }: CollectionsTabProps) {
     return () => {
       current = false
     }
-  }, [listCollections])
+  }, [listCollections, changeCount])
 
   /** Runs one action at a time; a failure becomes the message on screen. */
   const run = async (action: () => Promise<void>, failure: (e: unknown) => MessageKey) => {

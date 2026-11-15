@@ -254,6 +254,26 @@ export const ptBR = {
   'print.saveFailed': 'Não foi possível salvar o PDF. Tente de novo.',
   'print.defaultFileName': 'Colagem',
   'sync.conflictSuffix': ' (cópia de outro aparelho)',
+  'sync.now': 'Sincronizar agora',
+  'sync.syncing': 'Sincronizando…',
+  'sync.synced': 'Sincronizado {when}',
+  'sync.never': 'Ainda não sincronizado',
+  'sync.offline': 'Sem internet: sincroniza quando voltar',
+  'sync.localOnly': 'Só neste aparelho',
+  'sync.full': 'O Google Drive está cheio. Libere espaço para sincronizar.',
+  'sync.revoked': 'O acesso ao Google Drive foi removido.',
+  'sync.failed': 'Não foi possível sincronizar agora. Tente de novo.',
+  'sync.connect': 'Conectar ao Google Drive para sincronizar',
+  'sync.photos': 'Baixando fotos ({done} de {total})',
+  'sync.when.now': 'agora',
+  'sync.when.minutes': 'há {n} min',
+  'sync.when.hours': 'há {n} h',
+  'sync.when.date': 'em {date}',
+  'sync.otherAccountTitle': 'Trabalhos de outra conta',
+  'sync.otherAccountBody':
+    'Este aparelho tem {count} trabalhos de {email}. Copiar para a conta {current}?',
+  'sync.otherAccountYes': 'Copiar para esta conta',
+  'sync.otherAccountNo': 'Deixar só neste aparelho',
 } as const
 
 export type MessageKey = keyof typeof ptBR

@@ -18,8 +18,11 @@ import {
 import { useSyncStatus } from './status'
 
 export interface SyncEngine {
-  /** One full pass; concurrent calls join the running pass. Never rejects: failures go to the status. */
-  run(): Promise<void>
+  /**
+   * One full pass; concurrent calls join the running pass (and its priority). Never rejects:
+   * failures go to the status. `priority` orders the photo downloads, as in downloadMissingPhotos.
+   */
+  run(priority?: string[]): Promise<void>
   /**
    * Downloads the photos that local collections use and this device lacks. `priority` holds photo
    * ids or collection ids (meaning their photos), fetched first in that order.
@@ -357,7 +360,7 @@ export function createSyncEngine({
     return next
   }
 
-  async function pass(): Promise<void> {
+  async function pass(priority: string[]): Promise<void> {
     try {
       const owner = await store.getOwner()
       if (!owner) {
@@ -372,7 +375,7 @@ export function createSyncEngine({
       } finally {
         publish(changes.ids, changes.library)
       }
-      await queuePhotos(listing, [])
+      await queuePhotos(listing, priority)
       setStatus({ state: 'idle', error: undefined, lastSyncedAt: now(), photos: undefined })
     } catch (e) {
       setStatus({ ...failureStatus(e), photos: undefined })
@@ -380,8 +383,8 @@ export function createSyncEngine({
   }
 
   return {
-    run() {
-      running ??= pass().finally(() => {
+    run(priority = []) {
+      running ??= pass(priority).finally(() => {
         running = null
       })
       return running

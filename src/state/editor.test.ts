@@ -945,3 +945,79 @@ describe('frames in bulk', () => {
     expect(editor.getState().activeFrameId).toBeNull()
   })
 })
+
+describe('reloadFromStore', () => {
+  /** An open, saved collection with two frames, the second one active. */
+  async function opened() {
+    const editor = await setup()
+    editor.getState().addFrame({ widthMm: 50, heightMm: 50 })
+    await editor.getState().flush()
+    const [first, second] = editor.getState().collection.frames
+    editor.getState().setActive(second!.id)
+    return { editor, first: first!, second: second! }
+  }
+
+  /** What the sync writes when it pulls a newer version from the Drive. */
+  const pull = async (c: Collection) => {
+    await store.setSyncState(c.id, { dirty: false })
+    expect(await store.putRemoteCollection(c, { dirty: false })).toBe(true)
+  }
+
+  it('reads the open collection again and keeps the active frame', async () => {
+    const { editor, second } = await opened()
+    const c = editor.getState().collection
+    await pull({ ...c, name: 'From the other device', updatedAt: c.updatedAt + 1 })
+    await editor.getState().reloadFromStore([c.id])
+    expect(editor.getState().collection.name).toBe('From the other device')
+    expect(editor.getState().activeFrameId).toBe(second.id)
+    expect(editor.getState().saveStatus).toBe('saved')
+    // Reading it is not an edit: nothing is saved back.
+    const save = vi.spyOn(store, 'saveCollection')
+    await advance(1000)
+    expect(save).not.toHaveBeenCalled()
+  })
+
+  it('falls back to the first frame when the active one is gone', async () => {
+    const { editor, first, second } = await opened()
+    const c = editor.getState().collection
+    await pull({ ...c, frames: c.frames.filter((f) => f.id !== second.id) })
+    await editor.getState().reloadFromStore([c.id])
+    expect(editor.getState().activeFrameId).toBe(first.id)
+  })
+
+  it('leaves an open collection with unsaved edits alone', async () => {
+    const { editor } = await opened()
+    const c = editor.getState().collection
+    editor.getState().renameCollection('Mine')
+    await pull({ ...c, name: 'Theirs' })
+    await editor.getState().reloadFromStore([c.id])
+    expect(editor.getState().collection.name).toBe('Mine')
+  })
+
+  it('does nothing to the open collection when it did not change', async () => {
+    const { editor } = await opened()
+    const before = editor.getState().collection
+    await editor.getState().reloadFromStore(['another'])
+    expect(editor.getState().collection).toBe(before)
+  })
+
+  it('closes the open collection when it was deleted', async () => {
+    const { editor } = await opened()
+    const id = editor.getState().collection.id
+    await store.removeLocalCollection(id)
+    await editor.getState().reloadFromStore([id])
+    expect(editor.getState().collection.id).not.toBe(id)
+    expect(editor.getState().collection.frames).toEqual([])
+  })
+
+  it('reads sizes and folders again', async () => {
+    const editor = await setup()
+    await store.putRemoteLibrary(
+      [{ id: 's1', name: '3x4', widthMm: 30, heightMm: 40 }],
+      [{ id: 'f1', name: 'Pasta', createdAt: 1 }],
+    )
+    await editor.getState().reloadFromStore([])
+    expect(editor.getState().savedSizes.map((s) => s.id)).toEqual(['s1'])
+    expect(editor.getState().folders.map((f) => f.id)).toEqual(['f1'])
+  })
+})

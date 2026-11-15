@@ -134,6 +134,9 @@ export interface Store {
    * upload as new files to the current account. Rejects when there is no current owner.
    */
   claimCollections(fromOwnerId: string): Promise<void>
+  /** A small app preference kept on the device. The store's own keys are refused. */
+  getMeta(key: string): Promise<string | boolean | undefined>
+  setMeta(key: string, value: string | boolean): Promise<void>
 }
 
 export class StorageFullError extends Error {
