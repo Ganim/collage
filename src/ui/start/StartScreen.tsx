@@ -109,6 +109,9 @@ export function StartScreen() {
           <Lock size={14} aria-hidden="true" />
           {t('start.privacy')}
         </p>
+        <a className="start-privacy-link" href="/privacidade.html" target="_blank" rel="noopener">
+          {t('privacy.link')}
+        </a>
       </div>
     </div>
   )

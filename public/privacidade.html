@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#c026d3" />
+    <title>Privacidade · Collage</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <style>
+      :root {
+        --fuchsia-50: #fdf4ff;
+        --fuchsia-200: #f5d0fe;
+        --fuchsia-600: #c026d3;
+        --fuchsia-700: #a21caf;
+        --plum-900: #3b0a3f;
+        --plum-500: #7a4a7e;
+        font-family:
+          'Nunito Variable',
+          Nunito,
+          -apple-system,
+          BlinkMacSystemFont,
+          'Segoe UI',
+          Roboto,
+          sans-serif;
+        font-weight: 500;
+        color: var(--plum-900);
+        -webkit-text-size-adjust: 100%;
+      }
+      html,
+      body {
+        margin: 0;
+        background-color: var(--fuchsia-50);
+        background-image: radial-gradient(
+          95% 60% at 0% 0%,
+          var(--fuchsia-200) 0%,
+          rgba(245, 208, 254, 0) 100%
+        );
+        background-attachment: fixed;
+      }
+      main {
+        max-width: 640px;
+        margin: 0 auto;
+        padding: max(24px, env(safe-area-inset-top)) 16px max(32px, env(safe-area-inset-bottom));
+        line-height: 1.55;
+      }
+      h1 {
+        margin: 8px 0 4px;
+        color: var(--fuchsia-600);
+        font-size: 30px;
+        font-weight: 750;
+      }
+      h2 {
+        margin: 28px 0 6px;
+        font-size: 19px;
+        font-weight: 750;
+      }
+      p,
+      li {
+        font-size: 16px;
+      }
+      ul {
+        padding-left: 20px;
+      }
+      .card {
+        margin-top: 16px;
+        padding: 4px 18px 14px;
+        border-radius: 20px;
+        background: rgba(255, 255, 255, 0.7);
+        box-shadow: 0 8px 24px rgba(59, 10, 63, 0.08);
+      }
+      .lead {
+        color: var(--plum-500);
+      }
+      a {
+        color: var(--fuchsia-700);
+        font-weight: 700;
+      }
+      .back {
+        display: inline-block;
+        margin-top: 24px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Privacidade</h1>
+      <p class="lead">
+        O Collage monta suas fotos no tamanho certo para imprimir. Aqui está, sem letras miúdas,
+        onde ficam seus dados.
+      </p>
+
+      <section class="card">
+        <h2>No seu aparelho</h2>
+        <p>
+          Suas coleções, as fotos que você escolheu, os tamanhos e as pastas ficam guardados no
+          navegador do seu aparelho. É assim que o app funciona mesmo sem internet. O PDF também é
+          feito ali mesmo, no aparelho.
+        </p>
+      </section>
+
+      <section class="card">
+        <h2>No seu Google Drive</h2>
+        <p>
+          Para você ver os mesmos trabalhos em outro aparelho, o Collage guarda uma cópia numa pasta
+          chamada <strong>Collage</strong>, no Google Drive da sua própria conta:
+        </p>
+        <ul>
+          <li>as fotos originais que você colocou nas coleções;</li>
+          <li>cada coleção, com seus frames e ajustes;</li>
+          <li>seus tamanhos e pastas.</li>
+        </ul>
+        <p>
+          O app só enxerga os arquivos que ele mesmo criou. Ele não lê o resto do seu Drive. Quando
+          você exclui algo no app, o arquivo vai para a lixeira do Drive, de onde você pode
+          recuperar ou apagar de vez.
+        </p>
+      </section>
+
+      <section class="card">
+        <h2>No serviço do Collage</h2>
+        <p>
+          O serviço do Collage só cuida da entrada com Google. Ele guarda a autorização que você
+          deu, num cookie cifrado no seu próprio aparelho, e não mantém um banco de dados sobre
+          você. Suas fotos e coleções não passam por ele: vão direto do seu aparelho para o seu
+          Drive.
+        </p>
+      </section>
+
+      <section class="card">
+        <h2>Como desconectar</h2>
+        <p>
+          Para tirar o acesso do Collage ao seu Drive, abra
+          <a href="https://myaccount.google.com/permissions" rel="noopener">myaccount.google.com</a
+          >, vá em <strong>Segurança</strong>, depois em <strong>Apps com acesso</strong> à sua
+          conta, e remova o Collage. A pasta Collage continua no seu Drive até você apagá-la.
+        </p>
+        <p>Sair da conta no app não apaga nada: suas coleções continuam no aparelho e no Drive.</p>
+      </section>
+
+      <a class="back" href="/">Voltar para o Collage</a>
+    </main>
+  </body>
+</html>

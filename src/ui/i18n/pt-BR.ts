@@ -11,7 +11,7 @@ export const ptBR = {
   'start.dots': 'Passos',
   'start.goTo': 'Ir para o passo {position}',
   'start.signIn': 'Entrar com Google',
-  'start.privacy': 'Suas fotos ficam no seu aparelho.',
+  'start.privacy': 'Suas fotos ficam no seu aparelho e no seu Google Drive.',
   'start.failed': 'Não foi possível entrar. Tente de novo.',
   'collection.defaultName': 'Fotos de {day} de {month}',
   'collection.copyName': '{name} (cópia)',
@@ -274,6 +274,7 @@ export const ptBR = {
     'Este aparelho tem {count} trabalhos de {email}. Copiar para a conta {current}?',
   'sync.otherAccountYes': 'Copiar para esta conta',
   'sync.otherAccountNo': 'Deixar só neste aparelho',
+  'privacy.link': 'Privacidade',
 } as const
 
 export type MessageKey = keyof typeof ptBR

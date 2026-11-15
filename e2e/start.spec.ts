@@ -17,7 +17,13 @@ test.describe('without an account', () => {
       await expect(page.getByRole('heading', { name: step })).toBeAttached()
     }
     await expect(signIn(page)).toBeVisible()
-    await expect(page.getByText('Suas fotos ficam no seu aparelho.')).toBeVisible()
+    await expect(
+      page.getByText('Suas fotos ficam no seu aparelho e no seu Google Drive.'),
+    ).toBeVisible()
+    await expect(page.getByRole('link', { name: 'Privacidade', exact: true })).toHaveAttribute(
+      'href',
+      '/privacidade.html',
+    )
     await expect(page.getByText('Não foi possível entrar. Tente de novo.')).toHaveCount(0)
   })
 

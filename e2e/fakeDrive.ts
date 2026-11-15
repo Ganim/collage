@@ -91,6 +91,19 @@ export async function routeFakeDrive(
     return file
   }
 
+  // Playwright's WebKit hands a route no body for a request whose body is a Blob, and uploads
+  // send Blobs. Only for the fake Drive, the page sends those bytes as an ArrayBuffer instead.
+  await context.addInitScript(() => {
+    const original = window.fetch.bind(window)
+    window.fetch = async (input, init) => {
+      const url = input instanceof Request ? input.url : String(input)
+      if (url.startsWith('https://www.googleapis.com/') && init?.body instanceof Blob) {
+        init = { ...init, body: await init.body.arrayBuffer() }
+      }
+      return original(input, init)
+    }
+  })
+
   await context.route('**/api/auth/drive-token', (route) =>
     route.fulfill({ status: 200, json: { accessToken: 'fake', expiresIn: 3600 } }),
   )

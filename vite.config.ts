@@ -31,7 +31,8 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,wasm,png,svg,woff2}'],
-        navigateFallbackDenylist: [/^\/api\//],
+        // The privacy page is a page of its own, never the app's index.html.
+        navigateFallbackDenylist: [/^\/api\//, /^\/privacidade\.html$/],
       },
     }),
   ],

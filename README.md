@@ -4,7 +4,11 @@ Collage is a free, open source, mobile-first web app for laying out photos on a 
 print at exact physical sizes. Pick your photos, set the size each one should have on paper, and
 Collage arranges them to fit the page.
 
-It is a static site: everything runs in your browser and your photos never leave your device.
+Everything runs in your browser: the layout and the PDF are made on your device. When you sign
+in with Google, Collage also keeps a copy of your collections and their photos in a `Collage`
+folder in your own Google Drive, so the same work shows up on your other devices. The sign-in
+service only holds the authorization, in an encrypted cookie on your device; photos never pass
+through it. See the [privacy page](https://collage.guilhermeganim.com/privacidade.html).
 
 Live at https://collage.guilhermeganim.com/
 

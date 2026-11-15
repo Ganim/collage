@@ -6,6 +6,8 @@ import {
   type Download,
   type Locator,
   type Page,
+  type PlaywrightWorkerArgs,
+  type TestInfo,
 } from '@playwright/test'
 
 const { viewport, userAgent, deviceScaleFactor, isMobile, hasTouch } = devices['iPhone 15 Pro Max']!
@@ -20,22 +22,8 @@ export const test = base.extend<{ installHint: boolean; loggedIn: boolean }>({
   // `vite preview` has no sign-in service: the account comes from here.
   loggedIn: [true, { option: true }],
   context: async ({ playwright, baseURL, installHint, loggedIn }, provide, testInfo) => {
-    const context = await playwright.webkit.launchPersistentContext(
-      testInfo.outputPath('profile'),
-      {
-        baseURL,
-        viewport,
-        userAgent,
-        deviceScaleFactor,
-        isMobile,
-        hasTouch,
-      },
-    )
-    if (!installHint) {
-      await context.addInitScript(() =>
-        localStorage.setItem('collage.installHintDismissed', String(Date.now())),
-      )
-    }
+    const context = await launchDevice(playwright, baseURL, testInfo.outputPath('profile'))
+    if (!installHint) await skipInstallHint(context)
     await serveAccount(context, loggedIn)
     await provide(context)
     await context.close()
@@ -44,6 +32,47 @@ export const test = base.extend<{ installHint: boolean; loggedIn: boolean }>({
     await provide(context.pages()[0] ?? (await context.newPage()))
   },
 })
+
+function launchDevice(
+  playwright: PlaywrightWorkerArgs['playwright'],
+  baseURL: string | undefined,
+  profile: string,
+): Promise<BrowserContext> {
+  return playwright.webkit.launchPersistentContext(profile, {
+    baseURL,
+    viewport,
+    userAgent,
+    deviceScaleFactor,
+    isMobile,
+    hasTouch,
+  })
+}
+
+async function skipInstallHint(context: BrowserContext): Promise<void> {
+  await context.addInitScript(() =>
+    localStorage.setItem('collage.installHintDismissed', String(Date.now())),
+  )
+}
+
+/**
+ * Another device signed in to the test account, with its own on-disk profile (and so its own
+ * IndexedDB). `drive` says whether the account granted the Drive. Close it at the end of the test.
+ */
+export async function newDevice(
+  playwright: PlaywrightWorkerArgs['playwright'],
+  testInfo: TestInfo,
+  name: string,
+  { drive }: { drive: boolean },
+): Promise<{ context: BrowserContext; page: Page }> {
+  const context = await launchDevice(
+    playwright,
+    testInfo.project.use.baseURL,
+    testInfo.outputPath(`profile-${name}`),
+  )
+  await skipInstallHint(context)
+  await serveAccount(context, true, { ...TEST_ACCOUNT, drive })
+  return { context, page: context.pages()[0] ?? (await context.newPage()) }
+}
 
 export const TEST_ACCOUNT = {
   id: 'test-user',
@@ -54,9 +83,13 @@ export const TEST_ACCOUNT = {
 }
 
 /** Answers the app's "who is signed in" question: the test account, or nobody (401). */
-export async function serveAccount(context: BrowserContext, loggedIn = true): Promise<void> {
+export async function serveAccount(
+  context: BrowserContext,
+  loggedIn = true,
+  account: typeof TEST_ACCOUNT = TEST_ACCOUNT,
+): Promise<void> {
   await context.route('**/api/auth/me', (route) =>
-    loggedIn ? route.fulfill({ status: 200, json: TEST_ACCOUNT }) : route.fulfill({ status: 401 }),
+    loggedIn ? route.fulfill({ status: 200, json: account }) : route.fulfill({ status: 401 }),
   )
 }
 

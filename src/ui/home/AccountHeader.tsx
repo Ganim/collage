@@ -1,4 +1,4 @@
-import { CloudUpload, Heart, LogOut, RefreshCw } from 'lucide-react'
+import { CloudUpload, Heart, LogOut, RefreshCw, ShieldCheck } from 'lucide-react'
 import { useState } from 'react'
 import { useSyncStatus } from '../../sync/status'
 import { syncNow } from '../../sync/useSync'
@@ -105,6 +105,12 @@ export function AccountHeader({ account, onSignOut }: AccountHeaderProps) {
                 <RefreshCw size={22} className={refreshing ? 'spinning' : undefined} />
                 {refreshing ? t('account.refreshing') : t('account.refresh')}
               </button>
+            </li>
+            <li>
+              <a className="menu-row" href="/privacidade.html" target="_blank" rel="noopener">
+                <ShieldCheck size={22} aria-hidden="true" />
+                {t('privacy.link')}
+              </a>
             </li>
             <li>
               <button type="button" className="menu-row" onClick={() => setSheet('signOut')}>
