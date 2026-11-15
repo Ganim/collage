@@ -260,6 +260,76 @@ const BIA = { id: 'bia', email: 'bia@example.com' }
 
 const ids = async (s: Store = store) => (await s.listCollections()).map((c) => c.id).sort()
 
+describe('saving against a base version', () => {
+  const SUFFIX = ' (cópia de outro aparelho)'
+  /** c1 as pulled from the Drive at version '1'. */
+  async function pulled() {
+    await store.setOwner({ id: 'ana', email: 'ana@example.com' })
+    const c = collection('c1', [])
+    await store.putRemoteCollection(c, {
+      ownerId: 'ana',
+      ownerEmail: 'ana@example.com',
+      remoteFileId: 'file1',
+      remoteVersion: '1',
+      dirty: false,
+    })
+    return c
+  }
+
+  it('saves plainly when the base is still the stored version', async () => {
+    const c = await pulled()
+    const outcome = await store.saveCollection(
+      { ...c, name: 'Mine', updatedAt: 2000 },
+      { base: { remoteVersion: '1', updatedAt: c.updatedAt } },
+    )
+    expect(outcome).toBe('saved')
+    expect(await ids()).toEqual(['c1'])
+    expect((await store.getSyncStates()).c1).toMatchObject({ dirty: true, remoteVersion: '1' })
+  })
+
+  it('saves plainly after this device uploaded its own version', async () => {
+    const c = await pulled()
+    await store.saveCollection({ ...c, updatedAt: 2000 })
+    await store.markPushed('c1', 2000, 'file1', '2')
+    const outcome = await store.saveCollection(
+      { ...c, name: 'Mine', updatedAt: 3000 },
+      { base: { remoteVersion: '1', updatedAt: 2000 } },
+    )
+    expect(outcome).toBe('saved')
+    expect(await ids()).toEqual(['c1'])
+  })
+
+  it('keeps a version pulled after the base as a copy and saves the edit over the original', async () => {
+    const c = await pulled()
+    await store.putRemoteCollection(
+      { ...c, name: 'Theirs', updatedAt: 1500 },
+      { ownerId: 'ana', remoteFileId: 'file1', remoteVersion: '2', dirty: false },
+    )
+    const outcome = await store.saveCollection(
+      { ...c, name: 'Mine', updatedAt: 2000 },
+      { base: { remoteVersion: '1', updatedAt: c.updatedAt } },
+    )
+    expect(outcome).toEqual({ conflictCopyId: expect.any(String) })
+    const copyId = (outcome as { conflictCopyId: string }).conflictCopyId
+    expect((await store.getCollection('c1'))?.name).toBe('Mine')
+    expect((await store.getCollection(copyId))?.name).toBe('Theirs' + SUFFIX)
+    const states = await store.getSyncStates()
+    expect(states.c1).toMatchObject({ dirty: true, remoteVersion: '2', remoteFileId: 'file1' })
+    expect(states[copyId]).toMatchObject({ dirty: true, ownerId: 'ana' })
+    expect(states[copyId]?.remoteFileId).toBeUndefined()
+  })
+
+  it('without a base saves as before', async () => {
+    const c = await pulled()
+    await store.putRemoteCollection(
+      { ...c, name: 'Theirs', updatedAt: 1500 },
+      { ownerId: 'ana', remoteFileId: 'file1', remoteVersion: '2', dirty: false },
+    )
+    expect(await store.saveCollection({ ...c, name: 'Mine', updatedAt: 2000 })).toBe('saved')
+    expect(await ids()).toEqual(['c1'])
+  })
+})
+
 describe('meta preferences', () => {
   it('stores and reads back a preference, undefined when never set', async () => {
     expect(await store.getMeta('otherAccountAnswer:a:b')).toBeUndefined()

@@ -6,6 +6,7 @@ import { StorageFullError, type Store } from '../storage/store'
 import { defaultPaper } from '../core/presets'
 import { uniqueName } from '../core/names'
 import type { Collection, Photo } from '../core/types'
+import { useSyncStatus } from '../sync/status'
 import { createEditorStore, ImportNotOpenedError } from './editor'
 
 let n = 0
@@ -50,7 +51,7 @@ describe('saving around a collection change', () => {
     const save = store.saveCollection.bind(store)
     const spy = vi.spyOn(store, 'saveCollection').mockImplementationOnce(async (c) => {
       await gate
-      await save(c)
+      return save(c)
     })
     const opening = editor.getState().openCollection(first)
     await vi.waitFor(() => expect(spy).toHaveBeenCalled())
@@ -349,7 +350,7 @@ describe('autosave', () => {
     vi.spyOn(store, 'saveCollection').mockImplementation(async (c) => {
       if (names.length === 0) await gate
       names.push(c.name)
-      await real(c)
+      return real(c)
     })
     editor.getState().renameCollection('primeira')
     await advance(500)
@@ -423,7 +424,7 @@ describe('never losing the latest edit', () => {
     vi.spyOn(store, 'saveCollection').mockImplementation(async (c) => {
       if (names.length === 0) await gate
       names.push(c.name)
-      await real(c)
+      return real(c)
     })
     editor.getState().renameCollection('primeira')
     await advance(500)
@@ -1019,5 +1020,80 @@ describe('reloadFromStore', () => {
     await editor.getState().reloadFromStore([])
     expect(editor.getState().savedSizes.map((s) => s.id)).toEqual(['s1'])
     expect(editor.getState().folders.map((f) => f.id)).toEqual(['f1'])
+  })
+})
+
+describe('an edit based on an older version', () => {
+  const SUFFIX = ' (cópia de outro aparelho)'
+  const remote = (version: string) => ({
+    ownerId: 'ana',
+    ownerEmail: 'ana@example.com',
+    remoteFileId: 'file1',
+    remoteVersion: version,
+    dirty: false,
+  })
+  const pulledCollection = (name: string, updatedAt: number): Collection => ({
+    schemaVersion: 1,
+    id: 'c1',
+    name,
+    photoIds: [],
+    frames: [{ id: 'f1', widthMm: 100, heightMm: 150, layers: [] }],
+    paper: defaultPaper(),
+    updatedAt,
+  })
+
+  /** c1 at Drive version '1', open in the editor. */
+  async function openPulled() {
+    await store.setOwner({ id: 'ana', email: 'ana@example.com' })
+    await store.putRemoteCollection(pulledCollection('Original', 1000), remote('1'))
+    const editor = createEditorStore(store)
+    await editor.getState().bootstrap()
+    expect(await editor.getState().openCollection('c1')).toBe(true)
+    return editor
+  }
+
+  const names = async () => (await store.listCollections()).map((c) => c.name).sort()
+
+  it('a pull that lands between the flush and the autosave is kept as a copy', async () => {
+    const editor = await openPulled()
+    await editor.getState().flush()
+    useSyncStatus.setState({ changeCount: 0, changedIds: [] })
+    editor.getState().renameCollection('Mine')
+    // The sync pulls the other device's edit: the store is clean, so it is written.
+    expect(await store.putRemoteCollection(pulledCollection('Theirs', 1500), remote('2'))).toBe(
+      true,
+    )
+    await editor.getState().reloadFromStore(['c1'])
+    expect(editor.getState().collection.name).toBe('Mine')
+    await advance(500)
+    expect(await names()).toEqual(['Mine', 'Theirs' + SUFFIX])
+    expect((await store.getSyncStates()).c1).toMatchObject({ dirty: true, remoteVersion: '2' })
+    const copy = (await store.listCollections()).find((c) => c.id !== 'c1')!
+    expect(useSyncStatus.getState()).toMatchObject({ changeCount: 1, changedIds: [copy.id] })
+    // The base moved on: the next edit is a plain save.
+    editor.getState().renameCollection('Mine again')
+    await advance(500)
+    expect(await names()).toEqual(['Mine again', 'Theirs' + SUFFIX])
+  })
+
+  it('after a reload the base is the pulled version', async () => {
+    const editor = await openPulled()
+    await store.putRemoteCollection(pulledCollection('Theirs', 1500), remote('2'))
+    await editor.getState().reloadFromStore(['c1'])
+    expect(editor.getState().collection.name).toBe('Theirs')
+    editor.getState().renameCollection('Mine')
+    await advance(500)
+    expect(await names()).toEqual(['Mine'])
+  })
+
+  it('an upload of its own does not make the next edit a conflict', async () => {
+    const editor = await openPulled()
+    editor.getState().renameCollection('Mine')
+    await advance(500)
+    const saved = await store.getCollection('c1')
+    await store.markPushed('c1', saved!.updatedAt, 'file1', '2')
+    editor.getState().renameCollection('Mine 2')
+    await advance(500)
+    expect(await names()).toEqual(['Mine 2'])
   })
 })

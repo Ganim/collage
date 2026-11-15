@@ -7,7 +7,9 @@ import {
   type StoreNames,
 } from 'idb'
 import type { Collection, Photo, SavedSize, SizeFolder } from '../core/types'
+import { t } from '../ui/i18n'
 import {
+  type SaveOutcome,
   StorageFullError,
   type Owner,
   type PhotoReader,
@@ -205,15 +207,36 @@ export async function createIdbStore(
       write(db, ['photos'], async (tx) => void (await tx.objectStore('photos').put(p))),
     getPhoto: (id) => db.get('photos', id),
     getPhotosMeta: (ids) => readPhotosMeta(db, ids),
-    saveCollection: (c) =>
-      write(db, ['collections', 'sync', 'meta'], (tx) =>
-        putChanged(
-          tx.objectStore('collections'),
-          tx.objectStore('sync'),
-          tx.objectStore('meta'),
-          c,
-        ),
-      ),
+    async saveCollection(c, options) {
+      let outcome: SaveOutcome = 'saved'
+      await write(db, ['collections', 'sync', 'meta'], async (tx) => {
+        outcome = 'saved'
+        const collections = tx.objectStore('collections')
+        const sync = tx.objectStore('sync')
+        const meta = tx.objectStore('meta')
+        const base = options?.base
+        if (base) {
+          const [state, stored] = await Promise.all([sync.get(c.id), collections.get(c.id)])
+          if (
+            state &&
+            stored &&
+            state.remoteVersion !== base.remoteVersion &&
+            stored.updatedAt !== base.updatedAt
+          ) {
+            // A pulled version landed after this edit began: it is kept, not overwritten.
+            const copy: Collection = {
+              ...stored,
+              id: crypto.randomUUID(),
+              name: stored.name + t('sync.conflictSuffix'),
+            }
+            await putChanged(collections, sync, meta, copy)
+            outcome = { conflictCopyId: copy.id }
+          }
+        }
+        await putChanged(collections, sync, meta, c)
+      })
+      return outcome
+    },
     importCollection: (photos, collection) =>
       write(db, ['photos', 'collections', 'sync', 'meta'], async (tx) => {
         const photoStore = tx.objectStore('photos')

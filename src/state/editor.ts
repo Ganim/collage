@@ -30,7 +30,13 @@ import { importPhotos } from '../photos/import'
 import { exportBundle, importBundle } from '../storage/bundle'
 import { createIdbStore } from '../storage/indexeddb'
 import { reopeningStore } from '../storage/reopening'
-import { StorageFullError, type CollectionSummary, type Store } from '../storage/store'
+import {
+  StorageFullError,
+  type CollectionSummary,
+  type SaveBase,
+  type Store,
+} from '../storage/store'
+import { useSyncStatus } from '../sync/status'
 import { t } from '../ui/i18n'
 
 const AUTOSAVE_DELAY_MS = 500
@@ -175,6 +181,9 @@ export function createEditorStore(
   // Invalidates loads that were started before a newer open, new collection or edit.
   let loadToken = 0
   let loading = false
+  // The stored version the open collection's edits start from, so a save never overwrites a
+  // version the sync pulled in the meantime.
+  let base: (SaveBase & { id: string }) | null = null
 
   const editor = createStore<EditorState>()((set, get) => {
     /** Applies a change and keeps active frame, selection and mode consistent. */
@@ -223,7 +232,13 @@ export function createEditorStore(
       commit({ collection: { ...get().collection, frames }, activeFrameId })
 
     /** Replaces the open collection with a clean one, without counting as an edit. */
-    const swap = (c: Collection, photos: Record<string, Photo>, dirty: boolean) => {
+    const swap = (
+      c: Collection,
+      photos: Record<string, Photo>,
+      dirty: boolean,
+      remoteVersion?: string,
+    ) => {
+      base = { id: c.id, remoteVersion, updatedAt: c.updatedAt }
       loading = !dirty
       try {
         commit({
@@ -270,11 +285,12 @@ export function createEditorStore(
       const c = await read()
       if (!c) return false
       const photos = c.photoIds.length > 0 ? await store.getPhotosMeta(c.photoIds) : {}
+      const remoteVersion = (await store.getSyncStates())[c.id]?.remoteVersion
       if (token !== loadToken || rev !== revision) return true
       // Only a convenience (the e2e helpers read it): on a full device it must not stop the work from opening.
       await store.setLastCollectionId(c.id).catch((e: unknown) => console.error(e))
       if (token !== loadToken || rev !== revision) return true
-      swap(c, photos, false)
+      swap(c, photos, false, remoteVersion)
       return true
     }
 
@@ -690,7 +706,9 @@ export function createEditorStore(
           return
         }
         const photos = c.photoIds.length > 0 ? await store.getPhotosMeta(c.photoIds) : {}
+        const remoteVersion = (await store.getSyncStates())[c.id]?.remoteVersion
         if (token !== loadToken || rev !== revision) return
+        base = { id: c.id, remoteVersion, updatedAt: c.updatedAt }
         loading = true
         try {
           // commit keeps the active frame, selection and mode where they still exist.
@@ -729,7 +747,22 @@ export function createEditorStore(
       queue = queue.then(async () => {
         let status: SaveStatus = 'saved'
         try {
-          await store.saveCollection(snapshot)
+          const from = base?.id === snapshot.id ? base : undefined
+          const outcome = await store.saveCollection(snapshot, from ? { base: from } : undefined)
+          if (from && base === from) {
+            // A pulled version was kept as a copy: the edit now builds on that version.
+            const remoteVersion =
+              outcome === 'saved'
+                ? from.remoteVersion
+                : (await store.getSyncStates())[snapshot.id]?.remoteVersion
+            base = { id: snapshot.id, remoteVersion, updatedAt: snapshot.updatedAt }
+          }
+          if (outcome !== 'saved') {
+            useSyncStatus.setState((s) => ({
+              changeCount: s.changeCount + 1,
+              changedIds: [outcome.conflictCopyId],
+            }))
+          }
         } catch (e) {
           status = 'full'
           if (!(e instanceof StorageFullError)) console.error(e)

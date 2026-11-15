@@ -9,6 +9,9 @@ function serveMe(status: number, body?: unknown) {
   )
 }
 
+const originalShowModal = HTMLDialogElement.prototype.showModal as
+  HTMLDialogElement['showModal'] | undefined
+
 describe('App', () => {
   beforeEach(() => {
     localStorage.clear()
@@ -17,6 +20,8 @@ describe('App', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals()
+    if (originalShowModal) HTMLDialogElement.prototype.showModal = originalShowModal
+    else delete (HTMLDialogElement.prototype as Partial<HTMLDialogElement>).showModal
   })
 
   it('without an account, shows the start page with the Google sign-in', async () => {
@@ -49,8 +54,8 @@ describe('App', () => {
       drive: false,
     })
     render(<App />)
-    // jsdom has no modal dialogs.
-    HTMLDialogElement.prototype.showModal ??= function (this: HTMLDialogElement) {
+    // jsdom has no modal dialogs (restored after each test).
+    HTMLDialogElement.prototype.showModal = function (this: HTMLDialogElement) {
       this.open = true
     }
     const badge = await screen.findByRole('button', { name: 'Só neste aparelho' })
