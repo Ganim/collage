@@ -899,3 +899,49 @@ describe('deletePhotos', () => {
     expect(s.collection.frames[0]!.layers).toHaveLength(0)
   })
 })
+
+describe('frames in bulk', () => {
+  async function three() {
+    const editor = await setup()
+    editor.getState().addFrames({ widthMm: 130, heightMm: 180 }, 2)
+    return editor
+  }
+
+  it('adds several empty frames of one size at the end and shows the first', async () => {
+    const editor = await three()
+    const frames = editor.getState().collection.frames
+    expect(frames.map((f) => [f.widthMm, f.heightMm])).toEqual([
+      [100, 150],
+      [130, 180],
+      [130, 180],
+    ])
+    expect(editor.getState().activeFrameId).toBe(frames[1]!.id)
+  })
+
+  it('duplicates each frame given right after itself and shows the first copy', async () => {
+    const editor = await three()
+    editor.getState().tapPhoto('a')
+    const [f1, f2, f3] = editor.getState().collection.frames
+    editor.getState().duplicateFrames([f3!.id, f1!.id])
+    const frames = editor.getState().collection.frames
+    expect(frames).toHaveLength(5)
+    expect(frames[0]!.id).toBe(f1!.id)
+    expect(frames[2]!.id).toBe(f2!.id)
+    expect(frames[3]!.id).toBe(f3!.id)
+    expect([frames[1]!.widthMm, frames[4]!.widthMm]).toEqual([f1!.widthMm, f3!.widthMm])
+    expect(editor.getState().activeFrameId).toBe(frames[1]!.id)
+  })
+
+  it('removes the frames given and keeps a neighbour active', async () => {
+    const editor = await three()
+    const [f1, f2, f3] = editor.getState().collection.frames
+    editor.getState().setActive(f2!.id)
+    editor.getState().removeFrames([f2!.id, f3!.id])
+    expect(editor.getState().collection.frames.map((f) => f.id)).toEqual([f1!.id])
+    expect(editor.getState().activeFrameId).toBe(f1!.id)
+
+    editor.getState().removeFrames([f1!.id])
+    expect(editor.getState().collection.frames).toEqual([])
+    expect(editor.getState().activeFrameId).toBeNull()
+  })
+})

@@ -392,9 +392,15 @@ p {
   display: none;
 }
 
-.dots-add {
+.dots-actions {
   position: sticky;
   right: 0;
+  display: flex;
+  gap: 6px;
+  margin-left: 4px;
+}
+
+.dots-action {
   border-radius: 50%;
   background: var(--glass-strong);
   box-shadow: 0 2px 10px rgba(59, 10, 63, 0.1);

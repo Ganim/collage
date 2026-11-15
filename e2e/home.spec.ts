@@ -270,3 +270,15 @@ test.describe('the back gesture after leaving the editor', () => {
     await expect(button(page, 'Nova coleção')).toBeVisible()
   })
 })
+
+test('the account menu reloads the app and keeps the collections', async ({ page }) => {
+  await openNewCollection(page)
+  await nameOpenCollection(page, 'Natal')
+  await goHome(page)
+
+  await button(page, 'Sua conta').click()
+  const reloaded = page.waitForEvent('load')
+  await button(page, 'Atualizar o app').click()
+  await reloaded
+  await expect(card(page, 'Natal')).toBeVisible()
+})

@@ -1,9 +1,9 @@
-import { Plus } from 'lucide-react'
+import { LayoutGrid, Plus } from 'lucide-react'
 import { useEffect, useRef } from 'react'
 import { useEditor } from '../../state/editor'
 import { t } from '../i18n'
 
-export function Dots({ onAdd }: { onAdd: () => void }) {
+export function Dots({ onAdd, onGallery }: { onAdd: () => void; onGallery: () => void }) {
   const frames = useEditor((s) => s.collection.frames)
   const activeId = useEditor((s) => s.activeFrameId)
   const setActive = useEditor((s) => s.setActive)
@@ -31,9 +31,22 @@ export function Dots({ onAdd }: { onAdd: () => void }) {
             </li>
           )
         })}
-        <li className="dots-add">
-          <button type="button" className="icon-button" aria-label={t('dots.add')} onClick={onAdd}>
+        <li className="dots-actions">
+          <button
+            type="button"
+            className="icon-button dots-action"
+            aria-label={t('dots.add')}
+            onClick={onAdd}
+          >
             <Plus size={22} />
+          </button>
+          <button
+            type="button"
+            className="icon-button dots-action"
+            aria-label={t('dots.gallery')}
+            onClick={onGallery}
+          >
+            <LayoutGrid size={20} />
           </button>
         </li>
       </ol>

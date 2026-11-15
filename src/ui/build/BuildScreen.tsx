@@ -6,6 +6,7 @@ import { t, type MessageKey } from '../i18n'
 import { EmptyFrameIllustration } from '../illustrations'
 import { Carousel } from './Carousel'
 import { Dots } from './Dots'
+import { FrameGrid } from './FrameGrid'
 import { Header } from './Header'
 import { PhotoTray } from './PhotoTray'
 import { SizeSheet } from './SizeSheet'
@@ -28,6 +29,7 @@ export function BuildScreen({ onLeave }: BuildScreenProps) {
   const selectedId = useEditor((s) => s.selectedLayerId)
   const selectLayer = useEditor((s) => s.selectLayer)
   const [sheet, setSheet] = useState<'change' | 'new' | null>(null)
+  const [galleryOpen, setGalleryOpen] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
   const [importing, setImporting] = useState(false)
 
@@ -80,7 +82,7 @@ export function BuildScreen({ onLeave }: BuildScreenProps) {
           </div>
         )}
       </div>
-      <Dots onAdd={() => setSheet('new')} />
+      <Dots onAdd={() => setSheet('new')} onGallery={() => setGalleryOpen(true)} />
       <div className="tray-area">
         {editing && !replacing && <ZoomSlider />}
         <div className="tray-float">
@@ -115,6 +117,7 @@ export function BuildScreen({ onLeave }: BuildScreenProps) {
       {(sheet === 'change' || sheet === 'new') && (
         <SizeSheet mode={sheet} onClose={() => setSheet(null)} />
       )}
+      {galleryOpen && <FrameGrid onClose={() => setGalleryOpen(false)} />}
     </>
   )
 }

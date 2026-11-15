@@ -1,8 +1,9 @@
-import { Heart, LogOut } from 'lucide-react'
+import { Heart, LogOut, RefreshCw } from 'lucide-react'
 import { useState } from 'react'
 import type { Account } from '../account/account'
 import { BottomSheet } from '../components/BottomSheet'
 import { ConfirmSheet } from '../components/ConfirmSheet'
+import { refreshApp } from '../account/refreshApp'
 import { t } from '../i18n'
 
 /** The account's photo, or its first letter on a fuchsia disc when there is none (or it fails). */
@@ -32,6 +33,7 @@ interface AccountHeaderProps {
 
 export function AccountHeader({ account, onSignOut }: AccountHeaderProps) {
   const [sheet, setSheet] = useState<'account' | 'signOut' | null>(null)
+  const [refreshing, setRefreshing] = useState(false)
 
   return (
     <header className="account-header">
@@ -58,6 +60,20 @@ export function AccountHeader({ account, onSignOut }: AccountHeaderProps) {
             </div>
           </div>
           <ul className="menu-list">
+            <li>
+              <button
+                type="button"
+                className="menu-row"
+                disabled={refreshing}
+                onClick={() => {
+                  setRefreshing(true)
+                  void refreshApp()
+                }}
+              >
+                <RefreshCw size={22} className={refreshing ? 'spinning' : undefined} />
+                {refreshing ? t('account.refreshing') : t('account.refresh')}
+              </button>
+            </li>
             <li>
               <button type="button" className="menu-row" onClick={() => setSheet('signOut')}>
                 <LogOut size={22} />

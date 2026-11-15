@@ -15,6 +15,8 @@ interface PhotoGridProps {
   usage: Map<string, string[]>
   onPick: (photoId: string) => void
   onClose: () => void
+  /** Only to pick one photo: no selecting several. */
+  pickOnly?: boolean
 }
 
 const selectedText = (count: number) =>
@@ -28,7 +30,7 @@ const selectedText = (count: number) =>
  * Every photo of the collection at once, marked when a frame already has it. Holding one (or
  * "Selecionar") starts picking several, to give each its own frame of one size, or delete them.
  */
-export function PhotoGrid({ usage, onPick, onClose }: PhotoGridProps) {
+export function PhotoGrid({ usage, onPick, onClose, pickOnly = false }: PhotoGridProps) {
   const photoIds = useEditor((s) => s.collection.photoIds)
   const photos = useEditor((s) => s.photos)
   const framesForPhotos = useEditor((s) => s.framesForPhotos)
@@ -59,11 +61,14 @@ export function PhotoGrid({ usage, onPick, onClose }: PhotoGridProps) {
 
   return (
     <>
-      <BottomSheet title={t('photoGrid.title')} onClose={onClose}>
+      <BottomSheet
+        title={pickOnly ? t('photoPicker.title') : t('photoGrid.title')}
+        onClose={onClose}
+      >
         <p className="photo-grid-count">
           {t('photoGrid.count', { used: usedCount, total: shown.length })}
         </p>
-        {selecting ? (
+        {pickOnly ? null : selecting ? (
           <div className="photo-grid-tools">
             <button
               type="button"
@@ -98,7 +103,7 @@ export function PhotoGrid({ usage, onPick, onClose }: PhotoGridProps) {
                 selecting={selecting}
                 selected={selected.includes(photo.id)}
                 onTap={() => (selecting ? toggle(photo.id) : onPick(photo.id))}
-                onHold={() => startSelecting(photo.id)}
+                onHold={pickOnly ? undefined : () => startSelecting(photo.id)}
               />
             </li>
           ))}
@@ -177,12 +182,12 @@ interface GridPhotoProps {
   selecting: boolean
   selected: boolean
   onTap: () => void
-  onHold: () => void
+  onHold?: () => void
 }
 
 function GridPhoto({ photo, sizes, selecting, selected, onTap, onHold }: GridPhotoProps) {
   const url = usePhotoUrl(photo.id, 'thumb')
-  const press = useLongPress(onHold)
+  const press = useLongPress(() => onHold?.())
   const used = sizes.length > 0
   const className = selected ? 'photo-grid-item photo-grid-item--selected' : 'photo-grid-item'
   return (
@@ -197,7 +202,7 @@ function GridPhoto({ photo, sizes, selecting, selected, onTap, onHold }: GridPho
       aria-pressed={selecting ? selected : undefined}
       onClick={onTap}
       // Always on: the click that ends a hold must not unselect the photo it selected.
-      {...press}
+      {...(onHold ? press : {})}
     >
       {url && <img src={url} alt="" draggable={false} />}
       {used && <UsedMark />}

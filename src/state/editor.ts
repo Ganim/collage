@@ -100,6 +100,12 @@ export interface EditorState {
   addFrame(size: Size): void
   /** One new frame of this size per photo, at the end; the first new one becomes active. */
   framesForPhotos(size: Size, photoIds: string[]): void
+  /** Several empty frames of one size at the end; the first new one becomes active. */
+  addFrames(size: Size, count: number): void
+  /** Each frame given gets a copy right after it; the first copy becomes active. */
+  duplicateFrames(ids: string[]): void
+  /** Removes the frames given; the nearest remaining one stays active. */
+  removeFrames(ids: string[]): void
   duplicateActive(): void
   removeActive(): void
   setActive(id: string): void
@@ -474,6 +480,45 @@ export function createEditorStore(
         if (added.length === 0) return
         commit({ mode: 'browse', selectedLayerId: null, replacing: false })
         setFrames([...collection.frames, ...added], added[0]!.id)
+      },
+
+      addFrames(size, count) {
+        const added = Array.from({ length: Math.max(0, Math.floor(count)) }, () =>
+          createFrame(size),
+        )
+        if (added.length === 0) return
+        setFrames([...get().collection.frames, ...added], added[0]!.id)
+      },
+
+      duplicateFrames(ids) {
+        const frames: Frame[] = []
+        let first: string | null = null
+        for (const frame of get().collection.frames) {
+          frames.push(frame)
+          if (!ids.includes(frame.id)) continue
+          const copy = duplicateFrame(frame)
+          frames.push(copy)
+          first ??= copy.id
+        }
+        if (first) setFrames(frames, first)
+      },
+
+      removeFrames(ids) {
+        const { collection, activeFrameId } = get()
+        const frames = collection.frames
+        const rest = frames.filter((f) => !ids.includes(f.id))
+        if (rest.length === frames.length) return
+        const keep = (id: string | null) => rest.find((f) => f.id === id)?.id
+        // The active frame if it stays, else the nearest one after it, else before it.
+        const at = frames.findIndex((f) => f.id === activeFrameId)
+        const after = frames.slice(at + 1).find((f) => !ids.includes(f.id))
+        const before = frames
+          .slice(0, Math.max(at, 0))
+          .reverse()
+          .find((f) => !ids.includes(f.id))
+        const next = keep(activeFrameId) ?? after?.id ?? before?.id ?? rest[0]?.id ?? null
+        commit({ mode: 'browse', selectedLayerId: null, replacing: false })
+        setFrames(rest, next)
       },
 
       duplicateActive() {

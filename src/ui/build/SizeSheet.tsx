@@ -12,7 +12,7 @@ import { sizeListText } from './sizeText'
 interface SizeSheetProps {
   /**
    * 'change' resizes the active frame; 'new' picks the size of a frame to create; 'pick' only
-   * hands the size to onPick.
+   * hands the size to onPick, which closes the sheet or replaces it.
    */
   mode: 'change' | 'new' | 'pick'
   onClose: () => void
@@ -69,8 +69,12 @@ export function SizeSheet({ mode, onClose, onPick }: SizeSheetProps) {
   }
 
   const use = (size: Size) => {
-    if (mode === 'pick') onPick?.({ widthMm: size.widthMm, heightMm: size.heightMm })
-    else if (mode === 'new') addFrame({ widthMm: size.widthMm, heightMm: size.heightMm })
+    if (mode === 'pick') {
+      // The caller decides what comes next, often another sheet.
+      onPick?.({ widthMm: size.widthMm, heightMm: size.heightMm })
+      return
+    }
+    if (mode === 'new') addFrame({ widthMm: size.widthMm, heightMm: size.heightMm })
     else setActiveSize({ widthMm: size.widthMm, heightMm: size.heightMm })
     onClose()
   }

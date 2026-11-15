@@ -376,3 +376,68 @@ test('selected photos are deleted after confirming', async ({ page }) => {
   await expect(grid.getByRole('button', { name: /foto-2\.jpg/ })).toHaveCount(1)
   await expect(grid.getByText('0 de 1 já estão em frames')).toBeVisible()
 })
+
+test('the frame gallery adds, removes and duplicates frames in bulk and fills one', async ({
+  page,
+}) => {
+  await uploadPhotos(page, [await makeJpeg(page, 400, 600, '#a8552f')])
+  await page.getByRole('button', { name: 'Adicionar frame', exact: true }).click()
+  await page.getByRole('button', { name: '10×15 cm', exact: true }).click()
+
+  const openGallery = () =>
+    page.getByRole('button', { name: 'Ver todos os frames', exact: true }).click()
+  const gallery = page.getByRole('dialog', { name: 'Seus frames' })
+  const count = async () => (await savedCollection(page))?.frames.length
+
+  // Three more empty frames of one size.
+  await openGallery()
+  await gallery.getByRole('button', { name: 'Adicionar frames', exact: true }).click()
+  await page
+    .getByRole('dialog', { name: 'Tamanho dos frames' })
+    .getByRole('button', { name: '13×18 cm', exact: true })
+    .click()
+  const quantity = page.getByRole('dialog', { name: 'Quantos frames?' })
+  await quantity.getByRole('button', { name: 'Mais um', exact: true }).click()
+  await quantity.getByRole('button', { name: 'Mais um', exact: true }).click()
+  await quantity
+    .getByRole('button', { name: 'Adicionar 3 frames de 13×18 cm', exact: true })
+    .click()
+  await expect(gallery.getByText('4 frames', { exact: true })).toBeVisible()
+  await expect.poll(count).toBe(4)
+
+  // Two of them removed at once.
+  await gallery.getByRole('button', { name: 'Selecionar', exact: true }).click()
+  await gallery.getByRole('button', { name: 'Selecionar o frame 3', exact: true }).click()
+  await gallery.getByRole('button', { name: 'Selecionar o frame 4', exact: true }).click()
+  await gallery.getByRole('button', { name: 'Remover', exact: true }).click()
+  await page
+    .getByRole('dialog', { name: 'Remover 2 frames?' })
+    .getByRole('button', { name: 'Remover', exact: true })
+    .click()
+  await expect(gallery.getByText('2 frames', { exact: true })).toBeVisible()
+  await expect.poll(count).toBe(2)
+
+  // A photo straight into frame 2.
+  await gallery.getByRole('button', { name: 'Pôr foto no frame 2', exact: true }).click()
+  await page
+    .getByRole('dialog', { name: 'Escolha uma foto' })
+    .getByRole('button', { name: 'Colocar foto-1.jpg no frame', exact: true })
+    .click()
+  await expect(gallery).toHaveCount(0)
+  await expect(
+    page.getByRole('img', { name: 'Frame 2 de 2', exact: true }).locator('img'),
+  ).toHaveCount(1)
+
+  // Duplicated by holding it.
+  await openGallery()
+  const second = gallery.locator('.frame-tile-open').nth(1)
+  await second.click({ button: 'right' })
+  await gallery.getByRole('button', { name: 'Duplicar', exact: true }).click()
+  await expect(gallery.getByText('3 frames', { exact: true })).toBeVisible()
+  await expect.poll(count).toBe(3)
+  await gallery.getByRole('button', { name: 'Ir para o frame 3', exact: true }).click()
+  await expect(gallery).toHaveCount(0)
+  await expect(
+    page.getByRole('img', { name: 'Frame 3 de 3', exact: true }).locator('img'),
+  ).toHaveCount(1)
+})
