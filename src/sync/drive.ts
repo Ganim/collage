@@ -64,7 +64,18 @@ function toRemoteFile(raw: RawFile): RemoteFile {
 
 /** Each request gives up after this long without an answer; a timeout counts as offline. */
 const TIMEOUT_MS = 30_000
+/**
+ * The upload PUT is answered only once the whole body is sent: its limit grows with the body
+ * (1 s per 25 KB, about 0.2 Mbps), so a big photo on a slow phone link still gets through.
+ */
 const UPLOAD_TIMEOUT_MS = 120_000
+const UPLOAD_BYTES_PER_SECOND = 25_000
+
+function timeoutFor(init: RequestInit): number {
+  if (init.method !== 'PUT') return TIMEOUT_MS
+  const size = init.body instanceof Blob ? init.body.size : 0
+  return UPLOAD_TIMEOUT_MS + Math.floor(size / UPLOAD_BYTES_PER_SECOND) * 1000
+}
 
 /** Reasons that mean the token lacks the Drive permission (left unchecked on the consent screen). */
 const SCOPE_REASONS = new Set(['insufficientPermissions', 'ACCESS_TOKEN_SCOPE_INSUFFICIENT'])
@@ -103,10 +114,7 @@ export function createDrive(
     headers.set('Authorization', `Bearer ${token}`)
     // The timer runs until the answer starts: a body being read is never cut.
     const controller = new AbortController()
-    const timer = setTimeout(
-      () => controller.abort(),
-      init.method === 'PUT' ? UPLOAD_TIMEOUT_MS : TIMEOUT_MS,
-    )
+    const timer = setTimeout(() => controller.abort(), timeoutFor(init))
     try {
       return await fetchFn(url, { ...init, headers, signal: controller.signal })
     } catch {

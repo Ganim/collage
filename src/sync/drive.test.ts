@@ -366,6 +366,32 @@ describe('timeouts', () => {
     }
   })
 
+  it('gives a large upload PUT more time: 120 s + 1 s per 25 KB', async () => {
+    vi.useFakeTimers()
+    try {
+      const { drive } = setup((url, init) =>
+        init.method === 'POST'
+          ? new Response(null, { headers: { location: 'https://up.example/s' } })
+          : hang(url, init),
+      )
+      // 12 MB: 120 s + 480 s.
+      const big = new Blob([new Uint8Array(12_000_000)], { type: 'image/jpeg' })
+      let settled = false
+      const result = drive
+        .create('F', 'photo-big', big, {})
+        .catch((e: unknown) => e)
+        .finally(() => (settled = true))
+      await vi.advanceTimersByTimeAsync(121_000)
+      expect(settled).toBe(false)
+      await vi.advanceTimersByTimeAsync(600_000 - 121_000 - 1)
+      expect(settled).toBe(false)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(await result).toMatchObject({ kind: 'offline' })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('a request that answers in time is not aborted later', async () => {
     vi.useFakeTimers()
     try {
