@@ -37,6 +37,8 @@ function layoutOf(...frameIds: string[]): SheetLayout {
     sheets: [frameIds.map((frameId) => ({ frameId, xMm: 5, yMm: 5, rotated: false }))],
     unplaced: [],
     usedRatio: 0,
+    lastArea: 0,
+    lastExtent: 0,
   }
 }
 

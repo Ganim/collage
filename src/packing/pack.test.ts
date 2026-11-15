@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { initSync, pack_json } from './wasm/packing'
-import { solve, type PackRequest } from './pack'
+import { betterLayout, solve, type PackRequest, type SheetLayout } from './pack'
 
 const A4 = { widthMm: 210, heightMm: 297, marginMm: 5, gapMm: 2 }
 
@@ -39,7 +39,7 @@ describe('solve', () => {
 
   it('returns an empty layout for no frames', () => {
     const layout = solve({ frames: [], paper: A4 }, pack_json)
-    expect(layout).toEqual({ sheets: [], unplaced: [], usedRatio: 0 })
+    expect(layout).toEqual({ sheets: [], unplaced: [], usedRatio: 0, lastArea: 0, lastExtent: 0 })
   })
 })
 
@@ -105,5 +105,59 @@ describe('packFrames', () => {
     expect(w.posted).toHaveLength(1)
     w.onmessage?.({ data: { id: w.posted[0]!.id, layout: layout(3) } })
     expect((await retry).unplaced).toEqual(['u3'])
+  })
+})
+
+describe('solve options and ranking', () => {
+  const one = (input: string): string => {
+    seen.push(JSON.parse(input) as Record<string, unknown>)
+    return JSON.stringify({
+      sheets: [{ placements: [{ id: 'a', x: 50, y: 50, rotated: false }] }],
+      unplaced: [],
+      lastArea: 7,
+      lastExtent: 9,
+    })
+  }
+  let seen: Record<string, unknown>[] = []
+  const frames = [{ id: 'a', widthMm: 100, heightMm: 150 }]
+
+  it('passes seed and effort to the packer only when given', () => {
+    seen = []
+    solve({ frames, paper: A4 }, one)
+    solve({ frames, paper: A4, seed: 12345, effort: 16 }, one)
+    expect(seen[0]).not.toHaveProperty('seed')
+    expect(seen[0]).not.toHaveProperty('effort')
+    expect(seen[1]).toMatchObject({ seed: 12345, effort: 16 })
+  })
+
+  it('keeps the rank of the last sheet', () => {
+    const layout = solve({ frames, paper: A4 }, one)
+    expect(layout.lastArea).toBe(7)
+    expect(layout.lastExtent).toBe(9)
+  })
+
+  it('ranks fewer sheets first, then less area and a smaller extent on the last sheet', () => {
+    const of = (sheets: number, lastArea: number, lastExtent: number): SheetLayout => ({
+      sheets: Array.from({ length: sheets }, () => []),
+      unplaced: [],
+      usedRatio: 0,
+      lastArea,
+      lastExtent,
+    })
+    expect(betterLayout(of(1, 9, 9), of(2, 1, 1))).toBe(true)
+    expect(betterLayout(of(2, 1, 9), of(2, 2, 1))).toBe(true)
+    expect(betterLayout(of(2, 2, 1), of(2, 2, 2))).toBe(true)
+    expect(betterLayout(of(2, 2, 2), of(2, 2, 2))).toBe(false)
+    expect(betterLayout(of(3, 0, 0), of(2, 9, 9))).toBe(false)
+  })
+
+  it('fits four 9x12 cm on one A4 with 5 mm spacing by turning them all', () => {
+    const paper = { widthMm: 210, heightMm: 297, marginMm: 5, gapMm: 5 }
+    const frames = ['a', 'b', 'c', 'd'].map((id) => ({ id, widthMm: 120, heightMm: 90 }))
+    const layout = solve({ frames, paper }, pack_json)
+    expect(layout.sheets).toHaveLength(1)
+    expect(layout.sheets[0]!.every((p) => p.rotated)).toBe(true)
+    const again = solve({ frames, paper, seed: 99, effort: 4 }, pack_json)
+    expect(again.sheets).toHaveLength(1)
   })
 })
