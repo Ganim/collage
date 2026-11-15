@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { create, type StoreApi } from 'zustand'
 import { appEditor, appStorage, type EditorState } from '../state/editor'
 import type { Store } from '../storage/store'
-import { getDriveToken, type Account } from '../ui/account/account'
+import { getDriveToken, hasProvisionalId, type Account } from '../ui/account/account'
 import { createDrive } from './drive'
 import { createSyncEngine, type SyncEngine } from './engine'
 import { useSyncStatus } from './status'
@@ -52,13 +52,16 @@ const answerKey = (currentId: string, otherId: string) =>
  * Starts syncing for the account: sets it as the owner, then runs a pass now, when the page
  * comes back, when the connection returns and 4 s after the last local change. Each pass first
  * flushes the editor. Without Drive access the status is needsDrive and nothing runs.
+ * An account still known only by its e-mail (saved before ids existed) is never made the owner:
+ * work stamped with that e-mail would later look like another account's.
  */
 export function startSync(
   account: Pick<Account, 'id' | 'email' | 'drive'>,
   deps: SyncDeps,
 ): { stop(): void } {
   const { store, editor } = deps
-  const withDrive = account.drive
+  const confirmed = !hasProvisionalId(account)
+  const withDrive = account.drive && confirmed
   const engine = withDrive ? deps.createEngine() : null
   let stopped = false
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -68,9 +71,11 @@ export function startSync(
   /** The editor's localEdits when the current reloads began. */
   let editsBeforeReload = 0
 
-  const ownerSet = store
-    .setOwner({ id: account.id, email: account.email })
-    .catch((e: unknown) => console.error(e))
+  const ownerSet = confirmed
+    ? store
+        .setOwner({ id: account.id, email: account.email })
+        .catch((e: unknown) => console.error(e))
+    : Promise.resolve()
 
   async function pass(): Promise<void> {
     await ownerSet
@@ -124,11 +129,23 @@ export function startSync(
     }
   }
 
+  /** The same person's work, stamped with their e-mail before ids existed: theirs, no question. */
+  async function claimOwnWork(otherId: string): Promise<void> {
+    await store.claimCollections(otherId)
+    useSyncStatus.setState((s) => ({ changeCount: s.changeCount + 1, changedIds: [] }))
+    void trigger()
+  }
+
   async function askNext(): Promise<void> {
     await ownerSet
+    if (!confirmed) return
     try {
       for (const other of await store.listOtherOwners()) {
         if (stopped) return
+        if (other.email === account.email) {
+          await claimOwnWork(other.id)
+          continue
+        }
         if ((await store.getMeta(answerKey(account.id, other.id))) !== undefined) continue
         if (!stopped) useOtherOwner.setState({ other })
         return
@@ -180,7 +197,11 @@ export function startSync(
   const mine: Session = { trigger, answer }
   session = mine
   if (withDrive) void trigger()
-  else useSyncStatus.setState({ state: 'needsDrive', error: undefined, photos: undefined })
+  else {
+    // Drive granted but the id not confirmed yet: nothing to ask, it syncs once the service answers.
+    const state = account.drive ? 'off' : 'needsDrive'
+    useSyncStatus.setState({ state, error: undefined, photos: undefined })
+  }
   void askNext()
 
   return {

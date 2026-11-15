@@ -3,6 +3,7 @@ import {
   DriveAuthError,
   clearDriveToken,
   getDriveToken,
+  hasProvisionalId,
   loadAccount,
   signOut,
   type Account,
@@ -216,5 +217,16 @@ describe('getDriveToken', () => {
       expect(error).toBeInstanceOf(Error)
       expect(error).not.toBeInstanceOf(DriveAuthError)
     }
+  })
+})
+
+describe('hasProvisionalId', () => {
+  it('is true only while the id is the e-mail standing in for it', async () => {
+    const old = await loadAccount(
+      offline(),
+      memoryStorage({ email: 'ana@exemplo.com', name: 'Ana' }),
+    )
+    expect(old && hasProvisionalId(old)).toBe(true)
+    expect(hasProvisionalId(saved)).toBe(false)
   })
 })

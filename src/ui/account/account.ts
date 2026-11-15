@@ -8,6 +8,14 @@ export interface Account {
   drive: boolean
 }
 
+/**
+ * Whether the id is only the e-mail standing in for an account saved before ids existed, until
+ * the service answers. Google's ids are digits, never an e-mail.
+ */
+export function hasProvisionalId(account: Pick<Account, 'id' | 'email'>): boolean {
+  return account.id === account.email
+}
+
 /** The last account the service confirmed, so the app still opens without a connection. */
 const KEY = 'collage.account'
 const TIMEOUT_MS = 6000

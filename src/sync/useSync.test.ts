@@ -216,6 +216,27 @@ describe('startSync triggers', () => {
     expect(store.setOwner).toHaveBeenCalled()
   })
 
+  it('an account still identified by its e-mail (saved before ids) never sets the owner', async () => {
+    others = [{ id: 'bia', email: 'bia@example.com', count: 1 }]
+    begin({ ...ANA, id: ANA.email, drive: false })
+    await settle()
+    expect(store.setOwner).not.toHaveBeenCalled()
+    expect(useSyncStatus.getState().state).toBe('needsDrive')
+    expect(useOtherOwner.getState().other).toBeNull()
+    editor.setState({ savedSizes: [] })
+    await vi.advanceTimersByTimeAsync(10_000)
+    await syncNow()
+    expect(engine.run).not.toHaveBeenCalled()
+  })
+
+  it('an account still identified by its e-mail does not sync even with Drive', async () => {
+    begin({ ...ANA, id: ANA.email })
+    await settle()
+    expect(store.setOwner).not.toHaveBeenCalled()
+    expect(engine.run).not.toHaveBeenCalled()
+    expect(useSyncStatus.getState().state).toBe('off')
+  })
+
   it('stops every trigger', async () => {
     const sync = begin()
     await settle()
@@ -265,6 +286,17 @@ describe('collections of another account', () => {
     expect(meta.get('otherAccountAnswer:ana:bia')).toBe('copy')
     // The list re-reads: the claimed collections now show.
     expect(calls).toEqual(['claim:bia', 'reload:', 'flush', 'run'])
+  })
+
+  it('claims silently the collections stamped with the same e-mail', async () => {
+    others = [{ id: 'ana@example.com', email: 'ana@example.com', count: 2 }, BIA]
+    begin()
+    await settle()
+    expect(calls).toContain('claim:ana@example.com')
+    expect(store.claimCollections).toHaveBeenCalledTimes(1)
+    expect(useOtherOwner.getState().other).toEqual(BIA)
+    // The list re-reads and the claimed collections sync.
+    expect(calls.filter((c) => c === 'run').length).toBeGreaterThanOrEqual(2)
   })
 
   it('asks about the next owner after an answer', async () => {
