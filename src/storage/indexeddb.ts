@@ -303,6 +303,7 @@ export async function createIdbStore(
         if (owner) await meta.put({ id: owner.id, email: owner.email }, OWNER_KEY)
         else await meta.delete(OWNER_KEY)
       }),
+    getOwner: async () => (await readOwner(db.transaction('meta').store)) ?? null,
     getSyncStates: () => readStates(db.transaction('sync').store),
     setSyncState: (id, patch) =>
       write(db, ['sync'], async (tx) => {
@@ -319,6 +320,22 @@ export async function createIdbStore(
       write(db, ['collections', 'sync'], async (tx) => {
         await tx.objectStore('collections').put(c)
         await tx.objectStore('sync').put(state, c.id)
+      }),
+    markPushed: (id, uploadedUpdatedAt, fileId, version) =>
+      write(db, ['collections', 'sync'], async (tx) => {
+        const current = await tx.objectStore('collections').get(id)
+        if (!current) return
+        const sync = tx.objectStore('sync')
+        await sync.put(
+          {
+            ...((await sync.get(id)) ?? { dirty: false }),
+            remoteFileId: fileId,
+            remoteVersion: version,
+            // An edit saved during the upload is not on the Drive yet.
+            dirty: current.updatedAt !== uploadedUpdatedAt,
+          },
+          id,
+        )
       }),
     isLibraryDirty: async () => (await db.get('meta', LIBRARY_DIRTY_KEY)) === true,
     setLibraryDirty: (v) =>

@@ -425,6 +425,45 @@ describe('sync bookkeeping', () => {
     expect((await store.getSyncStates()).c1).toEqual(state)
   })
 
+  it('getOwner returns the current owner, or null', async () => {
+    expect(await store.getOwner()).toBeNull()
+    await store.setOwner(ANA)
+    expect(await store.getOwner()).toEqual(ANA)
+    await store.setOwner(null)
+    expect(await store.getOwner()).toBeNull()
+  })
+
+  it('markPushed records the file and clears dirty when the collection is unchanged', async () => {
+    await store.setOwner(ANA)
+    await store.saveCollection(collection('c1', []))
+    await store.markPushed('c1', 1000, 'r1', '4')
+    expect((await store.getSyncStates()).c1).toEqual({
+      ownerId: 'ana',
+      ownerEmail: ANA.email,
+      remoteFileId: 'r1',
+      remoteVersion: '4',
+      dirty: false,
+    })
+  })
+
+  it('markPushed keeps dirty when the collection changed during the upload', async () => {
+    await store.saveCollection(collection('c1', []))
+    await store.saveCollection({ ...collection('c1', []), updatedAt: 2000 })
+    await store.markPushed('c1', 1000, 'r1', '4')
+    expect((await store.getSyncStates()).c1).toEqual({
+      remoteFileId: 'r1',
+      remoteVersion: '4',
+      dirty: true,
+    })
+  })
+
+  it('markPushed does nothing for a collection deleted during the upload', async () => {
+    await store.saveCollection(collection('c1', []))
+    await store.removeLocalCollection('c1')
+    await store.markPushed('c1', 1000, 'r1', '4')
+    expect(await store.getSyncStates()).toEqual({})
+  })
+
   it('removeLocalCollection deletes without a tombstone and frees unused photos', async () => {
     await store.putPhoto(photo('a'))
     await store.putPhoto(photo('b'))

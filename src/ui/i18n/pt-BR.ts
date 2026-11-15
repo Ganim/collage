@@ -253,6 +253,7 @@ export const ptBR = {
   'print.generateMissing': 'Uma foto não foi encontrada. Troque a foto e gere de novo.',
   'print.saveFailed': 'Não foi possível salvar o PDF. Tente de novo.',
   'print.defaultFileName': 'Colagem',
+  'sync.conflictSuffix': ' (cópia de outro aparelho)',
 } as const
 
 export type MessageKey = keyof typeof ptBR

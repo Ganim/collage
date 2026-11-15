@@ -89,6 +89,7 @@ export interface Store {
 
   /** The account in use; null when signed out. */
   setOwner(owner: Owner | null): Promise<void>
+  getOwner(): Promise<Owner | null>
   getSyncStates(): Promise<Record<string, SyncState>>
   /** Merges `patch` into the collection's state (a missing state starts as not dirty). */
   setSyncState(id: string, patch: Partial<SyncState>): Promise<void>
@@ -96,6 +97,12 @@ export interface Store {
   clearTombstones(keys: { kind: Tombstone['kind']; id: string }[]): Promise<void>
   /** Writes a collection that came from the Drive, with `state` as is: not marked dirty. */
   putRemoteCollection(c: Collection, state: SyncState): Promise<void>
+  /**
+   * After an upload: records the Drive file and clears dirty, unless the collection changed since
+   * the uploaded copy (its updatedAt differs), in which case it stays dirty. A collection deleted
+   * meanwhile is left alone.
+   */
+  markPushed(id: string, uploadedUpdatedAt: number, fileId: string, version: string): Promise<void>
   /** Deletes the collection and its sync state without a tombstone, freeing unused photos. */
   removeLocalCollection(id: string): Promise<void>
   isLibraryDirty(): Promise<boolean>
