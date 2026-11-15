@@ -1,67 +1,70 @@
-import { ArrowLeftRight } from 'lucide-react'
-import { useId, useState, type FormEvent } from 'react'
+import { ArrowLeftRight, Plus } from 'lucide-react'
+import { useId, useState } from 'react'
 import type { SizePreset } from '../../core/presets'
 import type { SavedSize, Size } from '../../core/types'
 import { useEditor } from '../../state/editor'
 import { BottomSheet } from '../components/BottomSheet'
-import { groupSizes, isPreset, type SizeGroup } from '../home/folders'
+import { DEFAULTS_ID, groupSizes, isPreset } from '../home/folders'
+import { SizeForm } from '../home/SizeForm'
 import { t } from '../i18n'
-import { parseCm, sizeListText } from './sizeText'
+import { sizeListText } from './sizeText'
 
 interface SizeSheetProps {
   /** 'change' resizes the active frame; 'new' picks the size of a frame to create. */
   mode: 'change' | 'new'
   onClose: () => void
-  onSizeNotSaved: () => void
+}
+
+/** The folder the sheet opened on last time, on this device. */
+const FOLDER_KEY = 'collage.sizeSheetFolder'
+
+function rememberedFolder(): string | null {
+  try {
+    return localStorage.getItem(FOLDER_KEY)
+  } catch {
+    return null
+  }
+}
+
+function rememberFolder(id: string) {
+  try {
+    localStorage.setItem(FOLDER_KEY, id)
+  } catch {
+    // Only a convenience: the sheet opens on the ready-made sizes instead.
+  }
 }
 
 const swapped = (s: Size): Size => ({ widthMm: s.heightMm, heightMm: s.widthMm })
 
-interface SizeGroupOptionsProps {
-  group: SizeGroup
-  shown: (s: Size) => Size
-  onChoose: (s: Size) => void
-}
-
-/** One folder's sizes under its name. */
-function SizeGroupOptions({ group, shown, onChoose }: SizeGroupOptionsProps) {
-  const titleId = useId()
-  const option = (size: SavedSize | SizePreset) => (
-    <button key={size.id} type="button" className="size-option" onClick={() => onChoose(size)}>
-      {isPreset(size) ? (
-        sizeListText(shown(size))
-      ) : (
-        <>
-          <span>{size.name}</span>
-          <small>{sizeListText(shown(size))}</small>
-        </>
-      )}
-    </button>
-  )
-  return (
-    <section aria-labelledby={titleId}>
-      <h3 id={titleId}>{group.name}</h3>
-      <div className="size-grid">{group.sizes.map(option)}</div>
-    </section>
-  )
-}
-
-export function SizeSheet({ mode, onClose, onSizeNotSaved }: SizeSheetProps) {
+/**
+ * Picks a size from any folder, or creates one: it is saved in the chosen folder and used
+ * right away.
+ */
+export function SizeSheet({ mode, onClose }: SizeSheetProps) {
   const savedSizes = useEditor((s) => s.savedSizes)
   const folders = useEditor((s) => s.folders)
   const addFrame = useEditor((s) => s.addFrame)
   const setActiveSize = useEditor((s) => s.setActiveSize)
   const flipActive = useEditor((s) => s.flipActive)
-  const saveSize = useEditor((s) => s.saveSize)
   // Only a new frame flips before choosing; an existing one flips right away.
   const [flipped, setFlipped] = useState(false)
-  const [width, setWidth] = useState('')
-  const [height, setHeight] = useState('')
-  const [name, setName] = useState('')
+  const [creating, setCreating] = useState(false)
+  const groups = groupSizes(folders, savedSizes)
+  const [folderId, setFolderId] = useState(() => {
+    const last = rememberedFolder()
+    return last && groups.some((g) => g.id === last) ? last : DEFAULTS_ID
+  })
+  const group = groups.find((g) => g.id === folderId) ?? groups[0]!
+  const titleId = useId()
 
   const shown = (s: Size) => (flipped ? swapped(s) : s)
 
-  const choose = (size: Size) => {
+  const openFolder = (id: string) => {
+    setFolderId(id)
+    rememberFolder(id)
+  }
+
+  const use = (size: Size) => {
     if (mode === 'new') addFrame({ widthMm: size.widthMm, heightMm: size.heightMm })
     else setActiveSize({ widthMm: size.widthMm, heightMm: size.heightMm })
     onClose()
@@ -76,94 +79,80 @@ export function SizeSheet({ mode, onClose, onSizeNotSaved }: SizeSheetProps) {
     }
   }
 
-  const widthMm = parseCm(width)
-  const heightMm = parseCm(height)
-  const invalid =
-    (width.trim() !== '' && widthMm === null) || (height.trim() !== '' && heightMm === null)
-
-  const submitCustom = async (e: FormEvent) => {
-    e.preventDefault()
-    if (widthMm === null || heightMm === null) return
-    const size: Size = { widthMm, heightMm }
-    const label = name.trim()
-    if (label) {
-      try {
-        await saveSize(label, size)
-      } catch (err) {
-        console.error(err)
-        onSizeNotSaved()
-      }
-    }
-    choose(size)
-  }
+  const option = (size: SavedSize | SizePreset) => (
+    <button key={size.id} type="button" className="size-option" onClick={() => use(shown(size))}>
+      {isPreset(size) ? (
+        sizeListText(shown(size))
+      ) : (
+        <>
+          <span>{size.name}</span>
+          <small>{sizeListText(shown(size))}</small>
+        </>
+      )}
+    </button>
+  )
 
   return (
-    <BottomSheet
-      title={mode === 'new' ? t('sizeSheet.titleNew') : t('sizeSheet.titleChange')}
-      onClose={onClose}
-    >
-      <button
-        type="button"
-        className="flip-button"
-        aria-pressed={mode === 'new' ? flipped : undefined}
-        onClick={flip}
+    <>
+      <BottomSheet
+        title={mode === 'new' ? t('sizeSheet.titleNew') : t('sizeSheet.titleChange')}
+        onClose={onClose}
       >
-        <ArrowLeftRight size={18} />
-        {t('sizeSheet.flip')}
-      </button>
-
-      {groupSizes(folders, savedSizes)
-        .filter((group) => group.sizes.length > 0)
-        .map((group) => (
-          <SizeGroupOptions
-            key={group.id}
-            group={group}
-            shown={shown}
-            onChoose={(s) => choose(shown(s))}
-          />
-        ))}
-
-      <h3>{t('sizeSheet.custom')}</h3>
-      <form className="custom-size" onSubmit={(e) => void submitCustom(e)}>
-        <label>
-          {t('sizeSheet.width')}
-          <input
-            type="text"
-            inputMode="decimal"
-            autoComplete="off"
-            aria-invalid={width.trim() !== '' && widthMm === null}
-            value={width}
-            onChange={(e) => setWidth(e.target.value)}
-          />
-        </label>
-        <label>
-          {t('sizeSheet.height')}
-          <input
-            type="text"
-            inputMode="decimal"
-            autoComplete="off"
-            aria-invalid={height.trim() !== '' && heightMm === null}
-            value={height}
-            onChange={(e) => setHeight(e.target.value)}
-          />
-        </label>
-        {invalid && (
-          <p className="custom-size-error custom-size-wide" role="status">
-            {t('sizeSheet.invalid')}
-          </p>
-        )}
-        <label className="custom-size-wide">
-          {t('sizeSheet.name')}
-          <input type="text" value={name} onChange={(e) => setName(e.target.value)} />
-        </label>
         <button
-          type="submit"
-          className="primary-button custom-size-wide"
-          disabled={widthMm === null || heightMm === null}
+          type="button"
+          className="flip-button"
+          aria-pressed={mode === 'new' ? flipped : undefined}
+          onClick={flip}
         >
-          {t('sizeSheet.use')}
+          <ArrowLeftRight size={18} />
+          {t('sizeSheet.flip')}
         </button>
-      </form>
-    </BottomSheet>
+
+        <div className="folder-chips" role="group" aria-label={t('sizeSheet.folders')}>
+          {groups.map((g) => (
+            <button
+              key={g.id}
+              type="button"
+              className="folder-chip"
+              aria-pressed={g.id === group.id}
+              onClick={() => openFolder(g.id)}
+            >
+              {g.name}
+              <span className="folder-chip-count">{g.sizes.length}</span>
+            </button>
+          ))}
+        </div>
+
+        <section aria-labelledby={titleId}>
+          <h3 id={titleId}>{group.name}</h3>
+          {group.sizes.length === 0 && (
+            <p className="size-folder-empty">{t('sizeSheet.folderEmpty')}</p>
+          )}
+          <div className="size-grid">
+            {group.sizes.map(option)}
+            <button
+              type="button"
+              className="size-option size-option--new"
+              onClick={() => setCreating(true)}
+            >
+              <Plus size={18} strokeWidth={2.5} aria-hidden="true" />
+              {t('sizeSheet.newSize')}
+            </button>
+          </div>
+        </section>
+      </BottomSheet>
+      {creating && (
+        <SizeForm
+          folderId={group.id}
+          onClose={() => setCreating(false)}
+          onSaved={(size, savedIn) => {
+            // Opens on the folder the size went to next time.
+            rememberFolder(savedIn)
+            setCreating(false)
+            use(size)
+          }}
+        />
+      )}
+    </>
   )
 }

@@ -192,3 +192,17 @@ export async function chooseOption(scope: Page | Locator, field: string, option:
   await scope.getByRole('combobox', { name: field, exact: true }).click()
   await scope.getByRole('option', { name: option, exact: true }).click()
 }
+
+/**
+ * In the size sheet: creates a size (saved in the folder the form shows) and uses it.
+ * The sheet must already be open.
+ */
+export async function customSize(page: Page, width: string, height: string, name?: string) {
+  await page.getByRole('button', { name: 'Novo tamanho', exact: true }).click()
+  const form = page.getByRole('dialog', { name: 'Novo tamanho' })
+  if (name) await form.getByLabel('Nome (opcional)').fill(name)
+  await form.getByLabel('Largura (cm)').fill(width)
+  await form.getByLabel('Altura (cm)').fill(height)
+  await form.getByRole('button', { name: 'Salvar e usar', exact: true }).click()
+  await expect(form).toHaveCount(0)
+}

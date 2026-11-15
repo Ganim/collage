@@ -139,20 +139,51 @@ test('the editor size picker shows sizes by folder', async ({ page }) => {
   await openNewCollection(page)
   await button(page, 'Adicionar primeiro frame').click()
   const picker = page.getByRole('dialog', { name: 'Novo frame' })
-  await expect(picker.getByRole('heading')).toHaveText([
-    'Novo frame',
-    'Tamanhos padrão',
-    'Quarto',
-    'Personalizado',
-  ])
+  const folders = picker.getByRole('group', { name: 'Pastas' }).getByRole('button')
+  await expect(folders).toHaveText(['Tamanhos padrão6', 'Meus tamanhos0', 'Quarto1'])
+  // Opens on the ready-made sizes, with a tile to add one.
   await expect(
     picker.getByRole('region', { name: 'Tamanhos padrão' }).getByRole('button'),
-  ).toHaveCount(6)
+  ).toHaveCount(7)
+  await folders.filter({ hasText: 'Quarto' }).click()
   await picker
     .getByRole('region', { name: 'Quarto' })
     .getByRole('button', { name: /Cabeceira/ })
     .click()
   await expect(page.getByRole('button', { name: '9 × 12 cm' })).toBeVisible()
+})
+
+test('a size created in the editor goes to the open folder and is used right away', async ({
+  page,
+}) => {
+  await createFolder(page, 'Quarto')
+  await openNewCollection(page)
+  await button(page, 'Adicionar primeiro frame').click()
+  const picker = page.getByRole('dialog', { name: 'Novo frame' })
+  await picker.getByRole('button', { name: /^Quarto/ }).click()
+  await expect(picker.getByText('Nenhum tamanho nesta pasta ainda.')).toBeVisible()
+
+  await picker.getByRole('button', { name: 'Novo tamanho', exact: true }).click()
+  const form = page.getByRole('dialog', { name: 'Novo tamanho' })
+  await expect(form.getByRole('combobox', { name: 'Pasta', exact: true })).toHaveText('Quarto')
+  await form.getByLabel('Nome (opcional)').fill('Criado-mudo')
+  await form.getByLabel('Largura (cm)').fill('11')
+  await form.getByLabel('Altura (cm)').fill('14')
+  await form.getByRole('button', { name: 'Salvar e usar', exact: true }).click()
+  await expect(form).toHaveCount(0)
+  await expect(picker).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '11 × 14 cm' })).toBeVisible()
+
+  // Reused from the same folder: the sheet opens on it again.
+  await button(page, 'Adicionar frame').click()
+  await expect(
+    picker.getByRole('region', { name: 'Quarto' }).getByRole('button', { name: /Criado-mudo/ }),
+  ).toBeVisible()
+  await button(page, 'Fechar').click()
+
+  await page.goto('/#/frames')
+  await page.getByRole('link', { name: 'Quarto', exact: true }).click()
+  await expect(page.getByText('Criado-mudo')).toBeVisible()
 })
 
 test('Escape closes the folder list first, then the form', async ({ page }) => {

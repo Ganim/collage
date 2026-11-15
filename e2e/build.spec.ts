@@ -1,5 +1,12 @@
 import { expect, type Page } from '@playwright/test'
-import { makeJpeg, openNewCollection, savedCollection, test, uploadPhotos } from './helpers'
+import {
+  customSize,
+  makeJpeg,
+  openNewCollection,
+  savedCollection,
+  test,
+  uploadPhotos,
+} from './helpers'
 
 const trayPhoto = (page: Page, name: string) =>
   page.getByRole('button', { name: `Colocar ${name} no frame` })
@@ -147,10 +154,7 @@ test('a collection with no frames shows the empty-frame drawing', async ({ page 
 
 test('a named custom size is created and still listed after reloading', async ({ page }) => {
   await page.getByRole('button', { name: 'Adicionar frame', exact: true }).click()
-  await page.getByLabel('Largura (cm)').fill('12')
-  await page.getByLabel('Altura (cm)').fill('12')
-  await page.getByLabel('Nome (opcional)').fill('Quadrado')
-  await page.getByRole('button', { name: 'Usar este tamanho' }).click()
+  await customSize(page, '12', '12', 'Quadrado')
   await expect(page.getByRole('button', { name: '12 × 12 cm' })).toBeVisible()
 
   await expect.poll(async () => (await savedCollection(page))?.frames.length).toBe(1)
@@ -161,7 +165,8 @@ test('a named custom size is created and still listed after reloading', async ({
 
 test('a custom size takes a decimal comma and refuses impossible values', async ({ page }) => {
   await page.getByRole('button', { name: 'Adicionar frame', exact: true }).click()
-  const submit = page.getByRole('button', { name: 'Usar este tamanho' })
+  await page.getByRole('button', { name: 'Novo tamanho', exact: true }).click()
+  const submit = page.getByRole('button', { name: 'Salvar e usar' })
   const message = page.getByText('Use medidas de 1 a 100 cm')
   await expect(submit).toBeDisabled()
   await expect(message).toBeHidden()

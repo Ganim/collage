@@ -1117,3 +1117,69 @@ h2 {
   width: 24px;
   height: 24px;
 }
+
+/* Size sheet: one chip per folder, the chosen folder's sizes below with a tile to add one. */
+.folder-chips {
+  display: flex;
+  gap: 8px;
+  margin: 16px -16px 0;
+  padding: 4px 16px 14px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.folder-chips::-webkit-scrollbar {
+  display: none;
+}
+
+.folder-chip {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: #fff;
+  color: var(--plum-900);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.folder-chip[aria-pressed='true'] {
+  border-color: transparent;
+  background: var(--main-gradient);
+  color: #fff;
+  box-shadow: 0 4px 14px rgba(192, 38, 211, 0.3);
+}
+
+.folder-chip-count {
+  min-width: 20px;
+  padding: 1px 6px;
+  border-radius: var(--radius-pill);
+  background: var(--fuchsia-50);
+  color: var(--fuchsia-700);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.folder-chip[aria-pressed='true'] .folder-chip-count {
+  background: rgba(255, 255, 255, 0.25);
+  color: #fff;
+}
+
+.size-folder-empty {
+  margin: 0 0 10px;
+  color: var(--plum-500);
+  font-size: var(--text-sm);
+}
+
+.size-option--new {
+  flex-direction: row;
+  gap: 6px;
+  border: 1.5px dashed var(--fuchsia-600);
+  color: var(--fuchsia-700);
+  font-weight: 700;
+}

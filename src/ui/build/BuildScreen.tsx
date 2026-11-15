@@ -113,11 +113,7 @@ export function BuildScreen({ onLeave }: BuildScreenProps) {
         )}
       </div>
       {(sheet === 'change' || sheet === 'new') && (
-        <SizeSheet
-          mode={sheet}
-          onClose={() => setSheet(null)}
-          onSizeNotSaved={() => setNotice(t('notice.sizeNotSaved'))}
-        />
+        <SizeSheet mode={sheet} onClose={() => setSheet(null)} />
       )}
     </>
   )

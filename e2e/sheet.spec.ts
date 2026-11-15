@@ -4,6 +4,7 @@ import { expect, type Download, type Page } from '@playwright/test'
 import { PDFDocument, PDFName, PDFRawStream } from 'pdf-lib'
 import {
   chooseOption,
+  customSize,
   makeJpeg,
   openNewCollection,
   savedCollection,
@@ -408,9 +409,7 @@ test('a low resolution photo warns, names the frame and does not block', async (
 test('a frame larger than the paper is an error and blocks generation', async ({ page }) => {
   await uploadSized(page, 1, 1200, 1200)
   await page.getByRole('button', { name: 'Adicionar frame', exact: true }).click()
-  await page.getByLabel('Largura (cm)').fill('30')
-  await page.getByLabel('Altura (cm)').fill('30')
-  await page.getByRole('button', { name: 'Usar este tamanho' }).click()
+  await customSize(page, '30', '30')
   await trayPhoto(page, 1).click()
   await expect(
     page.getByRole('img', { name: 'Frame 1 de 1', exact: true }).locator('img'),

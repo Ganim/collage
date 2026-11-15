@@ -1,5 +1,5 @@
 import { useId, useState, type FormEvent } from 'react'
-import type { SavedSize } from '../../core/types'
+import type { SavedSize, Size } from '../../core/types'
 import { useEditor } from '../../state/editor'
 import { parseCm, sizeListText } from '../build/sizeText'
 import { BottomSheet } from '../components/BottomSheet'
@@ -13,10 +13,15 @@ interface SizeFormProps {
   /** The folder picked at first for a new size; Meus tamanhos if absent or read-only. */
   folderId?: string
   onClose: () => void
+  /**
+   * In the editor: called with a new size once it is saved, to use it right away. The name may
+   * then be left empty: the size is saved under its measures.
+   */
+  onSaved?: (size: Size, folderId: string) => void
 }
 
 /** Creates a size (name, width, height, folder) or edits one (name, folder). */
-export function SizeForm({ editing, folderId, onClose }: SizeFormProps) {
+export function SizeForm({ editing, folderId, onClose, onSaved }: SizeFormProps) {
   const folders = useEditor((s) => s.folders)
   const saveSize = useEditor((s) => s.saveSize)
   const updateSize = useEditor((s) => s.updateSize)
@@ -39,7 +44,10 @@ export function SizeForm({ editing, folderId, onClose }: SizeFormProps) {
   const invalid =
     (width.trim() !== '' && widthMm === null) || (height.trim() !== '' && heightMm === null)
   const trimmed = name.trim()
-  const ready = trimmed !== '' && (editing !== undefined || (widthMm !== null && heightMm !== null))
+  const nameOptional = onSaved !== undefined && !editing
+  const ready =
+    (trimmed !== '' || nameOptional) &&
+    (editing !== undefined || (widthMm !== null && heightMm !== null))
   // Meus tamanhos is where a size without a folder lives.
   const target = folder === MINE_ID ? undefined : folder
 
@@ -51,7 +59,12 @@ export function SizeForm({ editing, folderId, onClose }: SizeFormProps) {
     try {
       if (editing) await updateSize(editing.id, { name: trimmed, folderId: target })
       else if (widthMm !== null && heightMm !== null) {
-        await saveSize(trimmed, { widthMm, heightMm }, target)
+        const size = { widthMm, heightMm }
+        await saveSize(trimmed || sizeListText(size), size, target)
+        if (onSaved) {
+          onSaved(size, folder)
+          return
+        }
       }
       onClose()
     } catch (err) {
@@ -69,7 +82,7 @@ export function SizeForm({ editing, folderId, onClose }: SizeFormProps) {
       <form className="custom-size size-form" onSubmit={(e) => void submit(e)}>
         {editing && <p className="size-form-measure custom-size-wide">{sizeListText(editing)}</p>}
         <label className="custom-size-wide">
-          {t('sizeForm.name')}
+          {nameOptional ? t('sizeSheet.name') : t('sizeForm.name')}
           <input
             type="text"
             autoComplete="off"
@@ -127,7 +140,7 @@ export function SizeForm({ editing, folderId, onClose }: SizeFormProps) {
           </p>
         )}
         <button type="submit" className="primary-button custom-size-wide" disabled={!ready || busy}>
-          {t('sizeForm.save')}
+          {onSaved ? t('sizeForm.saveAndUse') : t('sizeForm.save')}
         </button>
       </form>
     </BottomSheet>

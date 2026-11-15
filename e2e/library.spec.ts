@@ -2,6 +2,7 @@ import { expect, type Page } from '@playwright/test'
 import {
   addFrame,
   collectionName,
+  customSize,
   editorMenu,
   frameLabel,
   frameWithPhoto,
@@ -222,10 +223,7 @@ test('holding the frame opens its menu: duplicate, or remove after asking', asyn
 
 test('a size saved in the editor is listed under Meus tamanhos', async ({ page }) => {
   await page.getByRole('button', { name: 'Adicionar primeiro frame', exact: true }).click()
-  await page.getByLabel('Largura (cm)').fill('9')
-  await page.getByLabel('Altura (cm)').fill('12')
-  await page.getByLabel('Nome (opcional)').fill('Mesa da sala')
-  await page.getByRole('button', { name: 'Usar este tamanho', exact: true }).click()
+  await customSize(page, '9', '12', 'Mesa da sala')
 
   await goHome(page)
   await page.getByRole('tab', { name: 'Frames' }).click()
