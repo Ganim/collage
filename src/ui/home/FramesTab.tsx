@@ -1,6 +1,7 @@
 import { Folder, FolderPlus, Plus } from 'lucide-react'
 import { useId, useState } from 'react'
 import { useEditor } from '../../state/editor'
+import { SectionToolbar, ToolbarButton } from '../components/SectionToolbar'
 import { RenameSheet } from '../components/RenameSheet'
 import { t } from '../i18n'
 import { navigate, routeHash } from '../router'
@@ -62,21 +63,21 @@ export function FramesTab({ folderId }: { folderId?: string }) {
 
   return (
     <>
-      <div className="frames-actions">
-        <button type="button" className="secondary-button" onClick={() => setSheet('folder')}>
-          <FolderPlus size={18} aria-hidden="true" />
-          {t('frames.newFolder')}
-        </button>
-        <button
-          type="button"
-          className="primary-button"
+      <SectionToolbar>
+        <ToolbarButton
+          kind="secondary"
+          icon={FolderPlus}
+          label={t('frames.newFolder')}
+          onClick={() => setSheet('folder')}
+        />
+        <ToolbarButton
+          kind="primary"
+          icon={Plus}
+          label={t('frames.newSizeShort')}
           aria-label={t('frames.newSize')}
           onClick={() => setSheet('size')}
-        >
-          <Plus size={18} strokeWidth={2.5} aria-hidden="true" />
-          {t('frames.newSizeShort')}
-        </button>
-      </div>
+        />
+      </SectionToolbar>
       {failed && (
         <p className="home-error" role="status">
           {t('frames.folderFailed')}

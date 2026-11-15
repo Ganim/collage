@@ -1,4 +1,4 @@
-import { CopyPlus, Trash2 } from 'lucide-react'
+import { ArrowLeftRight, CopyPlus, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { useEditor } from '../../state/editor'
 import { BottomSheet } from '../components/BottomSheet'
@@ -7,12 +7,13 @@ import { t } from '../i18n'
 import { useLongPress } from '../useLongPress'
 
 /**
- * Press and hold (or right-click) the frame on screen to duplicate or remove it.
+ * Press and hold (or right-click) the frame on screen to flip, duplicate or remove it.
  * Returns the handlers for the frame's wrapper and the sheets to render beside it.
  */
 export function useFrameMenu(enabled: boolean) {
   const duplicateActive = useEditor((s) => s.duplicateActive)
   const removeActive = useEditor((s) => s.removeActive)
+  const flipActive = useEditor((s) => s.flipActive)
   const [sheet, setSheet] = useState<'menu' | 'remove' | null>(null)
   const press = useLongPress(() => setSheet('menu'))
   const handlers = enabled ? press : {}
@@ -24,6 +25,19 @@ export function useFrameMenu(enabled: boolean) {
       {sheet === 'menu' && (
         <BottomSheet title={t('frameMenu.title')} onClose={close}>
           <ul className="menu-list">
+            <li>
+              <button
+                type="button"
+                className="menu-row"
+                onClick={() => {
+                  close()
+                  flipActive()
+                }}
+              >
+                <ArrowLeftRight size={22} />
+                {t('sizeSheet.flip')}
+              </button>
+            </li>
             <li>
               <button
                 type="button"

@@ -5,6 +5,7 @@ import type { SavedSize, Size } from '../../core/types'
 import { useEditor } from '../../state/editor'
 import { sizeListText } from '../build/sizeText'
 import { ConfirmSheet } from '../components/ConfirmSheet'
+import { SectionToolbar, ToolbarButton } from '../components/SectionToolbar'
 import { Kebab } from '../components/Kebab'
 import { RenameSheet } from '../components/RenameSheet'
 import { t, type MessageKey } from '../i18n'
@@ -54,13 +55,6 @@ export function FolderView({ group }: { group: SizeGroup }) {
       setError(failure)
     }
   }
-
-  const newSizeButton = (className: string) => (
-    <button type="button" className={className} onClick={() => setSheet({ kind: 'newSize' })}>
-      <Plus size={18} strokeWidth={2.5} aria-hidden="true" />
-      {t('frames.newSize')}
-    </button>
-  )
 
   const row = (size: SavedSize | SizePreset) => {
     const preset = isPreset(size)
@@ -128,6 +122,16 @@ export function FolderView({ group }: { group: SizeGroup }) {
           />
         )}
       </div>
+      {!readOnly && (
+        <SectionToolbar>
+          <ToolbarButton
+            kind="primary"
+            icon={Plus}
+            label={t('frames.newSize')}
+            onClick={() => setSheet({ kind: 'newSize' })}
+          />
+        </SectionToolbar>
+      )}
       {error && (
         <p className="home-error" role="status">
           {t(error)}
@@ -137,13 +141,9 @@ export function FolderView({ group }: { group: SizeGroup }) {
         <div className="home-message glass">
           <EmptyFolderIllustration />
           <h2>{t('frames.emptyTitle')}</h2>
-          {newSizeButton('primary-button home-message-action')}
         </div>
       ) : (
-        <>
-          <ul className="size-list">{group.sizes.map(row)}</ul>
-          {!readOnly && <div className="folder-footer">{newSizeButton('primary-button')}</div>}
-        </>
+        <ul className="size-list">{group.sizes.map(row)}</ul>
       )}
 
       {sheet?.kind === 'renameFolder' && (

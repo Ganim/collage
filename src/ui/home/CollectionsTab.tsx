@@ -6,6 +6,7 @@ import { setCollectionLocalOnly } from '../../sync/localOnly'
 import { useSyncStatus } from '../../sync/status'
 import { t, type MessageKey } from '../i18n'
 import { EmptyCollectionsIllustration } from '../illustrations'
+import { SectionToolbar, ToolbarButton, ToolbarFileButton } from '../components/SectionToolbar'
 import { CollectionCard } from './CollectionCard'
 
 interface CollectionsTabProps {
@@ -143,7 +144,8 @@ export function CollectionsTab({ onOpened, onOpen }: CollectionsTabProps) {
     </p>
   )
 
-  const importButton = (
+  /** The empty state's link to import; the toolbar has its own button. */
+  const importLink = (
     <label className={busy ? 'import-link import-link--busy' : 'import-link'}>
       {/* No accept filter: iOS greys out file extensions it does not know. */}
       <input
@@ -177,29 +179,31 @@ export function CollectionsTab({ onOpened, onOpen }: CollectionsTabProps) {
         >
           {t('library.new')}
         </button>
-        {importButton}
+        {importLink}
       </div>
     )
   }
 
   return (
     <>
-      <div className="home-import">{importButton}</div>
+      <SectionToolbar>
+        <ToolbarFileButton
+          icon={FolderInput}
+          label={t('library.importShort')}
+          accessibleLabel={t('library.import')}
+          disabled={busy}
+          onFile={(file) => void importFile(file)}
+        />
+        <ToolbarButton
+          kind="primary"
+          icon={Plus}
+          label={t('library.new')}
+          disabled={busy}
+          onClick={() => void create()}
+        />
+      </SectionToolbar>
       {errorLine}
       <ul className="collection-grid">
-        <li>
-          <button
-            type="button"
-            className="collection-new"
-            disabled={busy}
-            onClick={() => void create()}
-          >
-            <span className="collection-new-icon" aria-hidden="true">
-              <Plus size={26} strokeWidth={2.5} />
-            </span>
-            {t('library.new')}
-          </button>
-        </li>
         {items.map((item) => (
           <CollectionCard
             key={item.id}

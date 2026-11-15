@@ -221,6 +221,22 @@ test('holding the frame opens its menu: duplicate, or remove after asking', asyn
   await expect(frameLabel(page, 'Frame 1 de 1')).toBeAttached()
 })
 
+test('holding the frame offers to flip its orientation', async ({ page }) => {
+  await frameWithPhoto(page)
+  const frame = frameLabel(page, 'Frame 1 de 1')
+  const box = (await frame.boundingBox())!
+  const at = { clientX: box.x + box.width / 2, clientY: box.y + box.height / 2 }
+  await frame.dispatchEvent('pointerdown', { pointerType: 'touch', isPrimary: true, ...at })
+  await page.waitForTimeout(700)
+  await frame.dispatchEvent('pointerup', { pointerType: 'touch', isPrimary: true, ...at })
+  const menu = page.getByRole('dialog', { name: 'Este frame' })
+
+  await expect(page.getByRole('button', { name: '10 × 15 cm' })).toBeVisible()
+  await menu.getByRole('button', { name: 'Inverter orientação', exact: true }).click()
+  await expect(menu).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '15 × 10 cm' })).toBeVisible()
+})
+
 test('a size saved in the editor is listed under Meus tamanhos', async ({ page }) => {
   await page.getByRole('button', { name: 'Adicionar primeiro frame', exact: true }).click()
   await customSize(page, '9', '12', 'Mesa da sala')

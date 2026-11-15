@@ -192,6 +192,7 @@ export const ptBR = {
   'library.new': 'Nova coleção',
   'library.newFailed': 'Não foi possível criar a coleção.',
   'library.import': 'Importar coleção',
+  'library.importShort': 'Importar',
   'library.emptyTitle': 'Nenhuma coleção ainda',
   'library.emptyBody': 'Crie a primeira e comece a montar suas fotos.',
   'library.listFailed': 'Não foi possível ler as coleções.',
