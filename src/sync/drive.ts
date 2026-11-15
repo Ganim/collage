@@ -6,6 +6,8 @@ export interface RemoteFile {
   /** Drive's version counter: a string of digits that grows with every change. */
   version: string
   appProperties: Record<string, string>
+  /** The MD5 of the content as Google computed it; only `list` asks for it. */
+  md5Checksum?: string
 }
 
 export interface Drive {
@@ -51,15 +53,18 @@ interface RawFile {
   name?: string
   version?: string
   appProperties?: Record<string, string>
+  md5Checksum?: string
 }
 
 function toRemoteFile(raw: RawFile): RemoteFile {
-  return {
+  const file: RemoteFile = {
     id: raw.id,
     name: raw.name ?? '',
     version: String(raw.version ?? ''),
     appProperties: raw.appProperties ?? {},
   }
+  if (typeof raw.md5Checksum === 'string') file.md5Checksum = raw.md5Checksum
+  return file
 }
 
 /** Each request gives up after this long without an answer; a timeout counts as offline. */
@@ -79,6 +84,14 @@ function timeoutFor(init: RequestInit): number {
 
 /** Reasons that mean the token lacks the Drive permission (left unchecked on the consent screen). */
 const SCOPE_REASONS = new Set(['insufficientPermissions', 'ACCESS_TOKEN_SCOPE_INSUFFICIENT'])
+
+/** 403 reasons that are only "slow down": the same request is worth trying again later. */
+export const RATE_LIMIT_REASONS = new Set(['rateLimitExceeded', 'userRateLimitExceeded'])
+
+/** The waits before each repeat of a request the Drive refused for going too fast. */
+const RATE_LIMIT_DELAYS_MS = [1000, 2000, 4000]
+
+const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
 
 /** The reasons Google put in an error answer, in `error.errors[]` and `error.details[]`. */
 async function errorReasons(response: Response): Promise<string[]> {
@@ -102,10 +115,12 @@ async function errorReasons(response: Response): Promise<string[]> {
 /**
  * `getToken(true)` must return a token that skips any cache; it is asked for once, after a 401.
  * A `DriveAuthError` thrown by `getToken` is not caught here: the caller tells the person what to do.
+ * `sleep` waits between the repeats of a rate-limited request.
  */
 export function createDrive(
   getToken: (forceRefresh?: boolean) => Promise<string>,
   fetchFn: typeof fetch = (input, init) => fetch(input, init),
+  sleep: (ms: number) => Promise<void> = wait,
 ): Drive {
   let folderId: Promise<string> | null = null
 
@@ -124,26 +139,48 @@ export function createDrive(
     }
   }
 
-  /** One authorized request: a 401 gets a fresh token and one more try; failures become DriveErrors. */
-  async function request(url: string, init: RequestInit = {}): Promise<Response> {
-    let response = await attempt(url, init, await getToken())
-    if (response.status === 401) {
-      response = await attempt(url, init, await getToken(true))
-      if (response.status === 401) {
-        throw new DriveError('revoked', 'Google Drive refused the access', 401)
-      }
-    }
-    if (response.ok) return response
+  /** One authorized try: a 401 gets a fresh token and one more. */
+  async function authorized(url: string, init: RequestInit): Promise<Response> {
+    const response = await attempt(url, init, await getToken())
+    if (response.status !== 401) return response
+    const again = await attempt(url, init, await getToken(true))
+    if (again.status === 401)
+      throw new DriveError('revoked', 'Google Drive refused the access', 401)
+    return again
+  }
+
+  /** The DriveError for a failed answer, and whether it only asks to slow down. */
+  async function failure(response: Response): Promise<{ error: DriveError; rateLimited: boolean }> {
     const { status } = response
     const reasons = status === 403 || status === 429 ? await errorReasons(response) : []
     const reason = reasons[0]
     if (reasons.includes('storageQuotaExceeded')) {
-      throw new DriveError('full', 'Google Drive is full', status, reason)
+      const error = new DriveError('full', 'Google Drive is full', status, reason)
+      return { error, rateLimited: false }
     }
     if (status === 403 && reasons.some((r) => SCOPE_REASONS.has(r))) {
-      throw new DriveError('revoked', 'Google Drive access was not granted', status, reason)
+      const error = new DriveError('revoked', 'Google Drive access was not granted', status, reason)
+      return { error, rateLimited: false }
     }
-    throw new DriveError('other', `Google Drive request failed (${status})`, status, reason)
+    const rateLimited =
+      status === 429 || (status === 403 && reasons.some((r) => RATE_LIMIT_REASONS.has(r)))
+    const error = new DriveError('other', `Google Drive request failed (${status})`, status, reason)
+    return { error, rateLimited }
+  }
+
+  /**
+   * One authorized request; failures become DriveErrors. A rate limit (a 429, or a 403 that says
+   * so) is repeated after 1 s, 2 s and 4 s before it fails.
+   */
+  async function request(url: string, init: RequestInit = {}): Promise<Response> {
+    for (let repeat = 0; ; repeat++) {
+      const response = await authorized(url, init)
+      if (response.ok) return response
+      const { error, rateLimited } = await failure(response)
+      const delay = RATE_LIMIT_DELAYS_MS[repeat]
+      if (!rateLimited || delay === undefined) throw error
+      await sleep(delay)
+    }
   }
 
   async function readJson<T>(response: Response): Promise<T> {
@@ -209,7 +246,7 @@ export function createDrive(
       do {
         const params = new URLSearchParams({
           q: `'${folder}' in parents and trashed=false`,
-          fields: 'nextPageToken,files(id,name,version,appProperties)',
+          fields: 'nextPageToken,files(id,name,version,appProperties,md5Checksum)',
           pageSize: '1000',
         })
         if (pageToken) params.set('pageToken', pageToken)

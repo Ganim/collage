@@ -15,7 +15,10 @@ export function relativeTime(at: number, now: number): string {
 }
 
 /** The status as one sentence: the badge's accessible name and the line in the account menu. */
-export function syncSentence(s: SyncStatus, now: number): string {
+export function syncSentence(
+  s: Pick<SyncStatus, 'state' | 'error' | 'lastSyncedAt' | 'photos'>,
+  now: number,
+): string {
   if (s.photos) return t('sync.photos', { done: s.photos.done, total: s.photos.total })
   switch (s.state) {
     case 'syncing':

@@ -22,7 +22,11 @@ type FakeEditor = Pick<
 
 let calls: string[]
 let editor: StoreApi<FakeEditor>
-let engine: { run: ReturnType<typeof vi.fn>; downloadMissingPhotos: ReturnType<typeof vi.fn> }
+let engine: {
+  run: ReturnType<typeof vi.fn>
+  downloadMissingPhotos: ReturnType<typeof vi.fn>
+  cancel: ReturnType<typeof vi.fn>
+}
 let meta: Map<string, string | boolean>
 let others: { id: string; email: string; count: number }[]
 let store: Store
@@ -76,6 +80,7 @@ beforeEach(() => {
   engine = {
     run: vi.fn(async () => void calls.push('run')),
     downloadMissingPhotos: vi.fn(async () => {}),
+    cancel: vi.fn(() => void calls.push('cancel')),
   }
   store = {
     setOwner: vi.fn(async () => void calls.push('owner')),
@@ -246,6 +251,29 @@ describe('startSync triggers', () => {
     await vi.advanceTimersByTimeAsync(10_000)
     await syncNow()
     expect(engine.run).toHaveBeenCalledTimes(1)
+  })
+
+  it('stop cancels the pass in progress and nothing runs after it', async () => {
+    let release!: () => void
+    engine.run.mockImplementationOnce(() => new Promise<void>((resolve) => (release = resolve)))
+    const sync = begin()
+    await settle()
+    expect(engine.run).toHaveBeenCalledTimes(1)
+    // A trigger during the pass would normally run one more after it.
+    void syncNow()
+    sync.stop()
+    expect(engine.cancel).toHaveBeenCalledTimes(1)
+    expect(useSyncStatus.getState().state).toBe('off')
+    release()
+    await settle()
+    expect(engine.run).toHaveBeenCalledTimes(1)
+  })
+
+  it('stop without Drive access has no engine to cancel', async () => {
+    const sync = begin({ ...ANA, drive: false })
+    await settle()
+    sync.stop()
+    expect(engine.cancel).not.toHaveBeenCalled()
   })
 })
 

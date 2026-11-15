@@ -5,10 +5,11 @@ import type { Collection } from '../core/types'
 import type { Decode } from '../photos/import'
 import { createIdbStore } from '../storage/indexeddb'
 import type { Store, StoredPhoto } from '../storage/store'
-import { DriveAuthError } from '../ui/account/account'
+import { DriveAuthError, DriveNetworkError } from '../ui/account/account'
 import { DriveError, type Drive } from './drive'
 import { createSyncEngine } from './engine'
 import { createFakeDrive, type FakeDrive } from './fakeDrive'
+import { md5 } from './md5'
 import { fitAppProperties } from './remote'
 import { useSyncStatus } from './status'
 
@@ -331,6 +332,33 @@ describe('sync engine between two devices', () => {
     expect((await b.getSyncStates()).c1?.dirty).toBe(true)
   })
 
+  it('the fake Drive lists the MD5 of each body, as Google does', async () => {
+    await a.saveCollection(collection('c1', []))
+    await engineFor(a, drive).run()
+    const [file] = await drive.list(await drive.ensureFolder())
+    expect(file?.md5Checksum).toBe(md5(await drive.files.get(file!.id)!.body.text()))
+    // What the device recorded is the MD5 of the very bytes it sent.
+    expect((await a.getSyncStates()).c1?.remoteMd5).toBe(file?.md5Checksum)
+  })
+
+  it('a new Drive version with the content this device sent is no conflict', async () => {
+    await a.importCollection([photo('p1')], collection('c1', ['p1']))
+    await engineFor(a, drive).run()
+    // Something touched the file on the Drive (its version grows) without changing its content.
+    const [file] = filesOf(drive, 'collection')
+    file!.version = String(Number(file!.version) + 1)
+    await a.saveCollection(collection('c1', ['p1'], { name: 'Editada', updatedAt: 2000 }))
+
+    await engineFor(a, drive).run()
+    expect(status().state).toBe('idle')
+    expect((await a.listCollections()).map((c) => c.name)).toEqual(['Editada'])
+    expect(filesOf(drive, 'collection')).toHaveLength(1)
+    expect(JSON.parse(await filesOf(drive, 'collection')[0]!.body.text())).toMatchObject({
+      name: 'Editada',
+    })
+    expect((await a.getSyncStates()).c1?.dirty).toBe(false)
+  })
+
   it('a conflict cut short after the copy makes no second copy on the next pass', async () => {
     await a.importCollection([photo('p1')], collection('c1', ['p1']))
     await engineFor(a, drive).run()
@@ -507,6 +535,85 @@ describe('sync engine between two devices', () => {
     expect(decoded).toEqual(['p2.png', 'p1.png'])
   })
 
+  it('cancel stops the running pass at its next wait, without touching the status', async () => {
+    await a.importCollection([photo('p1')], collection('c1', ['p1']))
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => (release = resolve))
+    const slow: Drive = {
+      ...drive,
+      async list(folder) {
+        await gate
+        return drive.list(folder)
+      },
+    }
+    const engine = engineFor(a, slow)
+    const pass = engine.run()
+    await vi.waitFor(() => expect(status().state).toBe('syncing'))
+    engine.cancel()
+    useSyncStatus.setState({ state: 'off' })
+    release()
+    await pass
+    expect(status().state).toBe('off')
+    expect(status().lastSyncedAt).toBeUndefined()
+    expect(drive.files.size).toBe(0)
+    expect((await a.getSyncStates()).c1?.dirty).toBe(true)
+
+    // The same engine syncs normally afterwards.
+    await engine.run()
+    expect(status()).toMatchObject({ state: 'idle', lastSyncedAt: NOW })
+    expect(filesOf(drive, 'collection')).toHaveLength(1)
+  })
+
+  it('a run right after cancel starts a new pass instead of joining the cancelled one', async () => {
+    await a.saveCollection(collection('c1', []))
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => (release = resolve))
+    let lists = 0
+    const slow: Drive = {
+      ...drive,
+      async list(folder) {
+        if (lists++ === 0) await gate
+        return drive.list(folder)
+      },
+    }
+    const engine = engineFor(a, slow)
+    const cancelled = engine.run()
+    await vi.waitFor(() => expect(lists).toBe(1))
+    engine.cancel()
+    const next = engine.run()
+    expect(next).not.toBe(cancelled)
+    await next
+    expect(status().state).toBe('idle')
+    release()
+    await cancelled
+    expect(status().state).toBe('idle')
+    expect(filesOf(drive, 'collection')).toHaveLength(1)
+  })
+
+  it('cancel also stops a photo download in progress, leaving the status alone', async () => {
+    await a.importCollection([photo('p1'), photo('p2')], collection('c1', ['p1', 'p2']))
+    await engineFor(a, drive).run()
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => (release = resolve))
+    const slow: Drive = {
+      ...drive,
+      async download(id) {
+        const body = await drive.download(id)
+        if (drive.files.get(id)?.appProperties.kind === 'photo') await gate
+        return body
+      },
+    }
+    const engine = engineFor(b, slow)
+    const pass = engine.run()
+    await vi.waitFor(() => expect(status().photos).toEqual({ done: 0, total: 2 }))
+    engine.cancel()
+    release()
+    await pass
+    expect(status().photos).toEqual({ done: 0, total: 2 })
+    expect(await b.getPhoto('p1')).toBeUndefined()
+    expect(await b.getPhoto('p2')).toBeUndefined()
+  })
+
   it('concurrent runs join the same pass', async () => {
     await a.saveCollection(collection('c1', []))
     const engine = engineFor(a, drive)
@@ -539,11 +646,32 @@ describe('sync status', () => {
     [new DriveError('offline', 'x'), { state: 'offline' }],
     [new DriveError('revoked', 'x'), { state: 'error', error: 'revoked' }],
     [new DriveError('other', 'x'), { state: 'error', error: 'other' }],
-    [new Error('service unreachable'), { state: 'offline' }],
+    [new DriveNetworkError(), { state: 'offline' }],
+    [new TypeError('Failed to fetch'), { state: 'offline' }],
+    [new DOMException('The operation was aborted.', 'AbortError'), { state: 'offline' }],
+    [new Error('Drive token request failed (502)'), { state: 'error', error: 'other' }],
+    [new RangeError('a bug'), { state: 'error', error: 'other' }],
   ])('%s while opening the folder → %o', async (error, expected) => {
     await engineFor(a, failingOnce(drive, 'ensureFolder', error)).run()
     expect(status()).toMatchObject(expected)
     expect(status().lastSyncedAt).toBeUndefined()
+  })
+
+  it('logs an unexpected failure with a fixed text and the error name only', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const secret = new SyntaxError('token=abc123 at /api/auth')
+      await engineFor(a, failingOnce(drive, 'ensureFolder', secret)).run()
+      expect(status()).toMatchObject({ state: 'error', error: 'other' })
+      expect(log).toHaveBeenCalledTimes(1)
+      expect(log.mock.calls[0]).toEqual(['Sync failed:', 'SyntaxError'])
+
+      log.mockClear()
+      await engineFor(a, failingOnce(drive, 'ensureFolder', new TypeError('x'))).run()
+      expect(log).not.toHaveBeenCalled()
+    } finally {
+      log.mockRestore()
+    }
   })
 
   it('a full Drive is an error with the reason full, and the next pass clears it', async () => {

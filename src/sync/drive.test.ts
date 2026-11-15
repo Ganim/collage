@@ -81,17 +81,19 @@ describe('list', () => {
         ? json(200, { files: [{ id: 'b', name: 'B', version: '2' }] })
         : json(200, {
             nextPageToken: 'P2',
-            files: [{ id: 'a', name: 'A', version: '1', appProperties: { k: 'v' } }],
+            files: [
+              { id: 'a', name: 'A', version: '1', appProperties: { k: 'v' }, md5Checksum: 'abc' },
+            ],
           })
     })
     expect(await drive.list('FOLDER')).toEqual([
-      { id: 'a', name: 'A', version: '1', appProperties: { k: 'v' } },
+      { id: 'a', name: 'A', version: '1', appProperties: { k: 'v' }, md5Checksum: 'abc' },
       { id: 'b', name: 'B', version: '2', appProperties: {} },
     ])
     const first = new URL(String(fetchFn.mock.calls[0]![0]))
     expect(first.searchParams.get('q')).toBe("'FOLDER' in parents and trashed=false")
     expect(first.searchParams.get('fields')).toBe(
-      'nextPageToken,files(id,name,version,appProperties)',
+      'nextPageToken,files(id,name,version,appProperties,md5Checksum)',
     )
     expect(first.searchParams.get('pageSize')).toBe('1000')
     expect(new URL(String(fetchFn.mock.calls[1]![0])).searchParams.get('pageToken')).toBe('P2')
@@ -301,6 +303,95 @@ describe('error mapping', () => {
     )
     await expect(drive.list('F')).rejects.toBe(auth)
     expect(fetchFn).not.toHaveBeenCalled()
+  })
+})
+
+describe('rate limits', () => {
+  const limited = (status: number, reason?: string) =>
+    json(status, { error: { errors: reason ? [{ reason }] : [] } })
+
+  it.each([
+    [429, undefined],
+    [403, 'rateLimitExceeded'],
+    [403, 'userRateLimitExceeded'],
+  ])('repeats a %i %s after 1 s, 2 s and 4 s, then fails as other', async (status, reason) => {
+    vi.useFakeTimers()
+    try {
+      const { drive, fetchFn } = setup(() => limited(status, reason))
+      const result = drive.list('F').catch((e: unknown) => e)
+      await vi.advanceTimersByTimeAsync(0)
+      expect(fetchFn).toHaveBeenCalledTimes(1)
+      await vi.advanceTimersByTimeAsync(999)
+      expect(fetchFn).toHaveBeenCalledTimes(1)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(fetchFn).toHaveBeenCalledTimes(2)
+      await vi.advanceTimersByTimeAsync(1999)
+      expect(fetchFn).toHaveBeenCalledTimes(2)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(fetchFn).toHaveBeenCalledTimes(3)
+      await vi.advanceTimersByTimeAsync(3999)
+      expect(fetchFn).toHaveBeenCalledTimes(3)
+      await vi.advanceTimersByTimeAsync(1)
+      const error = await result
+      expect(fetchFn).toHaveBeenCalledTimes(4)
+      expect(error).toBeInstanceOf(DriveError)
+      expect(error).toMatchObject({ kind: 'other', status })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('succeeds when a repeat gets through, waiting through the injected sleep', async () => {
+    let calls = 0
+    const waits: number[] = []
+    const fetchFn = vi.fn(async () =>
+      ++calls < 3 ? limited(429) : json(200, { files: [{ id: 'a', name: 'A', version: '1' }] }),
+    )
+    const drive = createDrive(
+      async () => 'tok',
+      fetchFn as unknown as typeof fetch,
+      async (ms) => void waits.push(ms),
+    )
+    expect(await drive.list('F')).toHaveLength(1)
+    expect(waits).toEqual([1000, 2000])
+  })
+
+  it('never repeats a plain 403, a quota error or a 5xx', async () => {
+    for (const response of [
+      () => limited(403, 'forbidden'),
+      () => limited(429, 'storageQuotaExceeded'),
+      () => limited(403, 'storageQuotaExceeded'),
+      () => json(503, {}),
+    ]) {
+      const waits: number[] = []
+      const fetchFn = vi.fn(async () => response())
+      const drive = createDrive(
+        async () => 'tok',
+        fetchFn as unknown as typeof fetch,
+        async (ms) => void waits.push(ms),
+      )
+      await expect(drive.list('F')).rejects.toBeInstanceOf(DriveError)
+      expect(fetchFn).toHaveBeenCalledTimes(1)
+      expect(waits).toEqual([])
+    }
+  })
+
+  it('repeats the upload PUT with the same bytes', async () => {
+    const puts: string[] = []
+    const fetchFn = vi.fn(async (_url: RequestInfo | URL, init: RequestInit = {}) => {
+      if (init.method === 'POST') {
+        return new Response(null, { headers: { location: 'https://up.example/s' } })
+      }
+      puts.push(await (init.body as Blob).text())
+      return puts.length === 1 ? limited(429) : json(200, { id: 'n', name: 'n', version: '1' })
+    })
+    const drive = createDrive(
+      async () => 'tok',
+      fetchFn as unknown as typeof fetch,
+      async () => {},
+    )
+    expect(await drive.create('F', 'n', new Blob(['bytes']), {})).toMatchObject({ id: 'n' })
+    expect(puts).toEqual(['bytes', 'bytes'])
   })
 })
 

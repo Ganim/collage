@@ -15,7 +15,8 @@ export type Action =
 export interface PlanInput {
   /** Every local collection of the current account. A missing remoteFileId means never uploaded. */
   local: Record<string, SyncState>
-  remote: Record<string, { fileId: string; version: string }>
+  /** `md5` is the Drive's md5Checksum of the file, when it gave one. */
+  remote: Record<string, { fileId: string; version: string; md5?: string }>
   /** Collection deletions recorded in library.json. */
   remoteDeleted: Record<string, number>
   /** Local tombstones of kind 'collection'. */
@@ -33,7 +34,7 @@ export function planCollections(input: PlanInput): Action[] {
 
   for (const id of [...ids].sort()) {
     const state = local[id] as SyncState | undefined
-    const file = remote[id] as { fileId: string; version: string } | undefined
+    const file = remote[id] as PlanInput['remote'][string] | undefined
     const tomb = tombstones.get(id)
 
     // 1. Local deletion: trash the remote file, or just drop the record if it is already gone.
@@ -71,7 +72,10 @@ export function planCollections(input: PlanInput): Action[] {
 
     // 5. Both sides.
     if (state && file) {
-      const remoteChanged = file.version !== state.remoteVersion
+      // A new version holding exactly what this device sent last (only the Drive's metadata
+      // moved) is no change of content.
+      const sameContent = file.md5 !== undefined && file.md5 === state.remoteMd5
+      const remoteChanged = file.version !== state.remoteVersion && !sameContent
       if (remoteChanged && state.dirty) {
         actions.push({ kind: 'conflict', id, fileId: file.fileId, version: file.version })
       } else if (remoteChanged) {

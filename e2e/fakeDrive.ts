@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import type { BrowserContext, Route } from '@playwright/test'
 
 export interface FakeDriveFile {
@@ -50,8 +51,17 @@ interface PendingUpload {
 
 const pending = new WeakMap<FakeDriveState, Map<string, PendingUpload>>()
 
+/** Like Google, a file's md5Checksum is that of its bytes; a folder has none. */
 function view(f: FakeDriveFile) {
-  return { id: f.id, name: f.name, version: f.version, appProperties: f.appProperties }
+  return {
+    id: f.id,
+    name: f.name,
+    version: f.version,
+    appProperties: f.appProperties,
+    ...(f.mimeType === FOLDER_MIME
+      ? {}
+      : { md5Checksum: createHash('md5').update(f.body).digest('hex') }),
+  }
 }
 
 function reply(route: Route, status: number, json?: unknown, headers: Record<string, string> = {}) {

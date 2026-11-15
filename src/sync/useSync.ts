@@ -208,6 +208,8 @@ export function startSync(
     stop() {
       stopped = true
       clearTimeout(timer)
+      // Signing out: the pass in progress stops at its next wait and writes nothing more.
+      engine?.cancel()
       unsubscribeStatus()
       unsubscribeEditor()
       document.removeEventListener('visibilitychange', onVisibility)

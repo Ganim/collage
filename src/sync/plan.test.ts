@@ -4,7 +4,7 @@ import type { SyncState, Tombstone } from '../storage/store'
 
 const base = {
   local: {} as Record<string, SyncState>,
-  remote: {} as Record<string, { fileId: string; version: string }>,
+  remote: {} as Record<string, { fileId: string; version: string; md5?: string }>,
   remoteDeleted: {} as Record<string, number>,
   localTombstones: [] as Tombstone[],
 }
@@ -104,6 +104,31 @@ describe('planCollections', () => {
         remote: { a: { fileId: 'f1', version: '2' } },
       }),
     ).toEqual([{ kind: 'conflict', id: 'a', fileId: 'f1', version: '2' }])
+  })
+
+  it('rule 5: a new version whose content is what this device sent last is only a local change', () => {
+    expect(
+      plan({
+        local: { a: { dirty: true, remoteFileId: 'f1', remoteVersion: '1', remoteMd5: 'm1' } },
+        remote: { a: { fileId: 'f1', version: '2', md5: 'm1' } },
+      }),
+    ).toEqual([{ kind: 'push', id: 'a' }])
+  })
+
+  it('rule 5: a different or unknown checksum is still a conflict', () => {
+    for (const [mine, theirs] of [
+      ['m1', 'm2'],
+      [undefined, 'm1'],
+      ['m1', undefined],
+      [undefined, undefined],
+    ]) {
+      expect(
+        plan({
+          local: { a: { dirty: true, remoteFileId: 'f1', remoteVersion: '1', remoteMd5: mine } },
+          remote: { a: { fileId: 'f1', version: '2', md5: theirs } },
+        }),
+      ).toEqual([{ kind: 'conflict', id: 'a', fileId: 'f1', version: '2' }])
+    }
   })
 
   it('rule 5: nothing changed means no action', () => {

@@ -1,4 +1,5 @@
 import { DriveError, type Drive, type RemoteFile } from './drive'
+import { md5 } from './md5'
 import { APP_PROPERTY_BYTES } from './remote'
 
 export interface FakeFile {
@@ -13,7 +14,10 @@ export interface FakeFile {
 
 export type FakeDrive = Drive & { files: Map<string, FakeFile> }
 
-/** In-memory Drive for unit tests: versions go up by one with every write of a file. */
+/**
+ * In-memory Drive for unit tests: versions go up by one with every write of a file, and `list`
+ * gives each file's md5Checksum like Google.
+ */
 export function createFakeDrive(): FakeDrive {
   const files = new Map<string, FakeFile>()
   let nextId = 1
@@ -39,7 +43,13 @@ export function createFakeDrive(): FakeDrive {
       return folder
     },
     async list(folderId) {
-      return [...files.values()].filter((f) => !f.trashed && f.parents.includes(folderId)).map(view)
+      const live = [...files.values()].filter((f) => !f.trashed && f.parents.includes(folderId))
+      return Promise.all(
+        live.map(async (f) => ({
+          ...view(f),
+          md5Checksum: md5(new Uint8Array(await f.body.arrayBuffer())),
+        })),
+      )
     },
     async download(fileId) {
       return get(fileId).body

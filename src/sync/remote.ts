@@ -1,6 +1,6 @@
 import type { Collection } from '../core/types'
 import { StorageFullError, type Tombstone } from '../storage/store'
-import { DriveAuthError } from '../ui/account/account'
+import { DriveAuthError, DriveNetworkError } from '../ui/account/account'
 import { DriveError, type RemoteFile } from './drive'
 import type { LibraryFile } from './library'
 import type { SyncStatus } from './status'
@@ -106,19 +106,32 @@ export function indexListing(folder: string, files: RemoteFile[]): Listing {
   return listing
 }
 
-/** What the status shows after a failed pass. */
+/**
+ * Failures that only mean "no connection": fetch rejecting (a TypeError), a request cut by its
+ * timer (AbortError), the Drive client's own offline error, and the token service unreachable.
+ */
+function isNetworkFailure(e: unknown): boolean {
+  if (e instanceof DriveError) return e.kind === 'offline'
+  if (e instanceof DriveNetworkError || e instanceof TypeError) return true
+  return e instanceof Error && (e.name === 'AbortError' || e.name === 'TimeoutError')
+}
+
+/**
+ * What the status shows after a failed pass. An unexpected failure is logged with a fixed text
+ * and the error's name only: its message could carry a token or a URL.
+ */
 export function failureStatus(e: unknown): Partial<SyncStatus> {
+  if (isNetworkFailure(e)) return { state: 'offline', error: undefined }
   if (e instanceof DriveAuthError) {
     if (e.reason === 'no_drive') return { state: 'needsDrive', error: undefined }
     if (e.reason === 'revoked') return { state: 'error', error: 'revoked' }
     return { state: 'off', error: undefined }
   }
-  if (e instanceof DriveError) {
-    return e.kind === 'offline'
-      ? { state: 'offline', error: undefined }
-      : { state: 'error', error: e.kind }
+  if (e instanceof DriveError && (e.kind === 'full' || e.kind === 'revoked')) {
+    return { state: 'error', error: e.kind }
   }
-  if (e instanceof StorageFullError) return { state: 'error', error: 'other' }
-  // A plain Error comes from the token service being unreachable: try again later.
-  return { state: 'offline', error: undefined }
+  if (!(e instanceof StorageFullError)) {
+    console.error('Sync failed:', e instanceof Error ? e.name : typeof e)
+  }
+  return { state: 'error', error: 'other' }
 }

@@ -570,6 +570,18 @@ describe('sync bookkeeping', () => {
     })
   })
 
+  it('markPushed records the MD5 of what was sent, and forgets an old one without it', async () => {
+    await store.saveCollection(collection('c1', []))
+    await store.markPushed('c1', 1000, 'r1', '4', 'md5-of-json')
+    expect((await store.getSyncStates()).c1).toMatchObject({
+      remoteVersion: '4',
+      remoteMd5: 'md5-of-json',
+      dirty: false,
+    })
+    await store.markPushed('c1', 1000, 'r1', '5')
+    expect((await store.getSyncStates()).c1?.remoteMd5).toBeUndefined()
+  })
+
   it('markPushed keeps dirty when the collection changed during the upload', async () => {
     await store.saveCollection(collection('c1', []))
     await store.saveCollection({ ...collection('c1', []), updatedAt: 2000 })

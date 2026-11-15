@@ -1,11 +1,20 @@
 import { Cloud, CloudOff, RefreshCw } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { useSyncStatus } from '../../sync/status'
+import { useShallow } from 'zustand/react/shallow'
+import { useSyncStatus, type SyncStatus } from '../../sync/status'
 import { syncIcon, syncSentence } from './syncText'
+
+/** The fields the sentence reads: a change elsewhere (changeCount) renders nothing again. */
+const sentenceFields = ({ state, error, lastSyncedAt, photos }: SyncStatus) => ({
+  state,
+  error,
+  lastSyncedAt,
+  photos,
+})
 
 /** "Sincronizado há 5 min" has to move on by itself while it is on screen. */
 export function useSyncSentence(): string {
-  const status = useSyncStatus()
+  const status = useSyncStatus(useShallow(sentenceFields))
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 30_000)

@@ -144,30 +144,67 @@ export interface DriveToken {
 /** A cached token is dropped this long before it expires, so a request never starts with a dying one. */
 const EXPIRY_MARGIN_MS = 60_000
 
+/** The service could not be reached to ask for a Drive token: the device is offline. */
+export class DriveNetworkError extends Error {
+  constructor() {
+    super('No connection to the Drive token service')
+    this.name = 'DriveNetworkError'
+  }
+}
+
 let driveToken: DriveToken | null = null
+/** The request every caller shares while it runs. */
+let inFlight: Promise<DriveToken> | null = null
+/** Bumped by each new request and by clearDriveToken: only the latest request fills the cache. */
+let generation = 0
 
 /** Forgets the cached Drive token (sign out, or a Drive call that said it was refused). */
 export function clearDriveToken(): void {
   driveToken = null
+  inFlight = null
+  generation++
 }
 
 /**
  * A short-lived Drive access token from the service, kept in memory only. Throws
- * {@link DriveAuthError} when the person must act, and a plain Error for anything else
- * (no connection, Google down), which callers treat as "try again later".
- * `force` skips the cache.
+ * {@link DriveAuthError} when the person must act, {@link DriveNetworkError} when the service
+ * cannot be reached, and a plain Error for anything else (Google down).
+ * Concurrent calls share one request. `force` skips the cache and starts a new request, which
+ * the calls after it share instead.
  */
-export async function getDriveToken(
-  fetchFn: typeof fetch = fetch,
-  force = false,
-): Promise<DriveToken> {
+export function getDriveToken(fetchFn: typeof fetch = fetch, force = false): Promise<DriveToken> {
   if (!force && driveToken && driveToken.expiresAt - EXPIRY_MARGIN_MS > Date.now())
-    return driveToken
-  const response = await fetchFn('/api/auth/drive-token', {
-    method: 'POST',
-    cache: 'no-store',
-    credentials: 'same-origin',
-  })
+    return Promise.resolve(driveToken)
+  if (!force && inFlight) return inFlight
+  const mine = ++generation
+  const request = requestDriveToken(fetchFn).then(
+    (token) => {
+      if (generation === mine) {
+        driveToken = token
+        inFlight = null
+      }
+      return token
+    },
+    (e: unknown) => {
+      if (generation === mine) inFlight = null
+      throw e
+    },
+  )
+  inFlight = request
+  return request
+}
+
+async function requestDriveToken(fetchFn: typeof fetch): Promise<DriveToken> {
+  let response: Response
+  try {
+    response = await fetchFn('/api/auth/drive-token', {
+      method: 'POST',
+      cache: 'no-store',
+      credentials: 'same-origin',
+    })
+  } catch {
+    throw new DriveNetworkError()
+  }
   if (response.status === 401) throw new DriveAuthError('signed_out')
   if (response.status === 403) {
     const body = (await response.json().catch(() => null)) as { error?: unknown } | null
@@ -180,6 +217,5 @@ export async function getDriveToken(
   if (typeof body.accessToken !== 'string' || typeof body.expiresIn !== 'number') {
     throw new Error('Drive token response malformed')
   }
-  driveToken = { accessToken: body.accessToken, expiresAt: Date.now() + body.expiresIn * 1000 }
-  return driveToken
+  return { accessToken: body.accessToken, expiresAt: Date.now() + body.expiresIn * 1000 }
 }
