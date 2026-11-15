@@ -13,6 +13,8 @@ export interface RemoteFile {
 export interface Drive {
   /** The id of the `Collage` folder in the root of the Drive; creates it once. */
   ensureFolder(): Promise<string>
+  /** The id of the folder of that name inside the `Collage` folder; creates it once. */
+  ensureSubfolder(name: string): Promise<string>
   /** Every non-trashed file in the folder, across all pages. */
   list(folderId: string): Promise<RemoteFile[]>
   download(fileId: string): Promise<Blob>
@@ -25,6 +27,8 @@ export interface Drive {
   update(fileId: string, body: Blob): Promise<RemoteFile>
   /** The app never deletes for good: files go to the trash. */
   trash(fileId: string): Promise<void>
+  /** Lets anyone with the link read the file; returns that link (its `webViewLink`). */
+  share(fileId: string): Promise<string>
 }
 
 export type DriveErrorKind = 'full' | 'revoked' | 'offline' | 'other'
@@ -123,6 +127,7 @@ export function createDrive(
   sleep: (ms: number) => Promise<void> = wait,
 ): Drive {
   let folderId: Promise<string> | null = null
+  const subfolderIds = new Map<string, Promise<string>>()
 
   async function attempt(url: string, init: RequestInit, token: string): Promise<Response> {
     const headers = new Headers(init.headers)
@@ -216,8 +221,10 @@ export function createDrive(
     return toRemoteFile(await readJson<RawFile>(done))
   }
 
-  async function findOrCreateFolder(): Promise<string> {
-    const q = `name='${FOLDER_NAME}' and mimeType='${FOLDER_MIME}' and 'root' in parents and trashed=false`
+  /** The folder of that name directly inside `parent`, created when absent. */
+  async function findOrCreateFolder(name: string, parent: string): Promise<string> {
+    const quoted = name.replace(/['\\]/g, '\\$&')
+    const q = `name='${quoted}' and mimeType='${FOLDER_MIME}' and '${parent}' in parents and trashed=false`
     const found = await request(
       `${API}/drive/v3/files?${new URLSearchParams({ q, fields: 'files(id)' })}`,
     )
@@ -225,19 +232,35 @@ export function createDrive(
     if (files[0]) return files[0].id
     const created = await request(
       `${API}/drive/v3/files?fields=id`,
-      jsonInit('POST', { name: FOLDER_NAME, mimeType: FOLDER_MIME, parents: ['root'] }),
+      jsonInit('POST', { name, mimeType: FOLDER_MIME, parents: [parent] }),
     )
     return (await readJson<RawFile>(created)).id
   }
 
-  return {
+  const drive: Drive = {
     ensureFolder() {
       // The in-flight promise is shared so concurrent first calls never create two folders.
-      folderId ??= findOrCreateFolder().catch((e: unknown) => {
+      folderId ??= findOrCreateFolder(FOLDER_NAME, 'root').catch((e: unknown) => {
         folderId = null
         throw e
       })
       return folderId
+    },
+
+    ensureSubfolder(name) {
+      // Shared like the folder's: concurrent first calls create one subfolder.
+      let id = subfolderIds.get(name)
+      if (!id) {
+        id = drive
+          .ensureFolder()
+          .then((parent) => findOrCreateFolder(name, parent))
+          .catch((e: unknown) => {
+            subfolderIds.delete(name)
+            throw e
+          })
+        subfolderIds.set(name, id)
+      }
+      return id
     },
 
     async list(folder) {
@@ -292,5 +315,21 @@ export function createDrive(
         jsonInit('PATCH', { trashed: true }),
       )
     },
+
+    async share(fileId) {
+      const file = `${API}/drive/v3/files/${encodeURIComponent(fileId)}`
+      await request(
+        `${file}/permissions?fields=id`,
+        jsonInit('POST', { role: 'reader', type: 'anyone' }),
+      )
+      const { webViewLink } = await readJson<{ webViewLink?: unknown }>(
+        await request(`${file}?fields=webViewLink`),
+      )
+      if (typeof webViewLink !== 'string' || !webViewLink) {
+        throw new DriveError('other', 'Google Drive gave no link')
+      }
+      return webViewLink
+    },
   }
+  return drive
 }

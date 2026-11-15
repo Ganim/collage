@@ -3,12 +3,17 @@ import { t } from '../i18n'
 const MAX_NAME_LENGTH = 120
 const REVOKE_DELAY_MS = 60_000
 
-/** The collection name as a file name, with only characters every system accepts. */
-export function safeFileName(collectionName: string, extension: string): string {
+/** The collection name, with only characters every system accepts in a file name. */
+export function safeBaseName(collectionName: string): string {
   const trimEnds = (text: string) => text.replace(/^[\s.]+|[\s.]+$/g, '')
   const cleaned = trimEnds(collectionName.replace(/[\\/:*?"<>|\p{Cc}]/gu, ''))
   const name = trimEnds([...cleaned].slice(0, MAX_NAME_LENGTH).join(''))
-  return `${name || t('print.defaultFileName')}.${extension}`
+  return name || t('print.defaultFileName')
+}
+
+/** The collection name as a file name, with only characters every system accepts. */
+export function safeFileName(collectionName: string, extension: string): string {
+  return `${safeBaseName(collectionName)}.${extension}`
 }
 
 export const pdfFileName = (collectionName: string) => safeFileName(collectionName, 'pdf')

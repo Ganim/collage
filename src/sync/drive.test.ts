@@ -500,3 +500,70 @@ describe('timeouts', () => {
     }
   })
 })
+
+describe('ensureSubfolder', () => {
+  it('finds the subfolder inside the Collage folder, once for concurrent calls', async () => {
+    const { drive, fetchFn } = setup((url) => {
+      const q = new URL(url).searchParams.get('q') ?? ''
+      return json(200, { files: [{ id: q.includes("'root' in parents") ? 'F1' : 'P1' }] })
+    })
+    const [a, b] = await Promise.all([drive.ensureSubfolder('PDFs'), drive.ensureSubfolder('PDFs')])
+    expect([a, b]).toEqual(['P1', 'P1'])
+    expect(await drive.ensureSubfolder('PDFs')).toBe('P1')
+    expect(fetchFn).toHaveBeenCalledTimes(2)
+    const q = new URL(String(fetchFn.mock.calls[1]![0])).searchParams.get('q')
+    expect(q).toBe(
+      "name='PDFs' and mimeType='application/vnd.google-apps.folder' and 'F1' in parents and trashed=false",
+    )
+  })
+
+  it('creates the subfolder in the Collage folder when absent, and retries after a failure', async () => {
+    let fail = true
+    const posts: unknown[] = []
+    const { drive } = setup((url, init) => {
+      if (init.method === 'POST') {
+        posts.push(JSON.parse(String(init.body)))
+        return json(200, { id: 'P2' })
+      }
+      const q = new URL(url).searchParams.get('q') ?? ''
+      if (q.includes("'root' in parents")) return json(200, { files: [{ id: 'F1' }] })
+      if (fail) return json(500, {})
+      return json(200, { files: [] })
+    })
+    await expect(drive.ensureSubfolder('PDFs')).rejects.toMatchObject({ kind: 'other' })
+    fail = false
+    expect(await drive.ensureSubfolder('PDFs')).toBe('P2')
+    expect(posts).toEqual([
+      { name: 'PDFs', mimeType: 'application/vnd.google-apps.folder', parents: ['F1'] },
+    ])
+  })
+})
+
+describe('share', () => {
+  it('lets anyone with the link read the file and returns its webViewLink', async () => {
+    const { drive, fetchFn } = setup((_url, init) =>
+      init.method === 'POST'
+        ? json(200, { id: 'anyoneWithLink' })
+        : json(200, { webViewLink: 'https://drive.google.com/file/d/X1/view' }),
+    )
+    expect(await drive.share('X1')).toBe('https://drive.google.com/file/d/X1/view')
+    const calls = fetchFn.mock.calls as unknown as [string, RequestInit][]
+    expect(calls).toHaveLength(2)
+    const [permUrl, permInit] = calls[0]!
+    const [linkUrl, linkInit] = calls[1]!
+    expect(new URL(permUrl).pathname).toBe('/drive/v3/files/X1/permissions')
+    expect(permInit.method).toBe('POST')
+    expect(JSON.parse(String(permInit.body))).toEqual({ role: 'reader', type: 'anyone' })
+    const link = new URL(linkUrl)
+    expect(link.pathname).toBe('/drive/v3/files/X1')
+    expect(link.searchParams.get('fields')).toBe('webViewLink')
+    expect(linkInit.method).toBeUndefined()
+  })
+
+  it('fails when the permission is refused or no link comes back', async () => {
+    const refused = setup(() => json(403, { error: { errors: [{ reason: 'forbidden' }] } }))
+    await expect(refused.drive.share('X1')).rejects.toMatchObject({ kind: 'other', status: 403 })
+    const noLink = setup((_url, init) => json(200, init.method === 'POST' ? { id: 'p' } : {}))
+    await expect(noLink.drive.share('X1')).rejects.toBeInstanceOf(DriveError)
+  })
+})

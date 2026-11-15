@@ -3,7 +3,7 @@ import { create, type StoreApi } from 'zustand'
 import { appEditor, appStorage, type EditorState } from '../state/editor'
 import type { Store } from '../storage/store'
 import { getDriveToken, hasProvisionalId, type Account } from '../ui/account/account'
-import { createDrive } from './drive'
+import { createDrive, type Drive } from './drive'
 import { createSyncEngine, type SyncEngine } from './engine'
 import { useSyncStatus } from './status'
 
@@ -221,6 +221,11 @@ export function startSync(
   }
 }
 
+/** A Drive client for the signed-in account, with the tokens the service hands out. */
+export function createAppDrive(): Drive {
+  return createDrive((force) => getDriveToken(undefined, force).then((t) => t.accessToken))
+}
+
 /** Syncs the signed-in account for as long as the workspace is on screen. */
 export function useSync(account: Account): void {
   const { id, email, drive } = account
@@ -231,13 +236,7 @@ export function useSync(account: Account): void {
       {
         store,
         editor: appEditor(),
-        createEngine: () =>
-          createSyncEngine({
-            store,
-            drive: createDrive((force) =>
-              getDriveToken(undefined, force).then((t) => t.accessToken),
-            ),
-          }),
+        createEngine: () => createSyncEngine({ store, drive: createAppDrive() }),
       },
     )
     return sync.stop

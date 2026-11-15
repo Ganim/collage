@@ -10,6 +10,8 @@ export interface FakeDriveFile {
   trashed: boolean
   body: Buffer
   mimeType: string
+  /** The sharing permissions given to the file. */
+  permissions: { role: string; type: string }[]
 }
 
 export interface FakeDriveState {
@@ -105,6 +107,7 @@ export async function routeFakeDrive(
       trashed: false,
       body,
       mimeType: metadata.mimeType ?? 'application/octet-stream',
+      permissions: [],
     }
     state.files.set(file.id, file)
     return file
@@ -194,6 +197,15 @@ export async function routeFakeDrive(
       return reply(route, 200, view(newFile(metadata, Buffer.alloc(0))))
     }
 
+    const permissions = /^\/drive\/v3\/files\/([^/]+)\/permissions$/.exec(path)
+    if (permissions && method === 'POST') {
+      const file = state.files.get(decodeURIComponent(permissions[1]!))
+      if (!file) return notFound(route)
+      const { role, type } = (request.postDataJSON() ?? {}) as { role: string; type: string }
+      file.permissions.push({ role, type })
+      return reply(route, 200, { id: 'anyoneWithLink' })
+    }
+
     const single = /^\/drive\/v3\/files\/([^/]+)$/.exec(path)
     if (single) {
       const file = state.files.get(decodeURIComponent(single[1]!))
@@ -210,6 +222,9 @@ export async function routeFakeDrive(
         if (typeof patch.trashed === 'boolean') file.trashed = patch.trashed
         file.version = String(Number(file.version) + 1)
         return reply(route, 200, view(file))
+      }
+      if (method === 'GET' && url.searchParams.get('fields') === 'webViewLink') {
+        return reply(route, 200, { webViewLink: `https://drive.google.com/file/d/${file.id}/view` })
       }
       if (method === 'GET') return reply(route, 200, view(file))
     }

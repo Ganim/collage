@@ -6,6 +6,7 @@ import {
   goHome,
   nameOpenCollection,
   newDevice,
+  openNewCollection,
   serveAccount,
   test,
 } from './helpers'
@@ -225,4 +226,88 @@ test('removing a collection from the Drive keeps it on both devices, and sending
     await a.context.close()
     await b.context.close()
   }
+})
+
+test('a generated PDF is shared by a Drive link anyone can open', async ({
+  playwright,
+}, testInfo) => {
+  const drive = createFakeDriveState()
+  const a = await newDevice(playwright, testInfo, 'a', { drive: true })
+  await routeFakeDrive(a.context, drive)
+  // The share sheet and the clipboard are the system's: here they only record what they got.
+  await a.context.addInitScript(() => {
+    const record = window as unknown as { shared?: unknown; copied?: string }
+    Object.defineProperty(navigator, 'share', {
+      configurable: true,
+      value: async (data: unknown) => {
+        record.shared = data
+      },
+    })
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: {
+        writeText: async (text: string) => {
+          record.copied = text
+        },
+      },
+    })
+  })
+
+  try {
+    await a.page.goto('/#/colecoes')
+    await button(a.page, 'Nova coleção').click()
+    await expect(a.page.getByRole('heading', { name: 'Seu primeiro frame' })).toBeVisible()
+    await frameWithPhoto(a.page)
+    await nameOpenCollection(a.page, 'Viagem')
+    await button(a.page, 'Compartilhar').click()
+    await button(a.page, 'Gerar PDF').click()
+    await expect(button(a.page, 'Salvar PDF')).toBeVisible({ timeout: 25_000 })
+
+    await button(a.page, 'Compartilhar link do PDF').click()
+    const field = a.page.getByLabel('Link pronto')
+    await expect(field).toHaveValue(/^https:\/\/drive\.google\.com\/file\/d\/[^/]+\/view$/)
+    const link = await field.inputValue()
+    await expect(a.page.getByText('Quem tiver o link pode baixar o PDF.')).toBeVisible()
+    expect(await a.page.evaluate(() => (window as unknown as { shared?: unknown }).shared)).toEqual(
+      { title: 'Viagem', url: link },
+    )
+
+    await button(a.page, 'Copiar link').click()
+    await expect(a.page.getByRole('status').filter({ hasText: 'Link copiado' })).toBeVisible()
+    expect(await a.page.evaluate(() => (window as unknown as { copied?: string }).copied)).toBe(
+      link,
+    )
+
+    // The file is in Collage/PDFs, readable by anyone with the link; "Salvar PDF" still works.
+    const files = [...drive.files.values()]
+    const collage = files.find((f) => f.name === 'Collage' && f.parents.includes('root'))
+    const pdfs = files.find((f) => f.name === 'PDFs' && f.parents.includes(collage!.id))
+    const shared = files.find((f) => link.includes(`/d/${f.id}/`))
+    expect(pdfs).toBeDefined()
+    expect(shared).toMatchObject({
+      parents: [pdfs!.id],
+      mimeType: 'application/pdf',
+      appProperties: { kind: 'pdf' },
+      permissions: [{ role: 'reader', type: 'anyone' }],
+    })
+    expect(shared!.name).toMatch(/^Viagem - \d{2}-\d{2}-\d{4} \d{2}\.\d{2}\.pdf$/)
+    expect(shared!.body.subarray(0, 5).toString('latin1')).toBe('%PDF-')
+    await expect(button(a.page, 'Salvar PDF')).toBeEnabled()
+  } finally {
+    await a.context.close()
+  }
+})
+
+test('without Drive access the PDF link asks to connect it, and the PDF still saves', async ({
+  page,
+}) => {
+  await openNewCollection(page)
+  await frameWithPhoto(page)
+  await button(page, 'Compartilhar').click()
+  await button(page, 'Gerar PDF').click()
+  await expect(button(page, 'Salvar PDF')).toBeVisible({ timeout: 25_000 })
+  await expect(page.getByText('Conecte o Google Drive para compartilhar por link.')).toBeVisible()
+  await expect(button(page, 'Conectar')).toBeVisible()
+  await expect(button(page, 'Compartilhar link do PDF')).toHaveCount(0)
+  await expect(button(page, 'Salvar PDF')).toBeEnabled()
 })

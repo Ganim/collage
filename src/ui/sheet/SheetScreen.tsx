@@ -6,6 +6,7 @@ import { t } from '../i18n'
 import { useMissingPhotos } from '../useMissingPhotos'
 import { deliverPdf, pdfFileName } from './deliver'
 import { PaperControls } from './PaperControls'
+import { PdfLinkSection } from './PdfLinkSection'
 import { SaveFileSection } from './SaveFileSection'
 import { SheetPreview } from './SheetPreview'
 import { useSheetLayout } from './useSheetLayout'
@@ -147,6 +148,9 @@ export function SheetScreen({ onBack }: { onBack: () => void }) {
         )}
         <p className="print-real-size">{t('print.realSize')}</p>
         {action}
+        {ready && (
+          <PdfLinkSection key={contentKey} pdf={generated.pdf} collectionName={collection.name} />
+        )}
         <SaveFileSection />
       </div>
     </div>

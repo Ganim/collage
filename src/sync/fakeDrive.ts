@@ -10,9 +10,15 @@ export interface FakeFile {
   parents: string[]
   trashed: boolean
   body: Blob
+  /** The sharing permissions given to the file. */
+  permissions: { role: string; type: string }[]
 }
 
-export type FakeDrive = Drive & { files: Map<string, FakeFile> }
+export type FakeDrive = Drive & {
+  files: Map<string, FakeFile>
+  /** The subfolders of the Collage folder, by name. */
+  subfolders: Map<string, string>
+}
 
 /**
  * In-memory Drive for unit tests: versions go up by one with every write of a file, and `list`
@@ -22,6 +28,7 @@ export function createFakeDrive(): FakeDrive {
   const files = new Map<string, FakeFile>()
   let nextId = 1
   let folder: string | null = null
+  const subfolders = new Map<string, string>()
 
   const view = (f: FakeFile): RemoteFile => ({
     id: f.id,
@@ -38,9 +45,18 @@ export function createFakeDrive(): FakeDrive {
 
   return {
     files,
+    subfolders,
     async ensureFolder() {
       folder ??= `folder-${nextId++}`
       return folder
+    },
+    async ensureSubfolder(name) {
+      let id = subfolders.get(name)
+      if (!id) {
+        id = `folder-${nextId++}`
+        subfolders.set(name, id)
+      }
+      return id
     },
     async list(folderId) {
       const live = [...files.values()].filter((f) => !f.trashed && f.parents.includes(folderId))
@@ -69,6 +85,7 @@ export function createFakeDrive(): FakeDrive {
         parents: [folderId],
         trashed: false,
         body,
+        permissions: [],
       }
       files.set(file.id, file)
       return view(file)
@@ -83,6 +100,10 @@ export function createFakeDrive(): FakeDrive {
       const file = get(fileId)
       file.trashed = true
       file.version = String(Number(file.version) + 1)
+    },
+    async share(fileId) {
+      get(fileId).permissions.push({ role: 'reader', type: 'anyone' })
+      return `https://drive.google.com/file/d/${fileId}/view`
     },
   }
 }

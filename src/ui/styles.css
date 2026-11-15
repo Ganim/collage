@@ -1044,3 +1044,49 @@ p {
 .install-dismiss {
   width: 100%;
 }
+
+/* PDF link */
+
+.pdf-link {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pdf-link-hint {
+  color: var(--plum-500);
+  font-size: var(--text-xs);
+  text-align: center;
+}
+
+.pdf-link-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  color: var(--fuchsia-700);
+}
+
+.pdf-link-button:disabled {
+  opacity: 0.6;
+}
+
+.pdf-link-field {
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--plum-500);
+}
+
+.pdf-link-field input {
+  width: 100%;
+  min-height: var(--touch);
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-field);
+  background: #fff;
+  /* Below 16px, iOS zooms the page on focus. */
+  font-size: 16px;
+  color: var(--plum-900);
+}
