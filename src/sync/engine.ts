@@ -150,6 +150,15 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
 
     const readJson = async (fileId: string): Promise<unknown> => (await readFile(fileId)).value
 
+    /** Sends the file to the Drive's trash; one already gone (404) counts as done. */
+    async function trashFile(fileId: string): Promise<void> {
+      try {
+        await drive.trash(fileId)
+      } catch (e) {
+        if (!(e instanceof DriveError && e.status === 404)) throw e
+      }
+    }
+
     /** Uploads the photos the Drive does not have yet; a photo missing here is skipped. */
     async function uploadPhotos(photoIds: string[], listing: Listing): Promise<void> {
       for (const photoId of new Set(photoIds)) {
@@ -408,13 +417,13 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
       await store.setLibraryDirty(false)
 
       for (const action of toTrash) {
-        await drive.trash(action.fileId)
+        await trashFile(action.fileId)
         await store.clearTombstones([{ kind: 'collection', id: action.id }])
       }
 
       // Photos stay on the Drive: another device may not have downloaded them yet.
       for (const action of toDetach) {
-        await drive.trash(action.fileId)
+        await trashFile(action.fileId)
         // Only now: a pass cut short before this plans the removal again.
         await store.setSyncState(action.id, FORGET_FILE)
       }

@@ -108,6 +108,17 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
+/** A drive where every file to trash is already gone: deleted since the listing, so a 404. */
+function goneOnTrash(base: FakeDrive): Drive {
+  return {
+    ...base,
+    trash: (fileId) => {
+      base.files.delete(fileId)
+      return Promise.reject(new DriveError('other', 'Google Drive request failed (404)', 404))
+    },
+  }
+}
+
 /** A drive whose method `name` fails once with `error` when `when` matches its arguments. */
 function failingOnce<K extends keyof Drive>(
   base: Drive,
@@ -289,6 +300,21 @@ describe('sync engine between two devices', () => {
     expect(await b.getCollection('c1')).toBeUndefined()
     expect(await b.getPhoto('p1')).toBeUndefined()
     expect(status().changedIds).toContain('c1')
+    expect(status().state).toBe('idle')
+  })
+
+  it('a deleted collection whose file is gone by the time of the trash (404) still completes', async () => {
+    await a.importCollection([photo('p1')], collection('c1', ['p1']))
+    await a.saveCollection(collection('c2', []))
+    await engineFor(a, drive).run()
+    await a.deleteCollection('c1')
+    await a.deleteCollection('c2')
+
+    await engineFor(a, goneOnTrash(drive)).run()
+    expect(status().state).toBe('idle')
+    expect(await a.listTombstones()).toEqual([])
+    expect(filesOf(drive, 'collection')).toHaveLength(0)
+    await engineFor(a, drive).run()
     expect(status().state).toBe('idle')
   })
 
@@ -918,6 +944,25 @@ describe('remove from and send to the Drive', () => {
     expect((await a.getSyncStates()).c1?.remoteFileId).toBeUndefined()
     await engineFor(b, drive).run()
     expect((await b.getSyncStates()).c1?.localOnly).toBe(true)
+  })
+
+  it('a removal whose file is gone by the time of the trash (404) still completes', async () => {
+    await bothSynced()
+    await a.setLocalOnly('c1', true)
+    await a.setLocalOnly('c2', true)
+
+    await engineFor(a, goneOnTrash(drive)).run()
+    expect(status().state).toBe('idle')
+    const states = await a.getSyncStates()
+    expect(states.c1).toMatchObject({ localOnly: true })
+    expect(states.c1?.remoteFileId).toBeUndefined()
+    expect(states.c2?.remoteFileId).toBeUndefined()
+    expect((await libraryOnDrive()).detached.collection).toEqual({ c1: NOW, c2: NOW })
+
+    await engineFor(b, drive).run()
+    expect(status().state).toBe('idle')
+    expect((await b.getSyncStates()).c1?.localOnly).toBe(true)
+    expect((await b.getSyncStates()).c2?.localOnly).toBe(true)
   })
 
   /** After A sent c1 again and edited it: one c1 on the Drive, no copy, and B gets the edit. */
