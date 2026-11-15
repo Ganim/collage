@@ -59,6 +59,8 @@ pub struct PackOutput {
     pub last_area: u64,
     /// Bounding-box area of the last sheet's items; the final tie-break.
     pub last_extent: u64,
+    /// Fewest sheets the items' area allows; no layout uses fewer.
+    pub lower_bound: usize,
 }
 
 const SEED: u32 = 0x9E37_79B9;
@@ -135,6 +137,8 @@ struct Attempt {
     last_area: u64,
     /// Tie-break: the more compact the last sheet, the better.
     last_extent: u64,
+    /// MaxRects inserts tried, in work units.
+    work: u64,
 }
 
 pub(crate) fn xorshift(state: &mut u32) -> u32 {
@@ -168,9 +172,11 @@ pub(crate) fn sorted_orders(items: &[Inflated]) -> Vec<Vec<Inflated>> {
 fn run(order: &[Inflated], area: (u32, u32), heuristic: Heuristic, n: usize) -> Attempt {
     let mut bins: Vec<Bin> = Vec::new();
     let mut slots = vec![(0, 0, 0, false); n];
+    let mut work = 0;
     for it in order {
         let mut placed = None;
         for (si, bin) in bins.iter_mut().enumerate() {
+            work += 1;
             if let Some(s) = bin.insert(it.w, it.h, heuristic) {
                 placed = Some((si, s));
                 break;
@@ -179,6 +185,7 @@ fn run(order: &[Inflated], area: (u32, u32), heuristic: Heuristic, n: usize) -> 
         if placed.is_none() {
             // Every item reaching here fits an empty sheet (checked by the caller).
             let mut bin = Bin::new(area.0, area.1);
+            work += 1;
             placed = bin.insert(it.w, it.h, heuristic).map(|s| (bins.len(), s));
             bins.push(bin);
         }
@@ -191,28 +198,48 @@ fn run(order: &[Inflated], area: (u32, u32), heuristic: Heuristic, n: usize) -> 
         sheets: bins.len(),
         last_area: bins.last().map_or(0, |b| b.used_area),
         last_extent: bins.last().map_or(0, |b| b.extent_area()),
+        work,
     }
 }
 
-/// Phase one: first-fit MaxRects over the sorted orders and `shuffles` shuffled ones,
-/// with every heuristic; the first best attempt wins.
-fn greedy(fitting: &[Inflated], area: (u32, u32), rng: &mut u32, shuffles: usize) -> Vec<Packed> {
-    let mut orders = sorted_orders(fitting);
-    let mut shuffled = fitting.to_vec();
-    for _ in 0..shuffles {
-        shuffle(&mut shuffled, rng);
-        orders.push(shuffled.clone());
-    }
-
+/// Phase one: first-fit MaxRects with every heuristic over the sorted orders, `SHUFFLES`
+/// shuffled ones (the first release, never cut short), then up to `extra` more shuffles
+/// while their work stays under `extra_work`. The first best attempt wins. Returns the
+/// layout and the work spent on the extra shuffles.
+fn greedy(
+    fitting: &[Inflated],
+    area: (u32, u32),
+    rng: &mut u32,
+    extra: usize,
+    extra_work: u64,
+) -> (Vec<Packed>, u64) {
     let mut best: Option<Attempt> = None;
-    for order in &orders {
+    let mut spent = 0;
+    let try_order = |order: &[Inflated], best: &mut Option<Attempt>| {
+        let mut work = 0;
         for &heuristic in &HEURISTICS {
             let a = run(order, area, heuristic, fitting.len());
+            work += a.work;
             if best.as_ref().is_none_or(|b| {
                 (a.sheets, a.last_area, a.last_extent) < (b.sheets, b.last_area, b.last_extent)
             }) {
-                best = Some(a);
+                *best = Some(a);
             }
+        }
+        work
+    };
+    for order in sorted_orders(fitting) {
+        try_order(&order, &mut best);
+    }
+    let mut shuffled = fitting.to_vec();
+    for k in 0..SHUFFLES + extra {
+        if k >= SHUFFLES && spent >= extra_work {
+            break;
+        }
+        shuffle(&mut shuffled, rng);
+        let work = try_order(&shuffled, &mut best);
+        if k >= SHUFFLES {
+            spent += work;
         }
     }
     let best = best.expect("at least one attempt was made");
@@ -223,11 +250,12 @@ fn greedy(fitting: &[Inflated], area: (u32, u32), rng: &mut u32, shuffles: usize
         items[si].push(i);
         slots[si].push((x, y, rotated));
     }
-    items
+    let bins = items
         .into_iter()
         .zip(slots)
         .map(|(items, slots)| Packed::new(items, slots, fitting))
-        .collect()
+        .collect();
+    (bins, spent)
 }
 
 /// Puts the least used sheet last, which only ever improves the rank.
@@ -254,7 +282,7 @@ pub(crate) fn pack_greedy_only(input: &PackInput) -> usize {
         return 0;
     }
     let mut rng = SEED;
-    greedy(&fitting, area, &mut rng, SHUFFLES).len()
+    greedy(&fitting, area, &mut rng, 0, 0).0.len()
 }
 
 /// The usable area grown by the gap, the items that fit it (inflated) with their input
@@ -298,6 +326,7 @@ pub fn pack(input: &PackInput) -> PackOutput {
             unplaced,
             last_area: 0,
             last_extent: 0,
+            lower_bound: 0,
         };
     }
     let effort = input.effort.unwrap_or(1).clamp(1, MAX_EFFORT);
@@ -305,16 +334,28 @@ pub fn pack(input: &PackInput) -> PackOutput {
         Some(seed) if seed != SEED => seed ^ SEED,
         _ => SEED,
     };
-    let mut bins = greedy(&fitting, area, &mut rng, SHUFFLES * effort as usize);
+    // One budget for the effort: phase one's extra shuffles may take up to half of it,
+    // phase two gets the rest. The first release's orders always run, uncharged.
+    let budget = improve::WORK * effort as u64;
+    let extra = SHUFFLES * (effort as usize - 1);
+    let (mut bins, spent) = greedy(&fitting, area, &mut rng, extra, budget / 2);
     emptiest_last(&mut bins);
 
-    let mut improved = improve::improve(bins.clone(), &fitting, area, rng, effort);
+    let mut improved = improve::improve(
+        bins.clone(),
+        &fitting,
+        area,
+        rng,
+        effort,
+        budget - spent.min(budget),
+    );
     emptiest_last(&mut improved);
     if rank(&improved) < rank(&bins) {
         bins = improved;
     }
 
     let (_, last_area, last_extent) = rank(&bins);
+    let lower_bound = improve::lower_bound(&fitting, area);
     let sheets = bins
         .into_iter()
         .map(|b| {
@@ -345,6 +386,7 @@ pub fn pack(input: &PackInput) -> PackOutput {
         unplaced,
         last_area,
         last_extent,
+        lower_bound,
     }
 }
 
@@ -584,6 +626,7 @@ mod tests {
         let out = serde_json::to_value(pack(&input(vec![item("a", 1000, 1500)]))).unwrap();
         assert_eq!(out["lastArea"], 1030 * 1530);
         assert_eq!(out["lastExtent"], 1030 * 1530);
+        assert_eq!(out["lowerBound"], 1);
     }
 
     #[test]

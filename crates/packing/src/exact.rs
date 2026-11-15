@@ -77,7 +77,8 @@ impl Search<'_> {
 
     /// Columns i..ci and rows j..cj a w x h rectangle with its corner at cell (i, j)
     /// would cover, if they are all free.
-    fn span(&self, i: usize, j: usize, w: u32, h: u32) -> Option<(usize, usize)> {
+    /// Charges the budget for each cell it reads.
+    fn span(&mut self, i: usize, j: usize, w: u32, h: u32) -> Option<(usize, usize)> {
         let (x, y) = (self.xs[i], self.ys[j]);
         if x + w > self.area.0 || y + h > self.area.1 {
             return None;
@@ -90,13 +91,19 @@ impl Search<'_> {
         while cj < self.ys.len() && self.ys[cj] < y + h {
             cj += 1;
         }
+        self.charge((ci - i + cj - j) as u64);
         let nx = self.xs.len();
         for row in j..cj {
+            self.charge((ci - i) as u64);
             if self.covered[row * nx + i..row * nx + ci].iter().any(|&c| c) {
                 return None;
             }
         }
         Some((ci, cj))
+    }
+
+    fn charge(&mut self, units: u64) {
+        *self.budget = self.budget.saturating_sub(units);
     }
 
     /// In a packing pushed up as far as it goes, each rectangle touches the top edge or
@@ -140,6 +147,7 @@ impl Search<'_> {
     }
 
     fn mark(&mut self, i: usize, j: usize, ci: usize, cj: usize, on: bool) {
+        self.charge(((ci - i) * (cj - j)) as u64);
         let nx = self.xs.len();
         let mut area = 0;
         for row in j..cj {
@@ -174,6 +182,12 @@ impl Search<'_> {
             }
             let nx = self.xs.len();
             let (i, j) = (pos % nx, pos / nx);
+            // The neighbour checks below read every placed pair.
+            let placed = self.placed.len() as u64;
+            self.charge(1 + placed * placed);
+            if *self.budget == 0 {
+                return None;
+            }
             if self.stranded(self.ys[j]) {
                 break Some(false);
             }
@@ -194,7 +208,6 @@ impl Search<'_> {
                     if *self.budget == 0 {
                         return None;
                     }
-                    *self.budget -= 1;
                     self.mark(i, j, ci, cj, true);
                     self.kinds[k].left -= 1;
                     self.needed -= w as u64 * h as u64;
@@ -213,7 +226,6 @@ impl Search<'_> {
             if *self.budget == 0 {
                 return None;
             }
-            *self.budget -= 1;
             self.mark(i, j, i + 1, j + 1, true);
             emptied.push((i, j));
             pos += 1;
@@ -225,7 +237,9 @@ impl Search<'_> {
     }
 }
 
-/// Decides whether all `items` fit one `area`, spending at most `budget` search nodes.
+/// Decides whether all `items` fit one `area`, spending at most `budget` steps: one
+/// per subset-sum step of the setup, per search node and per grid cell read or written.
+/// A run that spends it all answers `Unknown` and leaves `budget` at zero.
 pub fn fit(items: &[(u32, u32)], area: (u32, u32), budget: &mut u64) -> Fit {
     let needed: u64 = items.iter().map(|&(w, h)| w as u64 * h as u64).sum();
     let cap = area.0 as u64 * area.1 as u64;
@@ -263,6 +277,13 @@ pub fn fit(items: &[(u32, u32)], area: (u32, u32), budget: &mut u64) -> Fit {
     // Biggest first.
     kinds.sort_by_key(|k| std::cmp::Reverse((k.w as u64 * k.h as u64, k.w.max(k.h))));
 
+    // The subset sums walk each length once per rectangle.
+    let setup = (area.0 as u64 + area.1 as u64 + 2) * items.len() as u64;
+    if *budget < setup {
+        *budget = 0;
+        return Fit::Unknown;
+    }
+    *budget -= setup;
     // No corner lies where even the narrowest rectangle would stick out.
     let min_side = items.iter().map(|&(w, h)| w.min(h)).min().unwrap_or(0);
     let xs: Vec<u32> = sums(items, area.0)
@@ -274,9 +295,10 @@ pub fn fit(items: &[(u32, u32)], area: (u32, u32), budget: &mut u64) -> Fit {
         .filter(|&s| s + min_side <= area.1)
         .collect();
     let cells = xs.len() * ys.len();
-    if cells > MAX_CELLS {
+    if cells > MAX_CELLS || *budget < cells as u64 {
         return Fit::Unknown;
     }
+    *budget -= cells as u64;
     let mut search = Search {
         kinds,
         xs,

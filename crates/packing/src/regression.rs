@@ -290,6 +290,9 @@ fn search_for_fixtures() {
     );
 }
 
+/// Effort of the app's "Reorganizar encaixe" (`REORGANIZE_EFFORT` in useSheetLayout.ts).
+const REORGANIZE_EFFORT: u32 = 10;
+
 /// Times 60 mixed frames at the default and the reorganize effort.
 /// Run with `cargo test --release time_sixty_frames -- --ignored --nocapture`.
 #[test]
@@ -302,7 +305,7 @@ fn time_sixty_frames() {
                 .map(|_| SIZES[(next(&mut state) % 6) as usize])
                 .collect();
             let mut input = fixture(paper, 50, 30, &items);
-            for effort in [1, 8] {
+            for effort in [1, REORGANIZE_EFFORT] {
                 input.effort = Some(effort);
                 let start = std::time::Instant::now();
                 let out = pack(&input);
@@ -318,13 +321,13 @@ fn time_sixty_frames() {
     }
 }
 
-/// Sheets saved over the first release by the default and higher efforts, 10 to 39 items.
+/// Sheets saved over the first release by the default and reorganize efforts, 10 to 39 items.
 /// Run with `cargo test --release effort_headroom -- --ignored --nocapture`.
 #[test]
 #[ignore]
 fn effort_headroom() {
     let mut state = 0x0BAD_F00D;
-    let (mut gain1, mut gain8, mut total) = (0, 0, 0);
+    let (mut gain1, mut gain_high, mut total) = (0, 0, 0);
     let mut worst = std::time::Duration::ZERO;
     for _ in 0..300 {
         let n = 10 + next(&mut state) % 30;
@@ -337,16 +340,48 @@ fn effort_headroom() {
         let start = std::time::Instant::now();
         let d = pack(&input).sheets.len();
         worst = worst.max(start.elapsed());
-        input.effort = Some(8);
-        let e8 = pack(&input).sheets.len();
+        input.effort = Some(REORGANIZE_EFFORT);
+        let high = pack(&input).sheets.len();
         input.effort = Some(32);
         let e32 = pack(&input).sheets.len();
         gain1 += old - d;
-        gain8 += old - e8;
+        gain_high += old - high;
         total += usize::from(e32 < d);
         if e32 < d {
-            println!("default {d} e8 {e8} e32 {e32} old {old}");
+            println!("default {d} reorganize {high} e32 {e32} old {old}");
         }
     }
-    println!("sheets saved: default {gain1}, effort 8 {gain8}; effort 32 beat default on {total}; worst default {worst:?}");
+    println!(
+        "sheets saved: default {gain1}, reorganize {gain_high}; effort 32 beat default on {total}; worst default {worst:?}"
+    );
+}
+
+/// Odd millimetre sizes make the exact search's grid fine; its setup and cells are charged
+/// to the budget, so the default effort stays quick. The bound is loose on purpose (tests
+/// build with optimizations; a typical run takes a few milliseconds).
+#[test]
+fn odd_sizes_stay_fast() {
+    const ODD: [(u32, u32); 3] = [(970, 1430), (1310, 1770), (630, 890)];
+    let mut state = 0x5EED_0DD5;
+    let (mut worst, mut searched) = (std::time::Duration::ZERO, 0);
+    for round in 0..60 {
+        let n = 8 + next(&mut state) % 5;
+        let items: Vec<(u32, u32)> = (0..n)
+            .map(|_| ODD[(next(&mut state) % 3) as usize])
+            .collect();
+        let paper = PAPERS[round % 2];
+        let input = fixture(paper, 50, 30, &items);
+        let start = std::time::Instant::now();
+        let out = check_layout(&input, None);
+        worst = worst.max(start.elapsed());
+        let old = pack_greedy_only(&input);
+        assert!(out.sheets.len() <= old);
+        searched += usize::from(old > lower_bound(&input));
+    }
+    println!("odd sizes, 8 to 12 items: worst {worst:?}, {searched} of 60 reached phase two");
+    assert!(searched >= 6, "too few rounds reach the second phase");
+    assert!(
+        worst < std::time::Duration::from_millis(200),
+        "took {worst:?}"
+    );
 }

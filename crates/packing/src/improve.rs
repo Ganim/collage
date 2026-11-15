@@ -12,14 +12,18 @@ use crate::exact::{self, Fit};
 use crate::maxrects::{Bin, Heuristic};
 use crate::{shuffle, sorted_orders, Inflated, Packed, Slot, HEURISTICS};
 
-/// Work units per effort, one unit per MaxRects insert or exact search node.
-const WORK: u64 = 800_000;
+/// Work units per effort, shared with phase one's extra shuffles. A unit is one MaxRects
+/// insert, or `STEPS_PER_UNIT` exact search steps.
+pub(crate) const WORK: u64 = 800_000;
 /// Shuffled orders tried by each repack, per effort.
 const TRIES: usize = 16;
 /// Pools this small get an exact search for one sheet...
 const EXACT_ITEMS: usize = 12;
-/// ...within this many nodes per effort, or a quarter of the work left if that is more.
-const EXACT_NODES: u64 = 60_000;
+/// ...within this many work units per effort...
+const EXACT_WORK: u64 = 160_000;
+/// ...counting this many exact search steps (a node or a grid cell) as one unit: a step
+/// costs about as much time as a 64th of a MaxRects insert.
+const STEPS_PER_UNIT: u64 = 64;
 /// Pools this small get every split into two sheets.
 const SPLIT_ITEMS: usize = 10;
 /// Pools hold at most this many sheets plus one.
@@ -93,11 +97,10 @@ impl Search<'_> {
                 .iter()
                 .map(|&i| (self.fitting[i].w, self.fitting[i].h))
                 .collect();
-            let left = self.limit - self.work;
-            let allowed = (EXACT_NODES * self.effort as u64).max(left / 4).min(left);
-            let mut budget = allowed;
-            let fit = exact::fit(&rects, self.area, &mut budget);
-            self.work += allowed - budget;
+            let allowed = (EXACT_WORK * self.effort as u64).min(self.limit - self.work);
+            let mut steps = allowed * STEPS_PER_UNIT;
+            let fit = exact::fit(&rects, self.area, &mut steps);
+            self.work += allowed - steps / STEPS_PER_UNIT;
             if let Fit::Yes(slots) = fit {
                 return Some(slots);
             }
@@ -307,17 +310,23 @@ fn combinations(n: usize, k: usize) -> Vec<Vec<usize>> {
     }
 }
 
-/// Tries to bring `bins` down towards the area lower bound.
+/// Fewest sheets the total area allows.
+pub(crate) fn lower_bound(fitting: &[Inflated], area: (u32, u32)) -> usize {
+    let total: u64 = fitting.iter().map(|i| i.area()).sum();
+    total.div_ceil(area.0 as u64 * area.1 as u64) as usize
+}
+
+/// Tries to bring `bins` down towards the area lower bound within `limit` work units.
 pub(crate) fn improve(
     bins: Vec<Packed>,
     fitting: &[Inflated],
     area: (u32, u32),
     rng: u32,
     effort: u32,
+    limit: u64,
 ) -> Vec<Packed> {
     let cap = area.0 as u64 * area.1 as u64;
-    let total: u64 = fitting.iter().map(|i| i.area()).sum();
-    let bound = total.div_ceil(cap) as usize;
+    let bound = lower_bound(fitting, area);
     let mut search = Search {
         fitting,
         area,
@@ -325,13 +334,14 @@ pub(crate) fn improve(
         rng: rng ^ 0x85EB_CA6B,
         effort,
         work: 0,
-        limit: WORK * effort as u64,
+        limit,
     };
     if search.rng == 0 {
         search.rng = 0x85EB_CA6B;
     }
-    // Every step either removes a sheet or, when ejection moves only some items, leaves
-    // the emptiest sheet emptier: the rank never gets worse.
+    // Each round either removes a sheet, or moves some items off the least used sheet and
+    // so lowers the least used area. Sheet order is left to the caller, which puts the
+    // least used sheet last and keeps this layout only if it ranks better than phase one.
     let mut bins = bins;
     while bins.len() > bound && !search.spent() {
         if !(search.eject(&mut bins) || search.pool(&mut bins)) {
