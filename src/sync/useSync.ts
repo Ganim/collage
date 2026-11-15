@@ -65,6 +65,8 @@ export function startSync(
   let active: Promise<void> | null = null
   let again = false
   let reloading = 0
+  /** The editor's localEdits when the current reloads began. */
+  let editsBeforeReload = 0
 
   const ownerSet = store
     .setOwner({ id: account.id, email: account.email })
@@ -103,14 +105,22 @@ export function startSync(
     return active
   }
 
+  /** A pass 4 s after the last local change. */
+  function schedule(): void {
+    if (stopped || !engine) return
+    clearTimeout(timer)
+    timer = setTimeout(() => void trigger(), CHANGE_DELAY_MS)
+  }
+
   async function reload(changedIds: string[]): Promise<void> {
-    reloading++
+    if (reloading++ === 0) editsBeforeReload = editor.getState().localEdits
     try {
       await editor.getState().reloadFromStore(changedIds)
     } catch (e) {
       console.error(e)
     } finally {
-      reloading--
+      // Changes seen during a reload were ignored: an edit made meanwhile still needs its pass.
+      if (--reloading === 0 && editor.getState().localEdits !== editsBeforeReload) schedule()
     }
   }
 
@@ -158,9 +168,7 @@ export function startSync(
       s.folders === prev.folders
     )
       return
-    if (stopped || !engine) return
-    clearTimeout(timer)
-    timer = setTimeout(() => void trigger(), CHANGE_DELAY_MS)
+    schedule()
   })
   const onVisibility = () => {
     if (document.visibilityState === 'visible') void trigger()

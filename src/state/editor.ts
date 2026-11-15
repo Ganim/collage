@@ -124,6 +124,11 @@ export interface EditorState {
   setPaper(p: Partial<Paper>): void
   savedSizes: SavedSize[]
   folders: SizeFolder[]
+  /**
+   * Grows with every edit made on this device (the open collection, sizes, folders). Opening a
+   * collection or reading what the sync changed does not count.
+   */
+  localEdits: number
   saveSize(name: string, size: Size, folderId?: string): Promise<void>
   updateSize(id: string, patch: { name?: string; folderId?: string | undefined }): Promise<void>
   deleteSize(id: string): Promise<void>
@@ -317,6 +322,7 @@ export function createEditorStore(
       saveStatus: 'saved',
       savedSizes: [],
       folders: [],
+      localEdits: 0,
       loadFailed: false,
       storageBlocked: false,
 
@@ -631,7 +637,7 @@ export function createEditorStore(
           ...(folderId ? { folderId } : {}),
         }
         await store.saveSize(saved)
-        set((s) => ({ savedSizes: [...s.savedSizes, saved] }))
+        set((s) => ({ savedSizes: [...s.savedSizes, saved], localEdits: s.localEdits + 1 }))
       },
 
       async updateSize(id, patch) {
@@ -646,13 +652,16 @@ export function createEditorStore(
           ...(folderId ? { folderId } : {}),
         }
         await store.saveSize(updated)
-        set((s) => ({ savedSizes: s.savedSizes.map((x) => (x.id === id ? updated : x)) }))
+        set((s) => ({
+          savedSizes: s.savedSizes.map((x) => (x.id === id ? updated : x)),
+          localEdits: s.localEdits + 1,
+        }))
       },
 
       async saveFolder(name) {
         const folder: SizeFolder = { id: crypto.randomUUID(), name, createdAt: Date.now() }
         await store.saveFolder(folder)
-        set((s) => ({ folders: [...s.folders, folder] }))
+        set((s) => ({ folders: [...s.folders, folder], localEdits: s.localEdits + 1 }))
         return folder
       },
 
@@ -661,7 +670,10 @@ export function createEditorStore(
         if (!current) throw new Error('missing')
         const updated = { ...current, name }
         await store.saveFolder(updated)
-        set((s) => ({ folders: s.folders.map((f) => (f.id === id ? updated : f)) }))
+        set((s) => ({
+          folders: s.folders.map((f) => (f.id === id ? updated : f)),
+          localEdits: s.localEdits + 1,
+        }))
       },
 
       async deleteFolder(id) {
@@ -671,12 +683,16 @@ export function createEditorStore(
           savedSizes: s.savedSizes.map(({ folderId, ...size }) =>
             folderId === id ? size : { ...size, ...(folderId ? { folderId } : {}) },
           ),
+          localEdits: s.localEdits + 1,
         }))
       },
 
       async deleteSize(id) {
         await store.deleteSize(id)
-        set((s) => ({ savedSizes: s.savedSizes.filter((x) => x.id !== id) }))
+        set((s) => ({
+          savedSizes: s.savedSizes.filter((x) => x.id !== id),
+          localEdits: s.localEdits + 1,
+        }))
       },
 
       async reloadFromStore(changedIds) {
@@ -765,7 +781,7 @@ export function createEditorStore(
   editor.subscribe((s, prev) => {
     if (loading || s.collection === prev.collection) return
     revision++
-    editor.setState({ saveStatus: 'saving' })
+    editor.setState({ saveStatus: 'saving', localEdits: s.localEdits + 1 })
     clearTimeout(timer)
     timer = setTimeout(() => void saveOnce(), AUTOSAVE_DELAY_MS)
   })

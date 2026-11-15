@@ -17,7 +17,7 @@ const ANA: Account = {
 
 type FakeEditor = Pick<
   EditorState,
-  'collection' | 'savedSizes' | 'folders' | 'flush' | 'reloadFromStore'
+  'collection' | 'savedSizes' | 'folders' | 'localEdits' | 'flush' | 'reloadFromStore'
 >
 
 let calls: string[]
@@ -69,6 +69,7 @@ beforeEach(() => {
     collection: collection(['p1']),
     savedSizes: [],
     folders: [],
+    localEdits: 0,
     flush: vi.fn(async () => void calls.push('flush')),
     reloadFromStore: vi.fn(async (ids: string[]) => void calls.push(`reload:${ids.join(',')}`)),
   }))
@@ -175,6 +176,32 @@ describe('startSync triggers', () => {
     await settle()
     await vi.advanceTimersByTimeAsync(10_000)
     expect(engine.run).toHaveBeenCalledTimes(1)
+  })
+
+  it('an edit made while a reload is running still schedules a pass', async () => {
+    let finish = () => {}
+    editor.setState({
+      reloadFromStore: vi.fn(async () => {
+        editor.setState({ savedSizes: [], folders: [] })
+        await new Promise<void>((resolve) => (finish = resolve))
+      }),
+    })
+    engine.run.mockImplementationOnce(async () =>
+      useSyncStatus.setState((s) => ({ changeCount: s.changeCount + 1, changedIds: ['c1'] })),
+    )
+    begin()
+    await settle()
+    // The person edits during the reload.
+    editor.setState((s) => ({
+      collection: { ...collection(['p1']), name: 'edited' },
+      localEdits: s.localEdits + 1,
+    }))
+    finish()
+    await settle()
+    await vi.advanceTimersByTimeAsync(3999)
+    expect(engine.run).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(engine.run).toHaveBeenCalledTimes(2)
   })
 
   it('without Drive access: needsDrive and nothing runs', async () => {

@@ -1011,6 +1011,29 @@ describe('reloadFromStore', () => {
     expect(editor.getState().collection.frames).toEqual([])
   })
 
+  it('counts edits made here in localEdits, never a reload', async () => {
+    const { editor } = await opened()
+    const c = editor.getState().collection
+    const start = editor.getState().localEdits
+    await pull({ ...c, name: 'Theirs', updatedAt: c.updatedAt + 1 })
+    await store.putRemoteLibrary([{ id: 's1', name: '3x4', widthMm: 30, heightMm: 40 }], [])
+    await editor.getState().reloadFromStore([c.id])
+    expect(editor.getState().collection.name).toBe('Theirs')
+    expect(editor.getState().localEdits).toBe(start)
+
+    editor.getState().renameCollection('Mine')
+    expect(editor.getState().localEdits).toBe(start + 1)
+    await editor.getState().saveSize('5x5', { widthMm: 50, heightMm: 50 })
+    expect(editor.getState().localEdits).toBe(start + 2)
+    const folder = await editor.getState().saveFolder('Pasta')
+    await editor.getState().renameFolder(folder.id, 'Outra')
+    const size = editor.getState().savedSizes.find((s) => s.name === '5x5')!
+    await editor.getState().updateSize(size.id, { folderId: folder.id })
+    await editor.getState().deleteSize(size.id)
+    await editor.getState().deleteFolder(folder.id)
+    expect(editor.getState().localEdits).toBe(start + 7)
+  })
+
   it('reads sizes and folders again', async () => {
     const editor = await setup()
     await store.putRemoteLibrary(
