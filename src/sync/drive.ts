@@ -6,6 +6,8 @@ export interface RemoteFile {
   /** Drive's version counter: a string of digits that grows with every change. */
   version: string
   appProperties: Record<string, string>
+  /** The MD5 of the content as Google computed it; only `list` asks for it. */
+  md5Checksum?: string
 }
 
 export interface Drive {
@@ -51,15 +53,18 @@ interface RawFile {
   name?: string
   version?: string
   appProperties?: Record<string, string>
+  md5Checksum?: string
 }
 
 function toRemoteFile(raw: RawFile): RemoteFile {
-  return {
+  const file: RemoteFile = {
     id: raw.id,
     name: raw.name ?? '',
     version: String(raw.version ?? ''),
     appProperties: raw.appProperties ?? {},
   }
+  if (typeof raw.md5Checksum === 'string') file.md5Checksum = raw.md5Checksum
+  return file
 }
 
 /** Each request gives up after this long without an answer; a timeout counts as offline. */
@@ -209,7 +214,7 @@ export function createDrive(
       do {
         const params = new URLSearchParams({
           q: `'${folder}' in parents and trashed=false`,
-          fields: 'nextPageToken,files(id,name,version,appProperties)',
+          fields: 'nextPageToken,files(id,name,version,appProperties,md5Checksum)',
           pageSize: '1000',
         })
         if (pageToken) params.set('pageToken', pageToken)

@@ -371,16 +371,20 @@ export async function createIdbStore(
         const original = await sync.get(originalId)
         if (original) await sync.put({ ...original, remoteFileId, remoteVersion }, originalId)
       }),
-    markPushed: (id, uploadedUpdatedAt, fileId, version) =>
+    markPushed: (id, uploadedUpdatedAt, fileId, version, md5) =>
       write(db, ['collections', 'sync'], async (tx) => {
         const current = await tx.objectStore('collections').get(id)
         if (!current) return
         const sync = tx.objectStore('sync')
+        const state: SyncState = { ...((await sync.get(id)) ?? { dirty: false }) }
+        // An MD5 of an older upload no longer names what is on the Drive.
+        delete state.remoteMd5
         await sync.put(
           {
-            ...((await sync.get(id)) ?? { dirty: false }),
+            ...state,
             remoteFileId: fileId,
             remoteVersion: version,
+            ...(md5 === undefined ? {} : { remoteMd5: md5 }),
             // An edit saved during the upload is not on the Drive yet.
             dirty: current.updatedAt !== uploadedUpdatedAt,
           },

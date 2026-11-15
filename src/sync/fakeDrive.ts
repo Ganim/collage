@@ -1,4 +1,5 @@
 import { DriveError, type Drive, type RemoteFile } from './drive'
+import { md5 } from './md5'
 import { APP_PROPERTY_BYTES } from './remote'
 
 export interface FakeFile {
@@ -13,8 +14,19 @@ export interface FakeFile {
 
 export type FakeDrive = Drive & { files: Map<string, FakeFile> }
 
+export interface FakeDriveOptions {
+  /**
+   * Like the real Drive, a file's version moves on again after its upload has answered (Google
+   * bumps `version` for changes it makes on its own side), so the version an upload returned is
+   * already stale when the folder is next listed.
+   */
+  bumpVersionAfterWrite?: boolean
+}
+
 /** In-memory Drive for unit tests: versions go up by one with every write of a file. */
-export function createFakeDrive(): FakeDrive {
+export function createFakeDrive({
+  bumpVersionAfterWrite = false,
+}: FakeDriveOptions = {}): FakeDrive {
   const files = new Map<string, FakeFile>()
   let nextId = 1
   let folder: string | null = null
@@ -25,6 +37,13 @@ export function createFakeDrive(): FakeDrive {
     version: f.version,
     appProperties: { ...f.appProperties },
   })
+
+  /** The answer to an upload; with bumpVersionAfterWrite the stored version then moves on. */
+  const written = (f: FakeFile): RemoteFile => {
+    const answer = view(f)
+    if (bumpVersionAfterWrite) f.version = String(Number(f.version) + 1)
+    return answer
+  }
 
   const get = (fileId: string): FakeFile => {
     const file = files.get(fileId)
@@ -39,7 +58,14 @@ export function createFakeDrive(): FakeDrive {
       return folder
     },
     async list(folderId) {
-      return [...files.values()].filter((f) => !f.trashed && f.parents.includes(folderId)).map(view)
+      // Like Google, the listing gives each file's md5Checksum.
+      const live = [...files.values()].filter((f) => !f.trashed && f.parents.includes(folderId))
+      return Promise.all(
+        live.map(async (f) => ({
+          ...view(f),
+          md5Checksum: md5(new Uint8Array(await f.body.arrayBuffer())),
+        })),
+      )
     },
     async download(fileId) {
       return get(fileId).body
@@ -61,13 +87,13 @@ export function createFakeDrive(): FakeDrive {
         body,
       }
       files.set(file.id, file)
-      return view(file)
+      return written(file)
     },
     async update(fileId, body) {
       const file = get(fileId)
       file.body = body
       file.version = String(Number(file.version) + 1)
-      return view(file)
+      return written(file)
     },
     async trash(fileId) {
       const file = get(fileId)

@@ -4,6 +4,7 @@ import type { Owner, Store, Tombstone } from '../storage/store'
 import { t } from '../ui/i18n'
 import { DriveError, type Drive, type RemoteFile } from './drive'
 import { forgetCollectionDeletion, mergeLibrary } from './library'
+import { md5 } from './md5'
 import { planCollections, type Action } from './plan'
 import {
   canonical,
@@ -130,16 +131,19 @@ export function createSyncEngine({
     }
     await uploadPhotos(c.photoIds, listing)
     const existing = remote.get(id)
+    // The exact text uploaded: its MD5 is how a later pass recognizes it on the Drive.
+    const text = JSON.stringify(c)
+    const body = new Blob([text], { type: 'application/json' })
     const file = existing
-      ? await drive.update(existing.id, jsonBlob(c))
+      ? await drive.update(existing.id, body)
       : await drive.create(
           listing.folder,
           `collection-${id}.json`,
-          jsonBlob(c),
+          body,
           fitAppProperties({ kind: 'collection', collectionId: id }),
         )
     remote.set(id, file)
-    await store.markPushed(id, c.updatedAt, file.id, file.version)
+    await store.markPushed(id, c.updatedAt, file.id, file.version, md5(text))
     // Deleted during its first upload: no tombstone knows this file, so it goes now.
     if (!existing && !(await store.getCollection(id))) {
       await drive.trash(file.id)
@@ -245,7 +249,10 @@ export function createSyncEngine({
     const actions = planCollections({
       local,
       remote: Object.fromEntries(
-        [...remote].map(([id, f]) => [id, { fileId: f.id, version: f.version }]),
+        [...remote].map(([id, f]) => [
+          id,
+          { fileId: f.id, version: f.version, md5: f.md5Checksum },
+        ]),
       ),
       remoteDeleted: remoteLibrary?.deleted.collection ?? {},
       localTombstones: [...allTombs.values()],

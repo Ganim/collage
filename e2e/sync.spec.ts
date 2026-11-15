@@ -98,6 +98,42 @@ test('two devices on one Drive see each other’s changes', async ({ playwright 
   }
 })
 
+test('editing a synced collection on one device and going back makes no copy', async ({
+  playwright,
+}, testInfo) => {
+  // Like Google, the Drive moves a file's version on after the upload has answered.
+  const drive = createFakeDriveState({ bumpVersionAfterWrite: true })
+  const a = await newDevice(playwright, testInfo, 'a', { drive: true })
+  await routeFakeDrive(a.context, drive)
+
+  try {
+    await a.page.goto('/#/colecoes')
+    await button(a.page, 'Nova coleção').click()
+    await expect(a.page.getByRole('heading', { name: 'Seu primeiro frame' })).toBeVisible()
+    await frameWithPhoto(a.page)
+    await nameOpenCollection(a.page, 'Viagem')
+    await goHome(a.page)
+    await syncNow(a.page)
+    await expect.poll(() => namesOnDrive(drive)).toEqual(['Viagem'])
+
+    for (const [from, name] of [
+      ['Viagem', 'Viagem 2'],
+      ['Viagem 2', 'Viagem 3'],
+    ] as const) {
+      await button(a.page, from).click()
+      await expect(a.page).toHaveURL(/#\/c\/[^/]+$/)
+      await nameOpenCollection(a.page, name)
+      await goHome(a.page)
+      await syncNow(a.page)
+      await expect.poll(() => namesOnDrive(drive)).toEqual([name])
+    }
+    await expect(button(a.page, 'Viagem 3')).toBeVisible()
+    await expect(a.page.getByRole('button', { name: /cópia de outro aparelho/ })).toHaveCount(0)
+  } finally {
+    await a.context.close()
+  }
+})
+
 test('without Drive access the account offers to connect it', async ({ page }) => {
   // The test account has not granted the Drive.
   await page.goto('/#/colecoes')

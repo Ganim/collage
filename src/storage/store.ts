@@ -28,6 +28,8 @@ export interface SyncState {
   ownerEmail?: string
   remoteFileId?: string
   remoteVersion?: string
+  /** The MD5 of the JSON this device last uploaded for the collection. */
+  remoteMd5?: string
   /** Changed locally since the last upload. */
   dirty: boolean
 }
@@ -124,9 +126,15 @@ export interface Store {
   /**
    * After an upload: records the Drive file and clears dirty, unless the collection changed since
    * the uploaded copy (its updatedAt differs), in which case it stays dirty. A collection deleted
-   * meanwhile is left alone.
+   * meanwhile is left alone. `md5` is that of the bytes uploaded; without it none is kept.
    */
-  markPushed(id: string, uploadedUpdatedAt: number, fileId: string, version: string): Promise<void>
+  markPushed(
+    id: string,
+    uploadedUpdatedAt: number,
+    fileId: string,
+    version: string,
+    md5?: string,
+  ): Promise<void>
   /**
    * Deletes the collection and its sync state without a tombstone, freeing unused photos. With
    * `onlyIfClean`, a collection that is dirty at that moment is kept. Resolves to whether it

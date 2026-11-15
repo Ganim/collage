@@ -188,6 +188,37 @@ describe('sync engine between two devices', () => {
     expect((await b.listCollections()).map((c) => c.name).sort()).toEqual(names)
   })
 
+  it('on a Drive that bumps versions after uploads, an edit from elsewhere still makes a copy', async () => {
+    drive = createFakeDrive({ bumpVersionAfterWrite: true })
+    await a.importCollection([photo('p1')], collection('c1', ['p1']))
+    await engineFor(a, drive).run()
+    await engineFor(b, drive).run()
+    await b.saveCollection(collection('c1', ['p1'], { name: 'De B', updatedAt: 2000 }))
+    await engineFor(b, drive).run()
+    await a.saveCollection(collection('c1', ['p1'], { name: 'De A', updatedAt: 3000 }))
+
+    await engineFor(a, drive).run()
+    expect((await a.listCollections()).map((c) => c.name).sort()).toEqual(['De A', `De B${SUFFIX}`])
+  })
+
+  it('on a Drive that bumps versions after uploads, its own upload is no conflict', async () => {
+    drive = createFakeDrive({ bumpVersionAfterWrite: true })
+    await a.saveCollection(collection('c1', []))
+    await engineFor(a, drive).run()
+    await a.saveCollection(collection('c1', [], { name: 'Editada', updatedAt: 2000 }))
+    await engineFor(a, drive).run()
+    await a.saveCollection(collection('c1', [], { name: 'Editada 2', updatedAt: 3000 }))
+    await engineFor(a, drive).run()
+    expect((await a.listCollections()).map((c) => c.name)).toEqual(['Editada 2'])
+    expect((await a.getSyncStates()).c1?.dirty).toBe(false)
+    const [file] = filesOf(drive, 'collection')
+    expect(JSON.parse(await file!.body.text())).toMatchObject({ name: 'Editada 2' })
+
+    // Another device then picks up the latest version.
+    await engineFor(b, drive).run()
+    expect((await b.getCollection('c1'))?.name).toBe('Editada 2')
+  })
+
   it('a conflict with identical content adopts the remote file without a copy', async () => {
     await a.saveCollection(collection('c1', []))
     // The upload landed but the device never recorded it.

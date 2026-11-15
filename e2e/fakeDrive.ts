@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import type { BrowserContext, Route } from '@playwright/test'
 
 export interface FakeDriveFile {
@@ -14,10 +15,15 @@ export interface FakeDriveFile {
 export interface FakeDriveState {
   files: Map<string, FakeDriveFile>
   nextId: number
+  /**
+   * Like Google, a file's version moves on again after its upload has answered (the Drive bumps
+   * it for changes it makes on its own side), so the answered version is stale at the next list.
+   */
+  bumpVersionAfterWrite: boolean
 }
 
-export function createFakeDriveState(): FakeDriveState {
-  return { files: new Map(), nextId: 1 }
+export function createFakeDriveState({ bumpVersionAfterWrite = false } = {}): FakeDriveState {
+  return { files: new Map(), nextId: 1, bumpVersionAfterWrite }
 }
 
 const FOLDER_MIME = 'application/vnd.google-apps.folder'
@@ -50,8 +56,17 @@ interface PendingUpload {
 
 const pending = new WeakMap<FakeDriveState, Map<string, PendingUpload>>()
 
+/** Like Google, a file's md5Checksum is that of its bytes; a folder has none. */
 function view(f: FakeDriveFile) {
-  return { id: f.id, name: f.name, version: f.version, appProperties: f.appProperties }
+  return {
+    id: f.id,
+    name: f.name,
+    version: f.version,
+    appProperties: f.appProperties,
+    ...(f.mimeType === FOLDER_MIME
+      ? {}
+      : { md5Checksum: createHash('md5').update(f.body).digest('hex') }),
+  }
 }
 
 function reply(route: Route, status: number, json?: unknown, headers: Record<string, string> = {}) {
@@ -132,14 +147,19 @@ export async function routeFakeDrive(
       if (!session) return notFound(route)
       uploads.delete(sessionId)
       const body = request.postDataBuffer() ?? Buffer.alloc(0)
+      let file: FakeDriveFile
       if (session.fileId) {
         const existing = state.files.get(session.fileId)
         if (!existing) return notFound(route)
         existing.body = body
         existing.version = String(Number(existing.version) + 1)
-        return reply(route, 200, view(existing))
+        file = existing
+      } else {
+        file = newFile(session.metadata, body)
       }
-      return reply(route, 200, view(newFile(session.metadata, body)))
+      const answer = view(file)
+      if (state.bumpVersionAfterWrite) file.version = String(Number(file.version) + 1)
+      return reply(route, 200, answer)
     }
 
     // Open a resumable session (create or update).
