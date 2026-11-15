@@ -116,6 +116,15 @@ describe('planCollections', () => {
     ).toEqual([{ kind: 'push', id: 'a' }])
   })
 
+  it('rule 5: a new version with what this device sent last, and nothing local, needs nothing', () => {
+    expect(
+      plan({
+        local: { a: { dirty: false, remoteFileId: 'f1', remoteVersion: '1', remoteMd5: 'm1' } },
+        remote: { a: { fileId: 'f1', version: '2', md5: 'm1' } },
+      }),
+    ).toEqual([])
+  })
+
   it('rule 5: a different or unknown checksum is still a conflict', () => {
     for (const [mine, theirs] of [
       ['m1', 'm2'],

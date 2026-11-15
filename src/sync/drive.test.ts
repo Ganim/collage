@@ -78,7 +78,7 @@ describe('list', () => {
     const { drive, fetchFn } = setup((url) => {
       const token = new URL(url).searchParams.get('pageToken')
       return token
-        ? json(200, { files: [{ id: 'b', name: 'B', version: '2' }] })
+        ? json(200, { files: [{ id: 'b', name: 'B', version: '2', md5Checksum: 'm5' }] })
         : json(200, {
             nextPageToken: 'P2',
             files: [
@@ -88,7 +88,7 @@ describe('list', () => {
     })
     expect(await drive.list('FOLDER')).toEqual([
       { id: 'a', name: 'A', version: '1', appProperties: { k: 'v' }, md5Checksum: 'abc' },
-      { id: 'b', name: 'B', version: '2', appProperties: {} },
+      { id: 'b', name: 'B', version: '2', appProperties: {}, md5Checksum: 'm5' },
     ])
     const first = new URL(String(fetchFn.mock.calls[0]![0]))
     expect(first.searchParams.get('q')).toBe("'FOLDER' in parents and trashed=false")
