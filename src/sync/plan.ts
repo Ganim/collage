@@ -1,5 +1,9 @@
 import type { SyncState, Tombstone } from '../storage/store'
 
+/**
+ * `forgetTombstone(id)` means: drop id from library.json `deleted.collection` AND from the local
+ * tombstones, if present in either (see forgetCollectionDeletion in library.ts).
+ */
 export type Action =
   | { kind: 'push'; id: string }
   | { kind: 'pull'; id: string; fileId: string; version: string }
@@ -58,7 +62,8 @@ export function planCollections(input: PlanInput): Action[] {
       continue
     }
 
-    // 4. Remote only.
+    // 4. Remote only. A stale remoteDeleted entry does not block the pull: the file exists, so it
+    // was re-created after the deletion was recorded.
     if (!state && file) {
       actions.push({ kind: 'pull', id, fileId: file.fileId, version: file.version })
       continue

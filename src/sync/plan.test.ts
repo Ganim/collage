@@ -128,4 +128,31 @@ describe('planCollections', () => {
     const ids = plan({ local: { b: { dirty: true }, a: { dirty: true } } }).map((x) => x.id)
     expect(ids).toEqual(['a', 'b'])
   })
+
+  it('rule 2: remoteDeleted entry with the remote file still present and local clean deletes locally', () => {
+    // The file can linger in the listing; the engine removes the record when it re-pushes.
+    expect(
+      plan({
+        local: { a: { dirty: false, remoteFileId: 'f1', remoteVersion: '1' } },
+        remote: { a: { fileId: 'f1', version: '1' } },
+        remoteDeleted: { a: 10 },
+      }),
+    ).toEqual([{ kind: 'deleteLocal', id: 'a' }])
+  })
+
+  it('rule 4: remote only with a stale remoteDeleted entry still pulls', () => {
+    expect(
+      plan({ remote: { a: { fileId: 'f1', version: '2' } }, remoteDeleted: { a: 10 } }),
+    ).toEqual([{ kind: 'pull', id: 'a', fileId: 'f1', version: '2' }])
+  })
+
+  it('rule 1 wins when a local tombstone and a local state exist for the same id', () => {
+    expect(
+      plan({
+        local: { a: { dirty: true, remoteFileId: 'f1', remoteVersion: '1' } },
+        localTombstones: [tomb('a', 'f1')],
+        remote: { a: { fileId: 'f1', version: '1' } },
+      }),
+    ).toEqual([{ kind: 'trashRemote', id: 'a', fileId: 'f1' }])
+  })
 })

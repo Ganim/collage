@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { mergeLibrary, type LibraryFile } from './library'
+import { forgetCollectionDeletion, mergeLibrary, type LibraryFile } from './library'
 import type { SavedSize } from '../core/types'
 
 const size = (id: string, updatedAt?: number, extra: Partial<SavedSize> = {}): SavedSize =>
@@ -112,5 +112,36 @@ describe('mergeLibrary', () => {
       null,
     )
     expect(m.folders.map((f) => f.id)).toEqual(['y', 'z'])
+  })
+
+  it('on equal timestamps the item wins over the tombstone', () => {
+    const m = mergeLibrary(
+      lib({ sizes: [size('s', 8)] }),
+      lib({ deleted: deleted({ size: { s: 8 } }) }),
+    )
+    expect(m.sizes.map((s) => s.id)).toEqual(['s'])
+    expect(m.deleted.size).toEqual({})
+  })
+
+  it('a deleted folder clears folderId even from sizes newer than the tombstone', () => {
+    const m = mergeLibrary(
+      lib({
+        sizes: [size('s', 9, { folderId: 'f' })],
+        folders: [{ id: 'f', name: 'F', createdAt: 1, updatedAt: 2 }],
+      }),
+      lib({ deleted: deleted({ folder: { f: 6 } }) }),
+    )
+    expect(m.sizes).toHaveLength(1)
+    expect('folderId' in m.sizes[0]!).toBe(false)
+    expect(m.sizes[0]!.updatedAt).toBe(9)
+  })
+})
+
+describe('forgetCollectionDeletion', () => {
+  it('removes only that collection record and leaves the input untouched', () => {
+    const l = lib({ deleted: deleted({ collection: { a: 1, b: 2 }, size: { s: 3 } }) })
+    const out = forgetCollectionDeletion(l, 'a')
+    expect(out.deleted).toEqual({ size: { s: 3 }, folder: {}, collection: { b: 2 } })
+    expect(l.deleted.collection).toEqual({ a: 1, b: 2 })
   })
 })

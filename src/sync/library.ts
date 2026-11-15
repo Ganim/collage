@@ -34,11 +34,11 @@ function mergeItems<T extends Stamped>(
   const kept: Times = {}
   for (const [id, at] of Object.entries(deleted)) {
     const item = byId.get(id)
-    if (!item || (item.updatedAt ?? 0) <= at) kept[id] = at
+    if (!item || (item.updatedAt ?? 0) < at) kept[id] = at
   }
   for (const item of byId.values()) {
     const at = deleted[item.id]
-    if (at === undefined || (item.updatedAt ?? 0) > at) items.push(item)
+    if (at === undefined || (item.updatedAt ?? 0) >= at) items.push(item)
   }
   items.sort((x, y) => (x.id < y.id ? -1 : x.id > y.id ? 1 : 0))
   return { items, deleted: kept }
@@ -72,4 +72,14 @@ export function mergeLibrary(local: LibraryFile, remote: LibraryFile | null): Li
       collection: mergeTimes(local.deleted.collection, r.deleted.collection),
     },
   }
+}
+
+/**
+ * Drops a collection's deletion record from the library. The engine calls this together with
+ * removing the local tombstone whenever the plan says `forgetTombstone`.
+ */
+export function forgetCollectionDeletion(lib: LibraryFile, id: string): LibraryFile {
+  const collection = { ...lib.deleted.collection }
+  delete collection[id]
+  return { ...lib, deleted: { ...lib.deleted, collection } }
 }
