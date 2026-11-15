@@ -633,14 +633,6 @@ a.menu-row {
 }
 
 .import-link {
-  border: var(--glass-border);
-  background: var(--glass);
-  -webkit-backdrop-filter: var(--glass-blur);
-  backdrop-filter: var(--glass-blur);
-  box-shadow: var(--shadow);
-}
-
-.import-link {
   position: relative;
   display: inline-flex;
   align-items: center;
