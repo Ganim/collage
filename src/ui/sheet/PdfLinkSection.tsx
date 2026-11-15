@@ -11,14 +11,20 @@ type Phase = 'idle' | 'creating' | 'failed' | 'needsDrive' | { link: string }
 const driveMissing = (s: SyncStatus) =>
   s.state === 'needsDrive' || (s.state === 'error' && s.error === 'revoked')
 
-/** Opens the share sheet where there is one; a person closing it is not an error. */
-async function openShareSheet(title: string, url: string): Promise<void> {
-  if (typeof navigator.share !== 'function') return
+/**
+ * Opens the share sheet where there is one; a person closing it is not an error. True when the
+ * browser refused to open it (NotAllowedError): on iOS the tap no longer counts once the upload
+ * took a while, and only a new tap can open it.
+ */
+async function openShareSheet(title: string, url: string): Promise<boolean> {
+  if (typeof navigator.share !== 'function') return false
   try {
     await navigator.share({ title, url })
   } catch (e) {
+    if (e instanceof DOMException && e.name === 'NotAllowedError') return true
     if (!(e instanceof DOMException && e.name === 'AbortError')) console.error(e)
   }
+  return false
 }
 
 /**
@@ -28,6 +34,7 @@ async function openShareSheet(title: string, url: string): Promise<void> {
 export function PdfLinkSection({ pdf, collectionName }: { pdf: Blob; collectionName: string }) {
   const [phase, setPhase] = useState<Phase>('idle')
   const [copied, setCopied] = useState(false)
+  const [tapAgain, setTapAgain] = useState(false)
   const statusMissing = useSyncStatus(driveMissing)
   const creating = useRef(false)
   const field = useRef<HTMLInputElement>(null)
@@ -35,14 +42,18 @@ export function PdfLinkSection({ pdf, collectionName }: { pdf: Blob; collectionN
 
   const share = async () => {
     // One file per PDF: once there is a link, sharing again reuses it.
-    if (link) return openShareSheet(collectionName, link)
+    if (link) {
+      setTapAgain(false)
+      setTapAgain(await openShareSheet(collectionName, link))
+      return
+    }
     if (creating.current) return
     creating.current = true
     setPhase('creating')
     try {
       const url = await createPdfLink(createAppDrive(), collectionName, pdf)
       setPhase({ link: url })
-      await openShareSheet(collectionName, url)
+      setTapAgain(await openShareSheet(collectionName, url))
     } catch (e) {
       console.error(e)
       setPhase(linkFailure(e))
@@ -99,6 +110,11 @@ export function PdfLinkSection({ pdf, collectionName }: { pdf: Blob; collectionN
               onFocus={(e) => e.currentTarget.select()}
             />
           </label>
+          {tapAgain && (
+            <p className="pdf-link-hint" role="status">
+              {t('pdfLink.tapAgain')}
+            </p>
+          )}
           <button
             type="button"
             className="secondary-button pdf-link-button"

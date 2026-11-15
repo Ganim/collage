@@ -270,6 +270,7 @@ export const ptBR = {
   'pdfLink.failed': 'Não foi possível criar o link. Tente de novo.',
   'pdfLink.needsDrive': 'Conecte o Google Drive para compartilhar por link.',
   'pdfLink.note': 'Quem tiver o link pode baixar o PDF.',
+  'pdfLink.tapAgain': 'Toque de novo em Compartilhar para abrir as opções.',
   'sync.conflictSuffix': ' (cópia de outro aparelho)',
   'sync.now': 'Sincronizar agora',
   'sync.syncing': 'Sincronizando…',
