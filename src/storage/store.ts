@@ -34,8 +34,6 @@ export interface SyncState {
   remoteMd5?: string
   /** Changed locally since the last upload. */
   dirty: boolean
-  /** When this device last uploaded or downloaded the collection (this device's clock). */
-  lastSyncedAt?: number
   /** Left out of the Drive sync: never uploaded nor downloaded, and never deleted by the sync. */
   localOnly?: boolean
 }
@@ -120,9 +118,8 @@ export interface Store {
    */
   setLocalOnly(id: string, localOnly: boolean): Promise<void>
   /**
-   * Writes a collection that came from the Drive, with `state` as is (stamped with lastSyncedAt):
-   * not marked dirty. Skips it when the local one is dirty, so an edit is never overwritten;
-   * resolves to whether it wrote.
+   * Writes a collection that came from the Drive, with `state` as is: not marked dirty. Skips it
+   * when the local one is dirty, so an edit is never overwritten; resolves to whether it wrote.
    */
   putRemoteCollection(c: Collection, state: SyncState): Promise<boolean>
   /**
@@ -137,10 +134,9 @@ export interface Store {
     remoteVersion: string,
   ): Promise<void>
   /**
-   * After an upload: records the Drive file, stamps lastSyncedAt and clears dirty, unless the
-   * collection changed since the uploaded copy (its updatedAt differs), in which case it stays
-   * dirty. A collection deleted meanwhile is left alone. `md5` is that of the bytes uploaded;
-   * without it none is kept.
+   * After an upload: records the Drive file and clears dirty, unless the collection changed since
+   * the uploaded copy (its updatedAt differs), in which case it stays dirty. A collection deleted
+   * meanwhile is left alone. `md5` is that of the bytes uploaded; without it none is kept.
    */
   markPushed(
     id: string,

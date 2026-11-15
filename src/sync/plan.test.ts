@@ -183,13 +183,23 @@ describe('planCollections', () => {
   })
 
   describe('local-only collections', () => {
-    it('a local-only collection whose file is on the Drive detaches it', () => {
+    it('a local-only collection whose own file is on the Drive detaches it', () => {
+      expect(
+        plan({
+          local: { a: { dirty: false, localOnly: true, remoteFileId: 'f1', remoteVersion: '1' } },
+          remote: { a: { fileId: 'f1', version: '4' } },
+        }),
+      ).toEqual([{ kind: 'detachRemote', id: 'a', fileId: 'f1' }])
+    })
+
+    it('a local-only collection never trashes a different file of the same id', () => {
+      // Another device sent it again ("Enviar"): that new file is not this device's to trash.
       expect(
         plan({
           local: { a: { dirty: false, localOnly: true, remoteFileId: 'f1', remoteVersion: '1' } },
           remote: { a: { fileId: 'f2', version: '4' } },
         }),
-      ).toEqual([{ kind: 'detachRemote', id: 'a', fileId: 'f2' }])
+      ).toEqual([])
     })
 
     it('a local-only collection never pushes, pulls nor conflicts', () => {
@@ -214,12 +224,10 @@ describe('planCollections', () => {
       ).toEqual([])
     })
 
-    it('a detachment newer than the last sync marks the collection local-only', () => {
+    it('a synced copy whose file is gone and detached marks the collection local-only', () => {
       expect(
         plan({
-          local: {
-            a: { dirty: false, remoteFileId: 'f1', remoteVersion: '1', lastSyncedAt: 5 },
-          },
+          local: { a: { dirty: false, remoteFileId: 'f1', remoteVersion: '1' } },
           remoteDetached: { a: 10 },
         }),
       ).toEqual([{ kind: 'markLocalOnly', id: 'a' }])
@@ -228,30 +236,33 @@ describe('planCollections', () => {
     it('a dirty copy is marked local-only too, never pushed back', () => {
       expect(
         plan({
-          local: {
-            a: { dirty: true, remoteFileId: 'f1', remoteVersion: '1', lastSyncedAt: 5 },
-          },
-          remote: { a: { fileId: 'f1', version: '2' } },
+          local: { a: { dirty: true, remoteFileId: 'f1', remoteVersion: '1' } },
           remoteDetached: { a: 10 },
         }),
       ).toEqual([{ kind: 'markLocalOnly', id: 'a' }])
     })
 
-    it('a copy synced before lastSyncedAt existed counts as never synced', () => {
+    it('while the file is still listed, a detached copy syncs as usual and keeps the record', () => {
+      expect(
+        plan({
+          local: { a: { dirty: true, remoteFileId: 'f1', remoteVersion: '1' } },
+          remote: { a: { fileId: 'f1', version: '2' } },
+          remoteDetached: { a: 10 },
+        }),
+      ).toEqual([{ kind: 'conflict', id: 'a', fileId: 'f1', version: '2' }])
       expect(
         plan({
           local: { a: { dirty: false, remoteFileId: 'f1', remoteVersion: '1' } },
-          remoteDetached: { a: 1 },
+          remote: { a: { fileId: 'f1', version: '1' } },
+          remoteDetached: { a: 10 },
         }),
-      ).toEqual([{ kind: 'markLocalOnly', id: 'a' }])
+      ).toEqual([])
     })
 
     it('a detachment wins over a deletion record: the copy is kept', () => {
       expect(
         plan({
-          local: {
-            a: { dirty: false, remoteFileId: 'f1', remoteVersion: '1', lastSyncedAt: 5 },
-          },
+          local: { a: { dirty: false, remoteFileId: 'f1', remoteVersion: '1' } },
           remoteDeleted: { a: 8 },
           remoteDetached: { a: 10 },
         }),
@@ -261,37 +272,13 @@ describe('planCollections', () => {
     it('a collection sent again pushes and forgets its detachment', () => {
       expect(
         plan({
-          local: { a: { dirty: true, lastSyncedAt: 5 } },
+          local: { a: { dirty: true } },
           remoteDetached: { a: 10 },
         }),
       ).toEqual([
         { kind: 'push', id: 'a' },
         { kind: 'forgetDetached', id: 'a' },
       ])
-    })
-
-    it('a detachment older than the last sync is stale: it is forgotten and sync goes on', () => {
-      expect(
-        plan({
-          local: {
-            a: { dirty: true, remoteFileId: 'f1', remoteVersion: '1', lastSyncedAt: 20 },
-          },
-          remote: { a: { fileId: 'f1', version: '1' } },
-          remoteDetached: { a: 10 },
-        }),
-      ).toEqual([
-        { kind: 'push', id: 'a' },
-        { kind: 'forgetDetached', id: 'a' },
-      ])
-      expect(
-        plan({
-          local: {
-            a: { dirty: false, remoteFileId: 'f1', remoteVersion: '1', lastSyncedAt: 20 },
-          },
-          remote: { a: { fileId: 'f1', version: '1' } },
-          remoteDetached: { a: 10 },
-        }),
-      ).toEqual([{ kind: 'forgetDetached', id: 'a' }])
     })
 
     it('a detachment record does not stop a pull of a file that exists', () => {
@@ -321,12 +308,17 @@ describe('planCollections', () => {
           remoteDetached: { a: 10 },
         },
         {
+          local: { a: { dirty: false, localOnly: true, remoteFileId: 'f1' } },
+          remote: { a: { fileId: 'f2', version: '1' } },
+          remoteDeleted: { a: 10 },
+        },
+        {
           local: { a: { dirty: false, remoteFileId: 'f1', remoteVersion: '1' } },
           remoteDeleted: { a: 10 },
           remoteDetached: { a: 10 },
         },
         {
-          local: { a: { dirty: false, remoteFileId: 'f1', remoteVersion: '1', lastSyncedAt: 1 } },
+          local: { a: { dirty: false, remoteFileId: 'f1', remoteVersion: '1' } },
           remote: { a: { fileId: 'f1', version: '1' } },
           remoteDetached: { a: 10 },
         },

@@ -4,11 +4,18 @@ import type { SyncState, Tombstone } from '../storage/store'
  * `forgetTombstone(id)` means: drop id from library.json `deleted.collection` AND from the local
  * tombstones, if present in either (see forgetCollectionDeletion in library.ts).
  *
- * `detachRemote(id, fileId)`: the collection is local-only and its file is on the Drive: trash
- * the file, record id in library.json `detached.collection` and forget the local remoteFileId.
- * `markLocalOnly(id)`: another device removed the collection from the Drive: mark the local copy
- * local-only; it is kept, never deleted. `forgetDetached(id)`: drop id from library.json
- * `detached.collection` (see forgetCollectionDetachment in library.ts).
+ * `detachRemote(id, fileId)`: this device removed the collection from the Drive and its own file
+ * is still listed. Write id to library.json `detached.collection` (recordCollectionDetachment)
+ * BEFORE trashing the file; clear the local remoteFileId/remoteVersion only after both succeed,
+ * so a pass cut short plans it again.
+ *
+ * `markLocalOnly(id)`: another device removed the collection from the Drive. Set localOnly and
+ * CLEAR remoteFileId/remoteVersion on this device: it is kept, never deleted, and only the
+ * removing device trashes the file. (Store.setLocalOnly(id, true) alone keeps remoteFileId: that
+ * is what the removing device needs for detachRemote.)
+ *
+ * `forgetDetached(id)`: drop id from library.json `detached.collection`
+ * (forgetCollectionDetachment); planned with the push of a collection sent again ("Enviar").
  */
 export type Action =
   | { kind: 'push'; id: string }
@@ -58,27 +65,27 @@ export function planCollections(input: PlanInput): Action[] {
       continue
     }
 
-    // 2. Local-only: out of the sync, never pushed, pulled nor deleted. Its file, if still on the
-    // Drive, goes to the trash.
+    // 2. Local-only: out of the sync, never pushed, pulled nor deleted. Only its own file goes to
+    // the trash: a different file of the same id was sent again from another device.
     if (state?.localOnly) {
-      if (file && state.remoteFileId !== undefined) {
+      if (file && state.remoteFileId !== undefined && file.fileId === state.remoteFileId) {
         actions.push({ kind: 'detachRemote', id, fileId: file.fileId })
       }
       continue
     }
 
-    // 3. Removed from the Drive elsewhere after this copy last synced: kept here, local-only, even
-    // when edited. Otherwise the record is stale and the sync goes on: a copy with no Drive file
-    // was sent again from this device, and a detachment older than the last sync was overtaken by
-    // a later upload.
-    const detachedAt = state ? remoteDetached[id] : undefined
-    if (state && detachedAt !== undefined) {
-      if (state.remoteFileId !== undefined && detachedAt > (state.lastSyncedAt ?? 0)) {
+    // 3. Removed from the Drive elsewhere: a synced copy whose file is gone is kept here,
+    // local-only, even when edited. While the file is still listed, the sync goes on as usual.
+    if (state && id in remoteDetached) {
+      if (state.remoteFileId === undefined) {
+        // Sent again from this device ("Enviar"): upload, and drop the record.
+        actions.push(...planSynced(id, state, file, remoteDeleted), { kind: 'forgetDetached', id })
+        continue
+      }
+      if (!file) {
         actions.push({ kind: 'markLocalOnly', id })
         continue
       }
-      actions.push(...planSynced(id, state, file, remoteDeleted), { kind: 'forgetDetached', id })
-      continue
     }
 
     actions.push(...planSynced(id, state, file, remoteDeleted))

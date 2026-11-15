@@ -375,7 +375,7 @@ export async function createIdbStore(
         // A local edit wins until the next pass weighs it against the Drive's version.
         if (exists && current?.dirty) return
         await tx.objectStore('collections').put(c)
-        await sync.put({ ...state, lastSyncedAt: Date.now() }, c.id)
+        await sync.put(state, c.id)
         wrote = true
       })
       return wrote
@@ -401,7 +401,6 @@ export async function createIdbStore(
             remoteFileId: fileId,
             remoteVersion: version,
             ...(md5 === undefined ? {} : { remoteMd5: md5 }),
-            lastSyncedAt: Date.now(),
             // An edit saved during the upload is not on the Drive yet.
             dirty: current.updatedAt !== uploadedUpdatedAt,
           },

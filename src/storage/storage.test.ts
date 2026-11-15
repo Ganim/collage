@@ -498,7 +498,6 @@ describe('sync bookkeeping', () => {
   })
 
   it('putRemoteCollection writes the collection and the given state without marking it dirty', async () => {
-    vi.spyOn(Date, 'now').mockReturnValue(6000)
     await store.setOwner(ANA)
     const state = {
       ownerId: 'ana',
@@ -509,7 +508,7 @@ describe('sync bookkeeping', () => {
     }
     await store.putRemoteCollection(collection('c1', []), state)
     expect(await store.getCollection('c1')).toEqual(collection('c1', []))
-    expect((await store.getSyncStates()).c1).toEqual({ ...state, lastSyncedAt: 6000 })
+    expect((await store.getSyncStates()).c1).toEqual(state)
   })
 
   it('removeLocalCollection with onlyIfClean keeps a dirty collection', async () => {
@@ -560,7 +559,6 @@ describe('sync bookkeeping', () => {
   })
 
   it('markPushed records the file and clears dirty when the collection is unchanged', async () => {
-    vi.spyOn(Date, 'now').mockReturnValue(6000)
     await store.setOwner(ANA)
     await store.saveCollection(collection('c1', []))
     await store.markPushed('c1', 1000, 'r1', '4')
@@ -569,7 +567,6 @@ describe('sync bookkeeping', () => {
       ownerEmail: ANA.email,
       remoteFileId: 'r1',
       remoteVersion: '4',
-      lastSyncedAt: 6000,
       dirty: false,
     })
   })
@@ -587,14 +584,12 @@ describe('sync bookkeeping', () => {
   })
 
   it('markPushed keeps dirty when the collection changed during the upload', async () => {
-    vi.spyOn(Date, 'now').mockReturnValue(6000)
     await store.saveCollection(collection('c1', []))
     await store.saveCollection({ ...collection('c1', []), updatedAt: 2000 })
     await store.markPushed('c1', 1000, 'r1', '4')
     expect((await store.getSyncStates()).c1).toEqual({
       remoteFileId: 'r1',
       remoteVersion: '4',
-      lastSyncedAt: 6000,
       dirty: true,
     })
   })
@@ -629,7 +624,6 @@ describe('sync bookkeeping', () => {
   })
 
   it('setLocalOnly(false) makes the collection upload as a new file', async () => {
-    vi.spyOn(Date, 'now').mockReturnValue(6000)
     await store.setOwner(ANA)
     await store.saveCollection(collection('c1', []))
     await store.markPushed('c1', 1000, 'r1', '4', 'm1')
@@ -638,7 +632,6 @@ describe('sync bookkeeping', () => {
     expect((await store.getSyncStates()).c1).toEqual({
       ownerId: 'ana',
       ownerEmail: ANA.email,
-      lastSyncedAt: 6000,
       dirty: true,
     })
     expect((await store.listCollections())[0]?.localOnly).toBe(false)
