@@ -121,15 +121,28 @@ test('only frames next to the active one load their images', async ({ page }) =>
   await expect(frame(page, 1, 3).locator('img')).toHaveCount(0)
 })
 
-test('header actions are icon-only buttons with accessible names', async ({ page }) => {
-  for (const name of ['Mais opções', 'Baixar']) {
-    const button = page.getByRole('button', { name, exact: true })
-    await expect(button).toBeVisible()
-    await expect(button).toHaveText('')
-    const box = (await button.boundingBox())!
-    expect(box.width).toBeGreaterThanOrEqual(44)
-    expect(box.height).toBeGreaterThanOrEqual(44)
-  }
+test('size switch sits centred above the frame', async ({ page }) => {
+  const sizeSwitch = page.getByRole('button', { name: '10 × 15 cm' })
+  await expect(page.getByRole('button', { name: /^\d+ × \d+ cm$/ })).toHaveCount(0)
+  await addFrame(page, '10×15 cm')
+  await expect(sizeSwitch).toBeVisible()
+
+  const box = (await sizeSwitch.boundingBox())!
+  const header = (await page.locator('header.header').boundingBox())!
+  const stage = (await page.locator('.stage').boundingBox())!
+  expect(Math.abs(box.x + box.width / 2 - page.viewportSize()!.width / 2)).toBeLessThanOrEqual(4)
+  expect(box.y).toBeGreaterThanOrEqual(header.y + header.height)
+  expect(box.y + box.height).toBeLessThanOrEqual(stage.y)
+  expect(box.height).toBeGreaterThanOrEqual(44)
+
+  await sizeSwitch.click()
+  await expect(page.getByRole('dialog', { name: 'Tamanho do frame' })).toBeVisible()
+  await page.getByRole('button', { name: '13×18 cm', exact: true }).click()
+  await expect(page.getByRole('button', { name: '13 × 18 cm' })).toBeVisible()
+})
+
+test('a collection with no frames shows the empty-frame drawing', async ({ page }) => {
+  await expect(page.locator('.stage [data-illustration="empty-frame"]')).toBeVisible()
 })
 
 test('a named custom size is created and still listed after reloading', async ({ page }) => {
@@ -210,6 +223,36 @@ test('a full device shows a persistent warning', async ({ page }) => {
   await addFrame(page, '15×21 cm')
   await page.waitForTimeout(1200)
   await expect(banner).toBeVisible()
+
+  // Leaving would lose the frames that could not be saved.
+  await page.getByRole('button', { name: 'Voltar para coleções', exact: true }).click()
+  await expect(page).toHaveURL(/#\/c\/[^/]+$/)
+  await expect(frame(page, 3, 3)).toBeVisible()
+})
+
+test('on a full device, another collection link keeps the work open without a not-found notice', async ({
+  page,
+}) => {
+  const first = new URL(page.url()).hash
+  await page.getByRole('button', { name: 'Voltar para coleções', exact: true }).click()
+  await expect(page).toHaveURL(/#\/colecoes$/)
+  await page.getByRole('button', { name: 'Nova coleção', exact: true }).click()
+  await expect(page).toHaveURL(/#\/c\/[^/]+$/)
+  const second = new URL(page.url()).hash
+  await addFrame(page, '10×15 cm')
+  await expect.poll(async () => (await savedCollection(page))?.frames.length).toBe(1)
+  await page.evaluate(() => {
+    IDBObjectStore.prototype.put = () => {
+      throw new DOMException('The quota has been exceeded', 'QuotaExceededError')
+    }
+  })
+  await addFrame(page, '13×18 cm')
+  await expect(page.getByRole('alert')).toContainText('Não foi possível salvar')
+
+  await page.evaluate((hash) => (location.hash = hash), first)
+  await expect.poll(() => new URL(page.url()).hash).toBe(second)
+  await expect(frame(page, 2, 2)).toBeVisible()
+  await expect(page.getByText('Essa coleção não foi encontrada.')).toHaveCount(0)
 })
 
 test('a broken file is reported and the good one still comes in', async ({ page }) => {

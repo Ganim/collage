@@ -34,7 +34,7 @@ async function photoFrames(page: Page, count: number) {
   for (let i = 1; i <= count; i++) await addFrameWithPhoto(page, '10×15 cm', i, i)
 }
 
-const openSheet = (page: Page) => page.getByRole('button', { name: 'Baixar', exact: true }).click()
+const openSheet = (page: Page) => page.getByRole('button', { name: 'Compartilhar', exact: true }).click()
 
 async function generated(page: Page) {
   await expect(generateButton(page)).toBeEnabled()

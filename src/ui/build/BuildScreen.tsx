@@ -2,23 +2,23 @@ import { useEffect, useState } from 'react'
 import { useEditor } from '../../state/editor'
 import { ActionBar } from '../edit/ActionBar'
 import { ZoomSlider } from '../edit/ZoomSlider'
-import { t } from '../i18n'
-import { MoreMenu } from '../library/MoreMenu'
-import { navigate } from '../router'
+import { t, type MessageKey } from '../i18n'
+import { EmptyFrameIllustration } from '../illustrations'
 import { Carousel } from './Carousel'
 import { Dots } from './Dots'
 import { Header } from './Header'
 import { PhotoTray } from './PhotoTray'
 import { SizeSheet } from './SizeSheet'
+import { SizeSwitch } from './SizeSwitch'
 
 const NOTICE_MS = 6000
 
 interface BuildScreenProps {
-  onCollections: () => void
-  onDownload: () => void
+  /** Runs what takes the editor off this collection, then shows the list. */
+  onLeave: (action: () => Promise<void>, failure?: MessageKey) => void
 }
 
-export function BuildScreen({ onCollections, onDownload }: BuildScreenProps) {
+export function BuildScreen({ onLeave }: BuildScreenProps) {
   const hasFrames = useEditor((s) => s.collection.frames.length > 0)
   const addPhotos = useEditor((s) => s.addPhotos)
   const tapPhoto = useEditor((s) => s.tapPhoto)
@@ -27,7 +27,7 @@ export function BuildScreen({ onCollections, onDownload }: BuildScreenProps) {
   const replacing = useEditor((s) => s.replacing)
   const selectedId = useEditor((s) => s.selectedLayerId)
   const selectLayer = useEditor((s) => s.selectLayer)
-  const [sheet, setSheet] = useState<'change' | 'new' | 'more' | null>(null)
+  const [sheet, setSheet] = useState<'change' | 'new' | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [importing, setImporting] = useState(false)
 
@@ -64,17 +64,14 @@ export function BuildScreen({ onCollections, onDownload }: BuildScreenProps) {
 
   return (
     <>
-      <Header
-        onSizeClick={() => setSheet('change')}
-        onCollections={onCollections}
-        onMore={() => setSheet('more')}
-        onDownload={onDownload}
-      />
+      <Header onLeave={onLeave} onNotice={setNotice} />
+      <SizeSwitch onClick={() => setSheet('change')} />
       <div className="stage">
         {hasFrames ? (
           <Carousel />
         ) : (
           <div className="empty-stage">
+            <EmptyFrameIllustration />
             <h1>{t('empty.title')}</h1>
             <p>{t('empty.body')}</p>
             <button type="button" className="primary-button" onClick={() => setSheet('new')}>
@@ -120,13 +117,6 @@ export function BuildScreen({ onCollections, onDownload }: BuildScreenProps) {
           mode={sheet}
           onClose={() => setSheet(null)}
           onSizeNotSaved={() => setNotice(t('notice.sizeNotSaved'))}
-        />
-      )}
-      {sheet === 'more' && (
-        <MoreMenu
-          onClose={() => setSheet(null)}
-          onCollections={onCollections}
-          onSizes={() => navigate({ name: 'frames' })}
         />
       )}
     </>

@@ -127,11 +127,15 @@ export function savedCollection(page: Page): Promise<SavedCollection | undefined
   )
 }
 
-/** The editor's top-bar chip naming the open collection; it leads back to the list. */
-export const workChip = (page: Page) => page.getByRole('button', { name: /^Coleções: / })
+/** The editor's top-bar name of the open collection; tapping it renames the collection. */
+export const collectionName = (page: Page) => page.getByRole('button', { name: /^Renomear .+/ })
+
+/** The editor's ⋮ menu: the collection's options and, with a frame, the current frame's. */
+export const editorMenu = (page: Page) =>
+  page.getByRole('button', { name: 'Mais opções', exact: true })
 
 export async function goHome(page: Page): Promise<void> {
-  await workChip(page).click()
+  await page.getByRole('button', { name: 'Voltar para coleções', exact: true }).click()
   await expect(page).toHaveURL(/#\/colecoes$/)
 }
 
@@ -144,13 +148,12 @@ export async function renameFromCard(page: Page, from: string, to: string): Prom
   await expect(page.getByRole('button', { name: to.trim(), exact: true })).toBeVisible()
 }
 
-/** Renames the collection open in the editor from the list, and opens it again. */
+/** Renames the collection open in the editor by tapping its name in the top bar. */
 export async function nameOpenCollection(page: Page, name: string): Promise<void> {
-  const from = (await workChip(page).innerText()).trim()
-  await goHome(page)
-  await renameFromCard(page, from, name)
-  await page.getByRole('button', { name: name.trim(), exact: true }).click()
-  await expect(page).toHaveURL(/#\/c\/[^/]+$/)
+  await collectionName(page).click()
+  await page.getByLabel('Nome', { exact: true }).fill(name)
+  await page.getByRole('button', { name: 'Salvar', exact: true }).click()
+  await expect(collectionName(page)).toHaveText(name.trim())
 }
 
 export const frameLabel = (page: Page, label: string) =>
@@ -171,11 +174,14 @@ export async function frameWithPhoto(page: Page): Promise<void> {
   await expect(frameLabel(page, 'Frame 1 de 1').locator('img')).toHaveCount(1)
 }
 
-/** Saves the open collection to a .collage file through the editor's menu. */
+/** Saves the open collection to a .collage file from the share screen, then goes back to the editor. */
 export async function exportCollection(page: Page): Promise<Download> {
-  await page.getByRole('button', { name: 'Mais opções', exact: true }).click()
+  await page.getByRole('button', { name: 'Compartilhar', exact: true }).click()
   await page.getByRole('button', { name: 'Salvar em arquivo', exact: true }).click()
   const downloading = page.waitForEvent('download')
   await page.getByRole('button', { name: 'Baixar arquivo', exact: true }).click()
-  return downloading
+  const download = await downloading
+  await page.getByRole('button', { name: 'Voltar', exact: true }).click()
+  await expect(page).toHaveURL(/#\/c\/[^/]+$/)
+  return download
 }

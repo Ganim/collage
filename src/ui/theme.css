@@ -879,3 +879,24 @@ h2 {
     aspect-ratio: 4 / 3;
   }
 }
+
+.home-notice {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 16px 12px;
+  padding: 4px 4px 4px 16px;
+  border-radius: var(--radius-field);
+  box-shadow: var(--shadow);
+  font-size: var(--text-sm);
+  font-weight: 650;
+}
+
+.home-notice p {
+  flex: 1;
+}
+
+.home-notice .icon-button {
+  flex: none;
+  color: var(--plum-500);
+}

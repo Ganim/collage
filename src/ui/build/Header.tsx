@@ -1,36 +1,77 @@
-import { ChevronDown, Download, Ellipsis, FolderOpen } from 'lucide-react'
+import { ChevronLeft, Copy, CopyPlus, Pencil, Share, Trash2 } from 'lucide-react'
+import { useState } from 'react'
 import { useEditor } from '../../state/editor'
-import { t } from '../i18n'
-import { sizeChipText } from './sizeText'
+import { ConfirmSheet } from '../components/ConfirmSheet'
+import { Kebab, type KebabItem } from '../components/Kebab'
+import { RenameSheet } from '../components/RenameSheet'
+import { t, type MessageKey } from '../i18n'
+import { navigate } from '../router'
 
 interface HeaderProps {
-  onSizeClick: () => void
-  onCollections?: () => void
-  onMore?: () => void
-  onDownload?: () => void
+  /**
+   * Runs what takes the editor off this collection (closing or deleting it), then shows the
+   * list. Without a failure message, a failed action keeps the editor where it is.
+   */
+  onLeave: (action: () => Promise<void>, failure?: MessageKey) => void
+  onNotice: (text: string) => void
 }
 
-export function Header({ onSizeClick, onCollections, onMore, onDownload }: HeaderProps) {
-  const frame = useEditor((s) => s.collection.frames.find((f) => f.id === s.activeFrameId))
+export function Header({ onLeave, onNotice }: HeaderProps) {
+  const id = useEditor((s) => s.collection.id)
+  const name = useEditor((s) => s.collection.name)
+  const hasFrame = useEditor((s) => s.activeFrameId !== null)
   const editing = useEditor((s) => s.mode === 'edit')
   const exitEdit = useEditor((s) => s.exitEdit)
-  const name = useEditor((s) => s.collection.name)
+  const closeCollection = useEditor((s) => s.closeCollection)
+  const renameCollection = useEditor((s) => s.renameCollection)
+  const duplicateCollection = useEditor((s) => s.duplicateCollection)
+  const deleteCollection = useEditor((s) => s.deleteCollection)
+  const duplicateActive = useEditor((s) => s.duplicateActive)
+  const removeActive = useEditor((s) => s.removeActive)
+  const [sheet, setSheet] = useState<'rename' | 'delete' | 'removeFrame' | null>(null)
   const shownName = name || t('library.unnamed')
+
+  const duplicate = async () => {
+    try {
+      const copyId = await duplicateCollection(id)
+      navigate({ name: 'editor', id: copyId })
+    } catch (e) {
+      console.error(e)
+      onNotice(t('card.duplicateFailed'))
+    }
+  }
+
+  const collectionItems: KebabItem[] = [
+    { icon: Pencil, label: t('card.rename'), onClick: () => setSheet('rename') },
+    { icon: Copy, label: t('card.duplicate'), onClick: () => void duplicate() },
+    { icon: Trash2, label: t('card.delete'), onClick: () => setSheet('delete'), danger: true },
+  ]
+  const frameItems: KebabItem[] = [
+    { icon: CopyPlus, label: t('header.frameDuplicate'), onClick: duplicateActive },
+    {
+      icon: Trash2,
+      label: t('header.frameRemove'),
+      onClick: () => setSheet('removeFrame'),
+      danger: true,
+    },
+  ]
+
   return (
     <header className="header">
-      {frame && (
-        <button type="button" className="size-chip" onClick={onSizeClick}>
-          {sizeChipText(frame)}
-          <ChevronDown size={16} />
-        </button>
-      )}
       <button
         type="button"
-        className="work-chip"
-        aria-label={t('header.collections', { name: shownName })}
-        onClick={onCollections}
+        className="icon-button header-back"
+        aria-label={t('header.back')}
+        onClick={() => onLeave(closeCollection)}
       >
-        <FolderOpen size={18} />
+        <ChevronLeft size={26} />
+      </button>
+      <button
+        type="button"
+        className="header-name"
+        aria-label={t('header.rename', { name: shownName })}
+        onClick={() => setSheet('rename')}
+      >
         <span>{shownName}</span>
       </button>
       <div className="header-actions">
@@ -42,20 +83,47 @@ export function Header({ onSizeClick, onCollections, onMore, onDownload }: Heade
         <button
           type="button"
           className="icon-button"
-          aria-label={t('header.more')}
-          onClick={onMore}
+          aria-label={t('header.share')}
+          onClick={() => {
+            exitEdit()
+            navigate({ name: 'share', id })
+          }}
         >
-          <Ellipsis size={22} />
+          <Share size={21} />
         </button>
-        <button
-          type="button"
-          className="icon-button"
-          aria-label={t('header.download')}
-          onClick={onDownload}
-        >
-          <Download size={22} />
-        </button>
+        <Kebab
+          label={t('header.more')}
+          items={hasFrame ? [collectionItems, frameItems] : [collectionItems]}
+        />
       </div>
+      {sheet === 'rename' && (
+        <RenameSheet
+          title={t('card.renameTitle')}
+          initial={name}
+          onSave={renameCollection}
+          onClose={() => setSheet(null)}
+        />
+      )}
+      {sheet === 'delete' && (
+        <ConfirmSheet
+          title={t('card.deleteTitle', { name: shownName })}
+          body={t('card.deleteBody')}
+          confirmLabel={t('card.delete')}
+          danger
+          onConfirm={() => onLeave(() => deleteCollection(id), 'card.deleteFailed')}
+          onClose={() => setSheet(null)}
+        />
+      )}
+      {sheet === 'removeFrame' && (
+        <ConfirmSheet
+          title={t('header.frameRemoveTitle')}
+          body={t('header.frameRemoveBody')}
+          confirmLabel={t('header.frameRemoveConfirm')}
+          danger
+          onConfirm={removeActive}
+          onClose={() => setSheet(null)}
+        />
+      )}
     </header>
   )
 }

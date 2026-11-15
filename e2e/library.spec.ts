@@ -1,6 +1,8 @@
 import { expect, type Page } from '@playwright/test'
 import {
   addFrame,
+  collectionName,
+  editorMenu,
   frameLabel,
   frameWithPhoto,
   goHome,
@@ -9,11 +11,11 @@ import {
   savedCollection,
   serveAccount,
   test,
-  workChip,
 } from './helpers'
 
-const more = (page: Page) => page.getByRole('button', { name: 'Mais opções', exact: true })
 const menuItem = (page: Page, name: string) => page.getByRole('button', { name, exact: true })
+const share = (page: Page) => menuItem(page, 'Compartilhar')
+const menuSheet = (page: Page) => page.getByRole('dialog', { name: 'Mais opções' })
 
 test.beforeEach(async ({ page, installHint }) => {
   // The install suggestion covers the list, so those tests start under it.
@@ -21,62 +23,174 @@ test.beforeEach(async ({ page, installHint }) => {
   else await openNewCollection(page)
 })
 
-test('the menu lists collections, saving, sizes and the frame actions', async ({ page }) => {
-  await frameWithPhoto(page)
-  await more(page).click()
-  for (const name of [
-    'Coleções',
-    'Salvar em arquivo',
-    'Meus tamanhos',
-    'Duplicar frame',
-    'Remover frame',
-  ]) {
-    await expect(menuItem(page, name)).toBeVisible()
+test('header shows back, name, share and the menu', async ({ page }) => {
+  await nameOpenCollection(page, 'Maio')
+  const back = menuItem(page, 'Voltar para coleções')
+  for (const button of [back, share(page), editorMenu(page)]) {
+    await expect(button).toBeVisible()
+    await expect(button).toHaveText('')
+    const box = (await button.boundingBox())!
+    expect(box.width).toBeGreaterThanOrEqual(44)
+    expect(box.height).toBeGreaterThanOrEqual(44)
   }
-})
+  await expect(collectionName(page)).toHaveText('Maio')
+  await expect(collectionName(page)).toHaveAccessibleName('Renomear Maio')
 
-test('the menu leaves out the frame actions when there is no frame', async ({ page }) => {
-  await more(page).click()
-  await expect(menuItem(page, 'Coleções')).toBeVisible()
-  await expect(menuItem(page, 'Duplicar frame')).toHaveCount(0)
-  await expect(menuItem(page, 'Remover frame')).toHaveCount(0)
-})
-
-test('the menu row goes back to the list', async ({ page }) => {
-  await more(page).click()
-  await menuItem(page, 'Coleções').click()
+  await back.click()
   await expect(page).toHaveURL(/#\/colecoes$/)
-  await expect(page.getByRole('dialog')).toHaveCount(0)
   await expect(page.getByRole('tab', { name: 'Coleções' })).toBeVisible()
+  await expect(menuItem(page, 'Maio')).toBeVisible()
+})
+
+test('the menu has the collection options and, with a frame, the frame ones', async ({ page }) => {
+  await editorMenu(page).click()
+  const sheet = menuSheet(page)
+  for (const name of ['Renomear', 'Duplicar', 'Excluir']) {
+    await expect(sheet.getByRole('button', { name, exact: true })).toBeVisible()
+  }
+  for (const name of ['Duplicar frame', 'Remover frame', 'Coleções', 'Salvar em arquivo']) {
+    await expect(sheet.getByRole('button', { name, exact: true })).toHaveCount(0)
+  }
+  await sheet.getByRole('button', { name: 'Fechar', exact: true }).click()
+  await expect(sheet).toHaveCount(0)
+
+  await frameWithPhoto(page)
+  await editorMenu(page).click()
+  for (const name of ['Renomear', 'Duplicar', 'Excluir', 'Duplicar frame', 'Remover frame']) {
+    await expect(sheet.getByRole('button', { name, exact: true })).toBeVisible()
+  }
+  await expect(sheet.getByRole('button', { name: 'Meus tamanhos', exact: true })).toHaveCount(0)
+})
+
+test('renames from the menu and from the name', async ({ page }) => {
+  await editorMenu(page).click()
+  await menuItem(page, 'Renomear').click()
+  await page.getByLabel('Nome', { exact: true }).fill('  Praia  ')
+  await menuItem(page, 'Salvar').click()
+  await expect(collectionName(page)).toHaveText('Praia')
+
+  await collectionName(page).click()
+  await expect(page.getByLabel('Nome', { exact: true })).toHaveValue('Praia')
+  await page.getByLabel('Nome', { exact: true }).fill('Serra')
+  await menuItem(page, 'Salvar').click()
+  await expect(collectionName(page)).toHaveText('Serra')
+  await expect.poll(async () => (await savedCollection(page))?.name).toBe('Serra')
+})
+
+test('duplicates the collection and opens the copy', async ({ page }) => {
+  await frameWithPhoto(page)
+  await nameOpenCollection(page, 'Maio')
+  const original = page.url()
+  await editorMenu(page).click()
+  await menuItem(page, 'Duplicar').click()
+
+  await expect(collectionName(page)).toHaveText('Maio (cópia)')
+  await expect(page).toHaveURL(/#\/c\/[^/]+$/)
+  expect(page.url()).not.toBe(original)
+  await expect(frameLabel(page, 'Frame 1 de 1').locator('img')).toHaveCount(1)
+
+  await goHome(page)
+  await expect(menuItem(page, 'Maio')).toBeVisible()
+  await expect(menuItem(page, 'Maio (cópia)')).toBeVisible()
+})
+
+test('deletes the collection after confirming and returns to the list', async ({ page }) => {
+  await nameOpenCollection(page, 'Maio')
+  await goHome(page)
+  await menuItem(page, 'Nova coleção').click()
+  await nameOpenCollection(page, 'Junho')
+
+  await editorMenu(page).click()
+  await menuItem(page, 'Excluir').click()
+  const confirm = page.getByRole('dialog', { name: 'Excluir Junho?' })
+  await confirm.getByRole('button', { name: 'Cancelar', exact: true }).click()
+  await expect(confirm).toHaveCount(0)
+  await expect(collectionName(page)).toHaveText('Junho')
+
+  await editorMenu(page).click()
+  await menuItem(page, 'Excluir').click()
+  await confirm.getByRole('button', { name: 'Excluir', exact: true }).click()
+  await expect(page).toHaveURL(/#\/colecoes$/)
+  await expect(menuItem(page, 'Maio')).toBeVisible()
+  await expect(menuItem(page, 'Junho')).toHaveCount(0)
+  await page.reload()
+  await expect(menuItem(page, 'Maio')).toBeVisible()
+  await expect(menuItem(page, 'Junho')).toHaveCount(0)
+})
+
+test('back right after an edit shows the new name on the card', async ({ page }) => {
+  await collectionName(page).click()
+  await page.getByLabel('Nome', { exact: true }).fill('Praia')
+  await menuItem(page, 'Salvar').click()
+  await menuItem(page, 'Voltar para coleções').click()
+  await expect(page).toHaveURL(/#\/colecoes$/)
+  await expect(menuItem(page, 'Praia')).toBeVisible()
+})
+
+test('share opens the print screen with save to file', async ({ page }) => {
+  await frameWithPhoto(page)
+  await nameOpenCollection(page, 'Maio')
+  await share(page).click()
+  await expect(page).toHaveURL(/#\/c\/[^/]+\/compartilhar$/)
+  await expect(page.getByRole('heading', { name: 'Compartilhar' })).toBeVisible()
+  await expect(menuItem(page, 'Gerar PDF')).toBeVisible()
+
+  await menuItem(page, 'Salvar em arquivo').click()
+  const downloading = page.waitForEvent('download')
+  await menuItem(page, 'Baixar arquivo').click()
+  expect((await downloading).suggestedFilename()).toBe('Maio.collage')
+
+  await menuItem(page, 'Voltar').click()
+  await expect(page).toHaveURL(/#\/c\/[^/]+$/)
+  await expect(frameLabel(page, 'Frame 1 de 1').locator('img')).toHaveCount(1)
+})
+
+test('a missing collection link goes back to the list', async ({ page }) => {
+  const notice = page.getByRole('status').filter({ hasText: 'Essa coleção não foi encontrada.' })
+  await page.goto('/#/c/nao-existe')
+  await expect(page).toHaveURL(/#\/colecoes$/)
+  await expect(notice).toBeVisible()
+  await expect(menuItem(page, 'Nova coleção')).toBeVisible()
+
+  await page.goto('/#/c/nao-existe/compartilhar')
+  await expect(page).toHaveURL(/#\/colecoes$/)
+  await expect(notice).toBeVisible()
+  await menuItem(page, 'Fechar aviso').click()
+  await expect(notice).toHaveCount(0)
 })
 
 test('duplicating a frame copies its photos', async ({ page }) => {
   await frameWithPhoto(page)
-  await more(page).click()
+  await editorMenu(page).click()
   await menuItem(page, 'Duplicar frame').click()
   await expect(frameLabel(page, 'Frame 2 de 2').locator('img')).toHaveCount(1)
 })
 
-test('removing a frame takes a second tap', async ({ page }) => {
+test('removing a frame asks first', async ({ page }) => {
   await frameWithPhoto(page)
-  await more(page).click()
+  await editorMenu(page).click()
   await menuItem(page, 'Remover frame').click()
+  const confirm = page.getByRole('dialog', { name: 'Remover este frame?' })
+  await confirm.getByRole('button', { name: 'Cancelar', exact: true }).click()
+  await expect(confirm).toHaveCount(0)
   await expect(frameLabel(page, 'Frame 1 de 1')).toBeAttached()
-  await menuItem(page, 'Confirmar remoção do frame').click()
+
+  await editorMenu(page).click()
+  await menuItem(page, 'Remover frame').click()
+  await confirm.getByRole('button', { name: 'Remover', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Seu primeiro frame' })).toBeVisible()
 })
 
-test('the menu row Meus tamanhos opens the sizes, with the one just saved', async ({ page }) => {
+test('a size saved in the editor is listed under Meus tamanhos', async ({ page }) => {
   await page.getByRole('button', { name: 'Adicionar primeiro frame', exact: true }).click()
   await page.getByLabel('Largura (cm)').fill('9')
   await page.getByLabel('Altura (cm)').fill('12')
   await page.getByLabel('Nome (opcional)').fill('Mesa da sala')
   await page.getByRole('button', { name: 'Usar este tamanho', exact: true }).click()
 
-  await more(page).click()
-  await menuItem(page, 'Meus tamanhos').click()
+  await goHome(page)
+  await page.getByRole('tab', { name: 'Frames' }).click()
   await expect(page).toHaveURL(/#\/frames$/)
-  await expect(page.getByRole('dialog')).toHaveCount(0)
   const mine = page.getByRole('link', { name: 'Meus tamanhos', exact: true })
   await expect(mine).toHaveAccessibleDescription('1 tamanho')
   await mine.click()
@@ -86,11 +200,11 @@ test('the menu row Meus tamanhos opens the sizes, with the one just saved', asyn
 test('a second collection leaves the first one as it was', async ({ page }) => {
   await frameWithPhoto(page)
   await nameOpenCollection(page, 'Maio')
-  await page.getByRole('button', { name: 'Baixar', exact: true }).click()
+  await share(page).click()
   const summary = page.getByText(/^\d+ folhas? · \d+%$/)
   await expect(summary).toBeVisible()
   const before = await summary.textContent()
-  await page.getByRole('button', { name: 'Voltar', exact: true }).click()
+  await menuItem(page, 'Voltar').click()
 
   await goHome(page)
   await menuItem(page, 'Nova coleção').click()
@@ -103,7 +217,7 @@ test('a second collection leaves the first one as it was', async ({ page }) => {
   await goHome(page)
   await menuItem(page, 'Maio').click()
   await expect(frameLabel(page, 'Frame 1 de 1').locator('img')).toHaveCount(1)
-  await page.getByRole('button', { name: 'Baixar', exact: true }).click()
+  await share(page).click()
   await expect(summary).toHaveText(before!)
 })
 
@@ -125,10 +239,10 @@ test('after the first visit the app loads offline', async ({ browser, baseURL })
   await context.close()
 })
 
-test('the top bar names the open work and one tap lists the others', async ({ page }) => {
+test('the top bar names the open work and back lists the others', async ({ page }) => {
   await frameWithPhoto(page)
   await nameOpenCollection(page, 'Maio')
-  await expect(workChip(page)).toHaveText('Maio')
+  await expect(collectionName(page)).toHaveText('Maio')
   await goHome(page)
   await menuItem(page, 'Nova coleção').click()
   await expect(page.getByRole('heading', { name: 'Seu primeiro frame' })).toBeVisible()
@@ -136,7 +250,7 @@ test('the top bar names the open work and one tap lists the others', async ({ pa
   await goHome(page)
   await menuItem(page, 'Maio').click()
   await expect(frameLabel(page, 'Frame 1 de 1').locator('img')).toHaveCount(1)
-  await expect(workChip(page)).toHaveText('Maio')
+  await expect(collectionName(page)).toHaveText('Maio')
 })
 
 test('a very long name keeps the top bar and the frame in place', async ({ page }) => {
@@ -146,11 +260,10 @@ test('a very long name keeps the top bar and the frame in place', async ({ page 
   const before = (await frame.boundingBox())!
 
   await nameOpenCollection(page, 'Muito longo '.repeat(20))
-  await expect(page.getByRole('button', { name: 'Baixar', exact: true })).toBeInViewport({
-    ratio: 1,
-  })
-  const chip = (await workChip(page).boundingBox())!
-  expect(chip.x + chip.width).toBeLessThanOrEqual(page.viewportSize()!.width)
+  await expect(editorMenu(page)).toBeInViewport({ ratio: 1 })
+  const name = (await collectionName(page).boundingBox())!
+  const shareBox = (await share(page).boundingBox())!
+  expect(name.x + name.width).toBeLessThanOrEqual(shareBox.x)
   expect(await frame.boundingBox()).toEqual(before)
 })
 

@@ -189,7 +189,7 @@ test('tapping a frame locks the carousel for editing; OK and tapping outside lea
   await expect(ok(page)).toBeVisible()
   await expect(carousel(page)).toHaveCSS('overflow-x', 'hidden')
   await expect(page.getByRole('button', { name: 'Mais opções', exact: true })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Baixar', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Compartilhar', exact: true })).toBeVisible()
 
   await ok(page).click()
   await expect(ok(page)).toHaveCount(0)
@@ -461,7 +461,7 @@ test('a photo that lands while the sheet is open does not bring edit mode back',
   await theFrame(page).click()
   await holdImport(page)
   await uploadPhotos(page, [await makeJpeg(page, 400, 600, COLORS[2]!)])
-  await page.getByRole('button', { name: 'Baixar', exact: true }).click()
+  await page.getByRole('button', { name: 'Compartilhar', exact: true }).click()
   await expect(page.getByRole('button', { name: 'Voltar', exact: true })).toBeVisible()
   await releaseImport(page)
   await layersWhen(page, (l) => l.length === 2)

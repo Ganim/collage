@@ -1,11 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { getEditorState, useEditor } from '../state/editor'
 import { requestPersistentStorage } from '../storage/persist'
 import type { Account } from './account/account'
 import { useAccount } from './account/useAccount'
 import { BuildScreen } from './build/BuildScreen'
 import { HomeScreen } from './home/HomeScreen'
-import { t } from './i18n'
+import { t, type MessageKey } from './i18n'
 import { InstallHint } from './install/InstallHint'
 import { useRoute, type Route } from './router'
 import { SheetScreen } from './sheet/SheetScreen'
@@ -31,7 +31,7 @@ const collectionId = (r: Route) => (r.name === 'editor' || r.name === 'share' ? 
 function Workspace({ account, onSignOut }: { account: Account; onSignOut: () => void }) {
   const bootstrap = useEditor((s) => s.bootstrap)
   const openCollection = useEditor((s) => s.openCollection)
-  const exitEdit = useEditor((s) => s.exitEdit)
+  const listCollections = useEditor((s) => s.listCollections)
   const saveStatus = useEditor((s) => s.saveStatus)
   const loadFailed = useEditor((s) => s.loadFailed)
   const currentId = useEditor((s) => s.collection.id)
@@ -43,6 +43,11 @@ function Workspace({ account, onSignOut }: { account: Account; onSignOut: () => 
   /** A collection the route names whose reading failed (not a missing one). */
   const [openFailedId, setOpenFailedId] = useState<string | null>(null)
   // A retry passes through 'saving'; the warning stays up until a save really works.
+  /** A collection the editor is being taken off (closed or deleted): it is not opened again. */
+  const [leavingId, setLeavingId] = useState<string | null>(null)
+  /** A message for the list, shown when it was sent there (a missing collection, a failed delete). */
+  const [notice, setNotice] = useState<MessageKey | null>(null)
+  const dismissNotice = useCallback(() => setNotice(null), [])
   const [saveFailed, setSaveFailed] = useState(false)
   if (saveStatus === 'full' && !saveFailed) setSaveFailed(true)
   if (saveStatus === 'saved' && saveFailed) setSaveFailed(false)
@@ -50,6 +55,8 @@ function Workspace({ account, onSignOut }: { account: Account; onSignOut: () => 
   const wantedId = collectionId(route)
   // Deleted from the list, or another one opened since: it has to be opened again.
   const shownId = openedId === currentId ? openedId : null
+  // The message belongs to the list it was sent to.
+  if (wantedId && notice) setNotice(null)
 
   useEffect(() => {
     void requestPersistentStorage()
@@ -59,15 +66,40 @@ function Workspace({ account, onSignOut }: { account: Account; onSignOut: () => 
   }, [bootstrap, navigate])
 
   useEffect(() => {
-    if (!ready || loadFailed || !wantedId || wantedId === shownId || wantedId === openFailedId) {
+    if (
+      !ready ||
+      loadFailed ||
+      !wantedId ||
+      wantedId === shownId ||
+      wantedId === openFailedId ||
+      wantedId === leavingId
+    ) {
       return
     }
     let current = true
+    /** False also when the open collection could not be saved first: then it does exist. */
+    const missing = async () => {
+      const list = await listCollections().catch((e: unknown) => {
+        console.error(e)
+        return null
+      })
+      return list !== null && !list.some((c) => c.id === wantedId)
+    }
     openCollection(wantedId)
-      .then((found) => {
+      .then(async (found) => {
         if (!current) return
         if (!found) {
-          navigate({ name: 'collections' }, { replace: true })
+          if (await missing()) {
+            if (!current) return
+            navigate({ name: 'collections' }, { replace: true })
+            setNotice('home.notFound')
+            return
+          }
+          if (!current) return
+          // The open work could not be saved (the banner says so): it stays where it is.
+          navigate(shownId ? { name: 'editor', id: shownId } : { name: 'collections' }, {
+            replace: true,
+          })
           return
         }
         // True can also mean another open won the race: the address follows what is open.
@@ -82,7 +114,34 @@ function Workspace({ account, onSignOut }: { account: Account; onSignOut: () => 
     return () => {
       current = false
     }
-  }, [ready, loadFailed, wantedId, shownId, openFailedId, openCollection, navigate])
+  }, [
+    ready,
+    loadFailed,
+    wantedId,
+    shownId,
+    openFailedId,
+    leavingId,
+    openCollection,
+    listCollections,
+    navigate,
+  ])
+
+  /** Takes the editor off this collection, then shows the list; a failure without a message stays. */
+  const leave = async (id: string, action: () => Promise<void>, failure?: MessageKey) => {
+    setLeavingId(id)
+    try {
+      await action()
+      navigate({ name: 'collections' })
+    } catch (e) {
+      console.error(e)
+      if (failure) {
+        navigate({ name: 'collections' })
+        setNotice(failure)
+      }
+    } finally {
+      setLeavingId(null)
+    }
+  }
 
   const retry = () => {
     // Hidden while it reads, or a retry would flash the screens behind.
@@ -112,6 +171,8 @@ function Workspace({ account, onSignOut }: { account: Account; onSignOut: () => 
           onSignOut={onSignOut}
           onOpened={showOpened}
           onOpen={(id) => navigate({ name: 'editor', id })}
+          notice={notice ? t(notice) : null}
+          onDismissNotice={dismissNotice}
         />
       )
     } else if (wantedId === shownId) {
@@ -121,13 +182,7 @@ function Workspace({ account, onSignOut }: { account: Account; onSignOut: () => 
             onBack={() => navigate({ name: 'editor', id: wantedId }, { replace: true })}
           />
         ) : (
-          <BuildScreen
-            onCollections={() => navigate({ name: 'collections' })}
-            onDownload={() => {
-              exitEdit()
-              navigate({ name: 'share', id: wantedId })
-            }}
-          />
+          <BuildScreen onLeave={(action, failure) => void leave(wantedId, action, failure)} />
         )
     }
   }

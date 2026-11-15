@@ -31,4 +31,13 @@ describe('App', () => {
     expect(await screen.findByRole('button', { name: 'Nova coleção' })).toBeVisible()
     expect(screen.queryByRole('button', { name: 'Entrar com Google' })).toBeNull()
   })
+
+  it('a link to a collection that does not exist goes back to the list with a notice', async () => {
+    serveMe(200, { email: 'teste@exemplo.com', name: 'Conta de teste', picture: null })
+    location.hash = '#/c/nao-existe'
+    render(<App />)
+    expect(await screen.findByText('Essa coleção não foi encontrada.')).toBeVisible()
+    expect(location.hash).toBe('#/colecoes')
+    expect(screen.getByRole('button', { name: 'Nova coleção' })).toBeVisible()
+  })
 })

@@ -1,4 +1,4 @@
-import { ArrowLeft } from 'lucide-react'
+import { ChevronLeft } from 'lucide-react'
 import { useRef, useState } from 'react'
 import { useEditor } from '../../state/editor'
 import { generatePdf, MissingPhotoError } from '../../render/generate'
@@ -6,6 +6,7 @@ import { t } from '../i18n'
 import { useMissingPhotos } from '../useMissingPhotos'
 import { deliverPdf, pdfFileName } from './deliver'
 import { PaperControls } from './PaperControls'
+import { SaveFileSection } from './SaveFileSection'
 import { SheetPreview } from './SheetPreview'
 import { useSheetLayout } from './useSheetLayout'
 import { Warnings } from './Warnings'
@@ -115,8 +116,9 @@ export function SheetScreen({ onBack }: { onBack: () => void }) {
     <div className="print-screen">
       <header className="print-header">
         <button type="button" className="icon-button" aria-label={t('print.back')} onClick={onBack}>
-          <ArrowLeft size={22} />
+          <ChevronLeft size={26} />
         </button>
+        <h1 className="print-title">{t('print.title')}</h1>
         <span className="print-summary">{summary}</span>
       </header>
       <div className="print-scroll">
@@ -145,6 +147,7 @@ export function SheetScreen({ onBack }: { onBack: () => void }) {
         )}
         <p className="print-real-size">{t('print.realSize')}</p>
         {action}
+        <SaveFileSection />
       </div>
     </div>
   )
