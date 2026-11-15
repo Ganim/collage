@@ -228,6 +228,21 @@ describe('error mapping', () => {
     expect(error.kind).toBe('other')
     expect(error.message).toContain('500')
     expect(error.message).not.toContain('tok')
+    expect(error.status).toBe(500)
+  })
+
+  it('carries the HTTP status of a 404 and of a quota error; none when offline', async () => {
+    const missing = (await setup(() => json(404, {}))
+      .drive.download('x')
+      .catch((e: unknown) => e)) as DriveError
+    expect(missing).toMatchObject({ kind: 'other', status: 404 })
+    await expect(setup(() => quota(403)).drive.list('F')).rejects.toMatchObject({ status: 403 })
+    const offline = (await setup(() => {
+      throw new TypeError('Load failed')
+    })
+      .drive.list('F')
+      .catch((e: unknown) => e)) as DriveError
+    expect(offline.status).toBeUndefined()
   })
 
   it('a plain 403 without the quota reason is other', async () => {

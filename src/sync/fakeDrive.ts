@@ -27,7 +27,7 @@ export function createFakeDrive(): FakeDrive {
 
   const get = (fileId: string): FakeFile => {
     const file = files.get(fileId)
-    if (!file) throw new DriveError('other', 'Google Drive request failed (404)')
+    if (!file) throw new DriveError('other', 'Google Drive request failed (404)', 404)
     return file
   }
 

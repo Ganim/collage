@@ -349,14 +349,14 @@ describe('sync engine between two devices', () => {
     expect(filesOf(drive, 'collection')).toHaveLength(2)
   })
 
-  it('a photo file that vanished before its download is skipped; a lost connection is not', async () => {
+  it('a photo file that vanished before its download is skipped; a server error is not', async () => {
     await a.importCollection([photo('p1'), photo('p2')], collection('c1', ['p1', 'p2']))
     await engineFor(a, drive).run()
     const p2 = filesOf(drive, 'photo').find((f) => f.appProperties.photoId === 'p2')!
     const gone = failingOnce(
       drive,
       'download',
-      new DriveError('other', 'Google Drive request failed (404)'),
+      new DriveError('other', 'Google Drive request failed (404)', 404),
       (id) => id === p2.id,
     )
     await engineFor(b, gone).run()
@@ -364,9 +364,34 @@ describe('sync engine between two devices', () => {
     expect(await b.getPhoto('p1')).toBeDefined()
     expect(await b.getPhoto('p2')).toBeUndefined()
 
+    const busy = failingOnce(
+      drive,
+      'download',
+      new DriveError('other', 'Google Drive request failed (503)', 503),
+    )
+    await engineFor(b, busy).run()
+    expect(status()).toMatchObject({ state: 'error', error: 'other' })
+
     const down = failingOnce(drive, 'download', new DriveError('offline', 'down'))
     await engineFor(b, down).run()
     expect(status().state).toBe('offline')
+  })
+
+  it('a photo whose file the fake Drive no longer has is skipped as a 404', async () => {
+    await a.importCollection([photo('p1')], collection('c1', ['p1']))
+    await engineFor(a, drive).run()
+    const p1 = filesOf(drive, 'photo')[0]!
+    const vanishing: Drive = {
+      ...drive,
+      async list(folder) {
+        const files = await drive.list(folder)
+        drive.files.delete(p1.id)
+        return files
+      },
+    }
+    await engineFor(b, vanishing).run()
+    expect(status().state).toBe('idle')
+    expect(await b.getPhoto('p1')).toBeUndefined()
   })
 
   it('skips a photo whose Drive file is missing', async () => {

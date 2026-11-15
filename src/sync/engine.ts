@@ -317,8 +317,9 @@ export function createSyncEngine({
         try {
           original = await drive.download(file.id)
         } catch (e) {
-          // Gone since the listing (a 404 is 'other'): skipped. Anything else stops the pass.
-          if (!(e instanceof DriveError && e.kind === 'other')) throw e
+          // Gone since the listing: skipped. Anything else (5xx, 429, offline) stops the pass
+          // so the next one tries again.
+          if (!(e instanceof DriveError && e.status === 404)) throw e
           setStatus({ photos: { done: i + 1, total } })
           continue
         }

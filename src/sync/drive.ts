@@ -31,6 +31,8 @@ export class DriveError extends Error {
   constructor(
     readonly kind: DriveErrorKind,
     message: string,
+    /** The HTTP status, when the Drive answered with an error. */
+    readonly status?: number,
   ) {
     super(message)
     this.name = 'DriveError'
@@ -96,12 +98,17 @@ export function createDrive(
     if (response.status === 401) {
       response = await attempt(url, init, await getToken(true))
       if (response.status === 401) {
-        throw new DriveError('revoked', 'Google Drive refused the access')
+        throw new DriveError('revoked', 'Google Drive refused the access', 401)
       }
     }
     if (response.ok) return response
-    if (await isQuotaError(response)) throw new DriveError('full', 'Google Drive is full')
-    throw new DriveError('other', `Google Drive request failed (${response.status})`)
+    if (await isQuotaError(response))
+      throw new DriveError('full', 'Google Drive is full', response.status)
+    throw new DriveError(
+      'other',
+      `Google Drive request failed (${response.status})`,
+      response.status,
+    )
   }
 
   async function readJson<T>(response: Response): Promise<T> {
