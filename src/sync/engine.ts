@@ -45,6 +45,16 @@ interface Changes {
 }
 
 const LIBRARY_NAME = 'library.json'
+
+/** 403 reasons that are only "slow down": the download is worth trying again. */
+const RATE_LIMIT_REASONS = new Set(['rateLimitExceeded', 'userRateLimitExceeded'])
+
+/** A photo download that will not work on any retry: the file is gone or refused to us. */
+function isSkippablePhotoError(e: unknown): boolean {
+  if (!(e instanceof DriveError) || e.kind !== 'other') return false
+  if (e.status === 404) return true
+  return e.status === 403 && !RATE_LIMIT_REASONS.has(e.reason ?? '')
+}
 const jsonBlob = (value: unknown) => new Blob([JSON.stringify(value)], { type: 'application/json' })
 
 export function createSyncEngine({
@@ -328,9 +338,10 @@ export function createSyncEngine({
         try {
           original = await drive.download(file.id)
         } catch (e) {
-          // Gone since the listing: skipped. Anything else (5xx, 429, offline) stops the pass
-          // so the next one tries again.
-          if (!(e instanceof DriveError && e.status === 404)) throw e
+          // Gone since the listing, or refused for good for this one file: skipped. Anything
+          // else (5xx, 429, a rate limit, offline, lost access) stops the pass so the next one
+          // tries again.
+          if (!isSkippablePhotoError(e)) throw e
           setStatus({ photos: { done: i + 1, total } })
           continue
         }

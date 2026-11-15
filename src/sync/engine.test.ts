@@ -378,6 +378,46 @@ describe('sync engine between two devices', () => {
     expect(status().state).toBe('offline')
   })
 
+  it('a photo the Drive refuses for good (403 forbidden) is skipped; a rate limit is not', async () => {
+    await a.importCollection([photo('p1'), photo('p2')], collection('c1', ['p1', 'p2']))
+    await engineFor(a, drive).run()
+    const p2 = filesOf(drive, 'photo').find((f) => f.appProperties.photoId === 'p2')!
+    const refused: Drive = {
+      ...drive,
+      download: (id) =>
+        id === p2.id
+          ? Promise.reject(new DriveError('other', 'failed (403)', 403, 'forbidden'))
+          : drive.download(id),
+    }
+    await engineFor(b, refused).run()
+    expect(status().state).toBe('idle')
+    expect(await b.getPhoto('p1')).toBeDefined()
+    expect(await b.getPhoto('p2')).toBeUndefined()
+    // The next pass is not stuck on it either.
+    await engineFor(b, refused).run()
+    expect(status().state).toBe('idle')
+
+    for (const reason of ['rateLimitExceeded', 'userRateLimitExceeded']) {
+      const limited = failingOnce(
+        drive,
+        'download',
+        new DriveError('other', 'failed (403)', 403, reason),
+      )
+      await engineFor(b, limited).run()
+      expect(status()).toMatchObject({ state: 'error', error: 'other' })
+    }
+    const revoked = failingOnce(
+      drive,
+      'download',
+      new DriveError('revoked', 'not granted', 403, 'insufficientPermissions'),
+    )
+    await engineFor(b, revoked).run()
+    expect(status()).toMatchObject({ state: 'error', error: 'revoked' })
+    const limited429 = failingOnce(drive, 'download', new DriveError('other', 'failed', 429))
+    await engineFor(b, limited429).run()
+    expect(status()).toMatchObject({ state: 'error', error: 'other' })
+  })
+
   it('a photo with a very long accented name still goes up and comes down', async () => {
     const name = ('Fotografia de família à beira-mar em São João — ' + 'çãé'.repeat(60)).slice(
       0,
