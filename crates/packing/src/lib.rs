@@ -1,7 +1,14 @@
 //! Sheet layout engine: packs rectangular photos onto as few sheets as possible.
 //! All lengths are in tenths of a millimetre.
+//!
+//! Two phases: a greedy MaxRects pass over many item orders, then, while the result is
+//! above the area lower bound, a search that tries to empty a sheet (see `improve`).
 
+mod exact;
+mod improve;
 mod maxrects;
+#[cfg(test)]
+mod regression;
 
 use maxrects::{Bin, Heuristic};
 use serde::{Deserialize, Serialize};
@@ -21,6 +28,12 @@ pub struct PackInput {
     pub sheet_h: u32,
     pub margin: u32,
     pub gap: u32,
+    /// Seed for the shuffled orders; the same seed gives the same layout.
+    #[serde(default)]
+    pub seed: Option<u32>,
+    /// Multiplies the work of both phases; 1 when absent.
+    #[serde(default)]
+    pub effort: Option<u32>,
 }
 
 /// Position of the photo's top-left corner, measured from the sheet corner.
@@ -38,35 +51,85 @@ pub struct Sheet {
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PackOutput {
     pub sheets: Vec<Sheet>,
     pub unplaced: Vec<String>,
+    /// Area used on the last sheet, items inflated by the gap; ranks layouts of equal length.
+    pub last_area: u64,
+    /// Bounding-box area of the last sheet's items; the final tie-break.
+    pub last_extent: u64,
 }
 
 const SEED: u32 = 0x9E37_79B9;
 const SHUFFLES: usize = 200;
-const HEURISTICS: [Heuristic; 3] = [
+/// Highest effort accepted; more is clamped.
+const MAX_EFFORT: u32 = 64;
+pub(crate) const HEURISTICS: [Heuristic; 3] = [
     Heuristic::BestShortSide,
     Heuristic::BestArea,
     Heuristic::BottomLeft,
 ];
 
 /// An item inflated by the gap, so spacing exists only between photos.
+/// `index` is the item's position in the list of items that fit a sheet.
 #[derive(Clone, Copy)]
-struct Inflated {
-    index: usize,
-    w: u32,
-    h: u32,
+pub(crate) struct Inflated {
+    pub index: usize,
+    pub w: u32,
+    pub h: u32,
 }
 
 impl Inflated {
-    fn area(&self) -> u64 {
+    pub fn area(&self) -> u64 {
         self.w as u64 * self.h as u64
     }
 }
 
+/// Top-left corner and whether the item is turned, in the area grown by the gap.
+pub(crate) type Slot = (u32, u32, bool);
+
+/// One sheet: positions into the fitting items, with a slot (x, y, rotated) for each.
+#[derive(Clone)]
+pub(crate) struct Packed {
+    pub items: Vec<usize>,
+    pub slots: Vec<Slot>,
+    pub used: u64,
+    pub extent: u64,
+}
+
+impl Packed {
+    pub fn new(items: Vec<usize>, slots: Vec<Slot>, fitting: &[Inflated]) -> Packed {
+        let mut used = 0;
+        let (mut max_x, mut max_y) = (0u32, 0u32);
+        for (&i, &(x, y, rotated)) in items.iter().zip(&slots) {
+            let it = fitting[i];
+            used += it.area();
+            let (w, h) = if rotated { (it.h, it.w) } else { (it.w, it.h) };
+            max_x = max_x.max(x + w);
+            max_y = max_y.max(y + h);
+        }
+        Packed {
+            items,
+            slots,
+            used,
+            extent: max_x as u64 * max_y as u64,
+        }
+    }
+}
+
+/// Fewest sheets first, then the least area used on the last sheet,
+/// then the most compact last sheet.
+pub(crate) fn rank(bins: &[Packed]) -> (usize, u64, u64) {
+    (
+        bins.len(),
+        bins.last().map_or(0, |b| b.used),
+        bins.last().map_or(0, |b| b.extent),
+    )
+}
+
 struct Attempt {
-    /// (sheet index, x, y, rotated) per item index.
+    /// (sheet index, x, y, rotated) per fitting position.
     slots: Vec<(usize, u32, u32, bool)>,
     sheets: usize,
     last_area: u64,
@@ -74,11 +137,32 @@ struct Attempt {
     last_extent: u64,
 }
 
-fn xorshift(state: &mut u32) -> u32 {
+pub(crate) fn xorshift(state: &mut u32) -> u32 {
     *state ^= *state << 13;
     *state ^= *state >> 17;
     *state ^= *state << 5;
     *state
+}
+
+/// Fisher-Yates shuffle driven by `xorshift`.
+pub(crate) fn shuffle<T>(list: &mut [T], rng: &mut u32) {
+    for i in (1..list.len()).rev() {
+        let j = (xorshift(rng) as usize) % (i + 1);
+        list.swap(i, j);
+    }
+}
+
+/// The four sorted orders tried before any shuffle.
+pub(crate) fn sorted_orders(items: &[Inflated]) -> Vec<Vec<Inflated>> {
+    let mut by_area = items.to_vec();
+    by_area.sort_by_key(|i| std::cmp::Reverse(i.area()));
+    let mut by_long = items.to_vec();
+    by_long.sort_by_key(|i| std::cmp::Reverse(i.w.max(i.h)));
+    let mut by_h = items.to_vec();
+    by_h.sort_by_key(|i| std::cmp::Reverse(i.h));
+    let mut by_w = items.to_vec();
+    by_w.sort_by_key(|i| std::cmp::Reverse(i.w));
+    vec![by_area, by_long, by_h, by_w]
 }
 
 fn run(order: &[Inflated], area: (u32, u32), heuristic: Heuristic, n: usize) -> Attempt {
@@ -110,7 +194,72 @@ fn run(order: &[Inflated], area: (u32, u32), heuristic: Heuristic, n: usize) -> 
     }
 }
 
-pub fn pack(input: &PackInput) -> PackOutput {
+/// Phase one: first-fit MaxRects over the sorted orders and `shuffles` shuffled ones,
+/// with every heuristic; the first best attempt wins.
+fn greedy(fitting: &[Inflated], area: (u32, u32), rng: &mut u32, shuffles: usize) -> Vec<Packed> {
+    let mut orders = sorted_orders(fitting);
+    let mut shuffled = fitting.to_vec();
+    for _ in 0..shuffles {
+        shuffle(&mut shuffled, rng);
+        orders.push(shuffled.clone());
+    }
+
+    let mut best: Option<Attempt> = None;
+    for order in &orders {
+        for &heuristic in &HEURISTICS {
+            let a = run(order, area, heuristic, fitting.len());
+            if best.as_ref().is_none_or(|b| {
+                (a.sheets, a.last_area, a.last_extent) < (b.sheets, b.last_area, b.last_extent)
+            }) {
+                best = Some(a);
+            }
+        }
+    }
+    let best = best.expect("at least one attempt was made");
+
+    let mut items: Vec<Vec<usize>> = vec![vec![]; best.sheets];
+    let mut slots: Vec<Vec<Slot>> = vec![vec![]; best.sheets];
+    for (i, &(si, x, y, rotated)) in best.slots.iter().enumerate() {
+        items[si].push(i);
+        slots[si].push((x, y, rotated));
+    }
+    items
+        .into_iter()
+        .zip(slots)
+        .map(|(items, slots)| Packed::new(items, slots, fitting))
+        .collect()
+}
+
+/// Puts the least used sheet last, which only ever improves the rank.
+fn emptiest_last(bins: &mut Vec<Packed>) {
+    if let Some(last) = bins.len().checked_sub(1) {
+        let mut min = last;
+        for (i, b) in bins.iter().enumerate() {
+            if b.used < bins[min].used {
+                min = i;
+            }
+        }
+        if min != last {
+            let b = bins.remove(min);
+            bins.push(b);
+        }
+    }
+}
+
+/// Sheets used by the first release: phase one only, default seed and effort.
+#[cfg(test)]
+pub(crate) fn pack_greedy_only(input: &PackInput) -> usize {
+    let (area, fitting, _, _) = prepare(input);
+    if fitting.is_empty() {
+        return 0;
+    }
+    let mut rng = SEED;
+    greedy(&fitting, area, &mut rng, SHUFFLES).len()
+}
+
+/// The usable area grown by the gap, the items that fit it (inflated) with their input
+/// positions, and the ids of those that do not.
+fn prepare(input: &PackInput) -> ((u32, u32), Vec<Inflated>, Vec<usize>, Vec<String>) {
     // Working on area + gap with items + gap makes spacing exist only between photos.
     let area_w = input
         .sheet_w
@@ -123,74 +272,80 @@ pub fn pack(input: &PackInput) -> PackOutput {
 
     let mut unplaced = Vec::new();
     let mut fitting: Vec<Inflated> = Vec::new();
+    let mut origin = Vec::new();
     for (index, it) in input.items.iter().enumerate() {
         let w = it.w.saturating_add(input.gap);
         let h = it.h.saturating_add(input.gap);
         if (w <= area_w && h <= area_h) || (h <= area_w && w <= area_h) {
-            fitting.push(Inflated { index, w, h });
+            fitting.push(Inflated {
+                index: fitting.len(),
+                w,
+                h,
+            });
+            origin.push(index);
         } else {
             unplaced.push(it.id.clone());
         }
     }
+    ((area_w, area_h), fitting, origin, unplaced)
+}
+
+pub fn pack(input: &PackInput) -> PackOutput {
+    let (area, fitting, origin, unplaced) = prepare(input);
     if fitting.is_empty() {
         return PackOutput {
             sheets: vec![],
             unplaced,
+            last_area: 0,
+            last_extent: 0,
         };
     }
+    let effort = input.effort.unwrap_or(1).clamp(1, MAX_EFFORT);
+    let mut rng = match input.seed {
+        Some(seed) if seed != SEED => seed ^ SEED,
+        _ => SEED,
+    };
+    let mut bins = greedy(&fitting, area, &mut rng, SHUFFLES * effort as usize);
+    emptiest_last(&mut bins);
 
-    let mut orders: Vec<Vec<Inflated>> = Vec::new();
-    let mut by_area = fitting.clone();
-    by_area.sort_by_key(|i| std::cmp::Reverse(i.area()));
-    orders.push(by_area);
-    let mut by_long = fitting.clone();
-    by_long.sort_by_key(|i| std::cmp::Reverse(i.w.max(i.h)));
-    orders.push(by_long);
-    let mut by_h = fitting.clone();
-    by_h.sort_by_key(|i| std::cmp::Reverse(i.h));
-    orders.push(by_h);
-    let mut by_w = fitting.clone();
-    by_w.sort_by_key(|i| std::cmp::Reverse(i.w));
-    orders.push(by_w);
-
-    let mut rng = SEED;
-    let mut shuffled = fitting.clone();
-    for _ in 0..SHUFFLES {
-        for i in (1..shuffled.len()).rev() {
-            let j = (xorshift(&mut rng) as usize) % (i + 1);
-            shuffled.swap(i, j);
-        }
-        orders.push(shuffled.clone());
+    let mut improved = improve::improve(bins.clone(), &fitting, area, rng, effort);
+    emptiest_last(&mut improved);
+    if rank(&improved) < rank(&bins) {
+        bins = improved;
     }
 
-    // Fewest sheets first, then the least area used on the last sheet,
-    // then the most compact last sheet; the first best wins.
-    let mut best: Option<Attempt> = None;
-    for order in &orders {
-        for &heuristic in &HEURISTICS {
-            let a = run(order, (area_w, area_h), heuristic, input.items.len());
-            if best.as_ref().is_none_or(|b| {
-                (a.sheets, a.last_area, a.last_extent) < (b.sheets, b.last_area, b.last_extent)
-            }) {
-                best = Some(a);
+    let (_, last_area, last_extent) = rank(&bins);
+    let sheets = bins
+        .into_iter()
+        .map(|b| {
+            let mut placements: Vec<(usize, Placement)> = b
+                .items
+                .iter()
+                .zip(&b.slots)
+                .map(|(&i, &(x, y, rotated))| {
+                    (
+                        i,
+                        Placement {
+                            id: input.items[origin[i]].id.clone(),
+                            x: x + input.margin,
+                            y: y + input.margin,
+                            rotated,
+                        },
+                    )
+                })
+                .collect();
+            placements.sort_by_key(|(i, _)| *i);
+            Sheet {
+                placements: placements.into_iter().map(|(_, p)| p).collect(),
             }
-        }
-    }
-    let best = best.expect("at least one attempt was made");
-
-    let mut sheets: Vec<Sheet> = (0..best.sheets)
-        .map(|_| Sheet { placements: vec![] })
+        })
         .collect();
-    for f in &fitting {
-        let (si, x, y, rotated) = best.slots[f.index];
-        sheets[si].placements.push(Placement {
-            id: input.items[f.index].id.clone(),
-            x: x + input.margin,
-            y: y + input.margin,
-            rotated,
-        });
+    PackOutput {
+        sheets,
+        unplaced,
+        last_area,
+        last_extent,
     }
-    PackOutput { sheets, unplaced }
 }
 
 /// JSON entry point for the web app.
@@ -199,6 +354,49 @@ pub fn pack(input: &PackInput) -> PackOutput {
 pub fn pack_json(input: &str) -> Result<String, wasm_bindgen::JsError> {
     let parsed: PackInput = serde_json::from_str(input)?;
     Ok(serde_json::to_string(&pack(&parsed))?)
+}
+
+/// Asserts that `input` packs into a valid layout: every item once, inside the margins,
+/// at least the gap apart. Returns the layout; `sheets`, when given, checks its length.
+#[cfg(test)]
+pub(crate) fn check_layout(input: &PackInput, sheets: Option<usize>) -> PackOutput {
+    let out = pack(input);
+    if let Some(n) = sheets {
+        assert_eq!(out.sheets.len(), n);
+    }
+    let mut seen: Vec<&str> = out.unplaced.iter().map(String::as_str).collect();
+    for sheet in &out.sheets {
+        let rects: Vec<(u32, u32, u32, u32)> = sheet
+            .placements
+            .iter()
+            .map(|p| {
+                seen.push(&p.id);
+                let it = input.items.iter().find(|i| i.id == p.id).unwrap();
+                let (w, h) = if p.rotated {
+                    (it.h, it.w)
+                } else {
+                    (it.w, it.h)
+                };
+                (p.x, p.y, w, h)
+            })
+            .collect();
+        for &(x, y, w, h) in &rects {
+            assert!(x >= input.margin && y >= input.margin);
+            assert!(x + w <= input.sheet_w - input.margin && y + h <= input.sheet_h - input.margin);
+        }
+        for (i, a) in rects.iter().enumerate() {
+            for b in &rects[i + 1..] {
+                let apart_x = a.0 + a.2 + input.gap <= b.0 || b.0 + b.2 + input.gap <= a.0;
+                let apart_y = a.1 + a.3 + input.gap <= b.1 || b.1 + b.3 + input.gap <= a.1;
+                assert!(apart_x || apart_y, "overlap: {a:?} {b:?}");
+            }
+        }
+    }
+    seen.sort_unstable();
+    let mut ids: Vec<&str> = input.items.iter().map(|i| i.id.as_str()).collect();
+    ids.sort_unstable();
+    assert_eq!(seen, ids);
+    out
 }
 
 #[cfg(test)]
@@ -225,6 +423,8 @@ mod tests {
             sheet_h: H,
             margin: MARGIN,
             gap: GAP,
+            seed: None,
+            effort: None,
         }
     }
 
@@ -322,37 +522,101 @@ mod tests {
             let items: Vec<Item> = (0..n)
                 .map(|i| item(&format!("i{i}"), 100 + next() % 1900, 100 + next() % 1900))
                 .collect();
-            let inp = input(items.clone());
-            let out = pack(&inp);
-            let mut count = out.unplaced.len();
-            for sheet in &out.sheets {
-                let rects: Vec<(u32, u32, u32, u32)> = sheet
-                    .placements
-                    .iter()
-                    .map(|p| {
-                        let it = items.iter().find(|i| i.id == p.id).unwrap();
-                        let (w, h) = if p.rotated {
-                            (it.h, it.w)
-                        } else {
-                            (it.w, it.h)
-                        };
-                        (p.x, p.y, w, h)
-                    })
-                    .collect();
-                count += rects.len();
-                for &(x, y, w, h) in &rects {
-                    assert!(x >= MARGIN && y >= MARGIN);
-                    assert!(x + w <= W - MARGIN && y + h <= H - MARGIN);
-                }
-                for (i, a) in rects.iter().enumerate() {
-                    for b in &rects[i + 1..] {
-                        let apart_x = a.0 + a.2 + GAP <= b.0 || b.0 + b.2 + GAP <= a.0;
-                        let apart_y = a.1 + a.3 + GAP <= b.1 || b.1 + b.3 + GAP <= a.1;
-                        assert!(apart_x || apart_y, "overlap: {a:?} {b:?}");
-                    }
-                }
-            }
-            assert_eq!(count, items.len());
+            check_layout(&input(items), None);
+        }
+    }
+
+    #[test]
+    fn same_seed_same_output_and_seed_changes_the_search() {
+        let mut inp = input(
+            (0..14)
+                .map(|i| {
+                    item(
+                        &format!("i{i}"),
+                        500 + (i * 137) % 1100,
+                        700 + (i * 71) % 900,
+                    )
+                })
+                .collect(),
+        );
+        inp.seed = Some(42);
+        inp.effort = Some(3);
+        assert_eq!(pack(&inp), pack(&inp));
+        check_layout(&inp, None);
+    }
+
+    #[test]
+    fn effort_and_seed_never_lose_to_the_first_release() {
+        let mut state: u32 = 777;
+        for round in 0..60 {
+            let n = 2 + xorshift(&mut state) % 20;
+            let items: Vec<Item> = (0..n)
+                .map(|i| {
+                    item(
+                        &format!("i{i}"),
+                        300 + xorshift(&mut state) % 1700,
+                        300 + xorshift(&mut state) % 1700,
+                    )
+                })
+                .collect();
+            let mut inp = input(items);
+            let old = pack_greedy_only(&inp);
+            assert!(pack(&inp).sheets.len() <= old);
+            inp.effort = Some(4);
+            assert!(check_layout(&inp, None).sheets.len() <= old);
+            inp.seed = Some(round);
+            check_layout(&inp, None);
+        }
+    }
+
+    #[test]
+    fn json_fields_are_optional_and_camel_case() {
+        let parsed: PackInput = serde_json::from_str(
+            r#"{"items":[{"id":"a","w":1000,"h":1500}],"sheetW":2100,"sheetH":2970,"margin":50,"gap":30}"#,
+        )
+        .unwrap();
+        assert_eq!((parsed.seed, parsed.effort), (None, None));
+        let parsed: PackInput = serde_json::from_str(
+            r#"{"items":[],"sheetW":2100,"sheetH":2970,"margin":50,"gap":30,"seed":7,"effort":16}"#,
+        )
+        .unwrap();
+        assert_eq!((parsed.seed, parsed.effort), (Some(7), Some(16)));
+        let out = serde_json::to_value(pack(&input(vec![item("a", 1000, 1500)]))).unwrap();
+        assert_eq!(out["lastArea"], 1030 * 1530);
+        assert_eq!(out["lastExtent"], 1030 * 1530);
+    }
+
+    #[test]
+    fn the_least_used_sheet_goes_last() {
+        let mut state: u32 = 99;
+        for _ in 0..40 {
+            let n = 3 + xorshift(&mut state) % 15;
+            let items: Vec<Item> = (0..n)
+                .map(|i| {
+                    item(
+                        &format!("i{i}"),
+                        300 + xorshift(&mut state) % 1700,
+                        300 + xorshift(&mut state) % 1700,
+                    )
+                })
+                .collect();
+            let inp = input(items);
+            let out = check_layout(&inp, None);
+            let used: Vec<u64> = out
+                .sheets
+                .iter()
+                .map(|s| {
+                    s.placements
+                        .iter()
+                        .map(|p| {
+                            let it = inp.items.iter().find(|i| i.id == p.id).unwrap();
+                            (it.w + GAP) as u64 * (it.h + GAP) as u64
+                        })
+                        .sum()
+                })
+                .collect();
+            assert_eq!(out.last_area, *used.last().unwrap());
+            assert_eq!(out.last_area, *used.iter().min().unwrap());
         }
     }
 }
