@@ -3,6 +3,8 @@ import { t } from '../i18n'
 import type { ReorganizeOutcome } from './useSheetLayout'
 
 interface Props {
+  /** False once no layout could use fewer sheets: the button is left out. */
+  offer: boolean
   disabled: boolean
   reorganizing: boolean
   reorganized: ReorganizeOutcome | null
@@ -10,7 +12,13 @@ interface Props {
 }
 
 /** "Reorganizar encaixe": a deeper search for a layout with fewer sheets, and its outcome. */
-export function ReorganizeSection({ disabled, reorganizing, reorganized, onReorganize }: Props) {
+export function ReorganizeSection({
+  offer,
+  disabled,
+  reorganizing,
+  reorganized,
+  onReorganize,
+}: Props) {
   let message = ''
   if (reorganized?.reduced) {
     message =
@@ -23,15 +31,17 @@ export function ReorganizeSection({ disabled, reorganizing, reorganized, onReorg
 
   return (
     <div className="print-reorganize">
-      <button
-        type="button"
-        className="secondary-button print-reorganize-button"
-        disabled={disabled || reorganizing}
-        onClick={onReorganize}
-      >
-        <Shuffle size={18} aria-hidden="true" />
-        {reorganizing ? t('print.reorganizing') : t('print.reorganize')}
-      </button>
+      {offer && (
+        <button
+          type="button"
+          className="secondary-button print-reorganize-button"
+          disabled={disabled || reorganizing}
+          onClick={onReorganize}
+        >
+          <Shuffle size={18} aria-hidden="true" />
+          {reorganizing ? t('print.reorganizing') : t('print.reorganize')}
+        </button>
+      )}
       <p className="print-reorganize-status" role="status">
         {message}
       </p>

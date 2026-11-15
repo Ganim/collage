@@ -24,6 +24,8 @@ export interface SheetLayout {
   lastArea: number
   /** Bounding-box area of the last sheet's frames; the final tie-break. */
   lastExtent: number
+  /** Fewest sheets the frames' area allows: a layout this short cannot be improved. */
+  lowerBound: number
 }
 
 interface PackOutput {
@@ -31,6 +33,7 @@ interface PackOutput {
   unplaced: string[]
   lastArea: number
   lastExtent: number
+  lowerBound: number
 }
 
 /** True when `a` beats `b`: fewer sheets, then a lighter last sheet, then a tighter one. */
@@ -72,6 +75,7 @@ export function solve(request: PackRequest, packJson: (input: string) => string)
     usedRatio: paperArea === 0 ? 0 : placedArea / paperArea,
     lastArea: output.lastArea,
     lastExtent: output.lastExtent,
+    lowerBound: output.lowerBound,
   }
 }
 
@@ -92,9 +96,12 @@ function failAll(message: string): void {
   worker = undefined
 }
 
+const startWorker = (): Worker =>
+  new Worker(new URL('./pack.worker.ts', import.meta.url), { type: 'module' })
+
 function getWorker(): Worker {
   if (worker) return worker
-  const created = new Worker(new URL('./pack.worker.ts', import.meta.url), { type: 'module' })
+  const created = startWorker()
   created.onmessage = (
     event: MessageEvent<{ id: number; layout?: SheetLayout; error?: string }>,
   ) => {
@@ -119,4 +126,46 @@ export function packFrames(request: PackRequest): Promise<SheetLayout> {
     pending.set(id, { resolve, reject })
     target.postMessage({ id, request })
   })
+}
+
+/** The reason a cancelled reorganize rejects with. */
+export class PackCancelled extends Error {
+  constructor() {
+    super('packing cancelled')
+    this.name = 'PackCancelled'
+  }
+}
+
+export interface PackRun {
+  result: Promise<SheetLayout>
+  /** Stops the worker; `result` then rejects with PackCancelled, unless it already settled. */
+  cancel: () => void
+}
+
+/**
+ * Lays frames out on a worker of its own, which ends with the reply: a long search here
+ * never delays `packFrames`, and cancelling it frees the CPU at once.
+ */
+export function reorganizeFrames(request: PackRequest): PackRun {
+  let own: Worker | undefined
+  let settle: ((outcome: { layout?: SheetLayout; error?: unknown }) => void) | undefined
+  const result = new Promise<SheetLayout>((resolve, reject) => {
+    settle = ({ layout, error }) => {
+      settle = undefined
+      own?.terminate()
+      if (layout) resolve(layout)
+      else reject(error instanceof Error ? error : new Error('packing failed'))
+    }
+    own = startWorker()
+    own.onmessage = (event: MessageEvent<{ layout?: SheetLayout; error?: string }>) => {
+      const { layout, error } = event.data
+      settle?.(layout ? { layout } : { error: new Error(error || 'packing failed') })
+    }
+    own.onerror = (event) =>
+      settle?.({ error: new Error(event.message || 'packing worker failed to load') })
+    own.onmessageerror = () =>
+      settle?.({ error: new Error('packing worker sent an unreadable message') })
+    own.postMessage({ id: 0, request })
+  })
+  return { result, cancel: () => settle?.({ error: new PackCancelled() }) }
 }

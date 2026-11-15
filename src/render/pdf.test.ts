@@ -27,7 +27,7 @@ function place(frameId: string, xMm: number, yMm: number, rotated = false): Plac
 }
 
 function layoutOf(...sheets: PlacedFrame[][]): SheetLayout {
-  return { sheets, unplaced: [], usedRatio: 0, lastArea: 0, lastExtent: 0 }
+  return { sheets, unplaced: [], usedRatio: 0, lastArea: 0, lastExtent: 0, lowerBound: 0 }
 }
 
 function contentOf(page: PDFPage): string {

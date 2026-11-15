@@ -1,10 +1,20 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Frame, Paper } from '../../core/types'
-import { betterLayout, packFrames, type PackRequest, type SheetLayout } from '../../packing/pack'
+import {
+  betterLayout,
+  packFrames,
+  PackCancelled,
+  reorganizeFrames,
+  type PackRequest,
+  type SheetLayout,
+} from '../../packing/pack'
 
 const PACK_DELAY_MS = 200
-/** Search effort of "Reorganizar encaixe": well under two seconds for 60 frames. */
-export const REORGANIZE_EFFORT = 16
+/**
+ * Search effort of "Reorganizar encaixe": 60 frames take up to about half a second on a
+ * desktop (crates/packing time_sixty_frames uses the same value).
+ */
+export const REORGANIZE_EFFORT = 10
 
 /** What a reorganize did to the layout on show. */
 export interface ReorganizeOutcome {
@@ -62,14 +72,19 @@ export function useSheetLayout(frames: Frame[], paper: Paper): SheetLayoutState 
   const latest = useRef(0)
   const keyNow = useRef(key)
   const shownNow = useRef(shown)
-  const reorganizingNow = useRef(false)
+  // Stops the reorganize in flight, if any, and frees the button.
+  const stopReorganize = useRef<(() => void) | null>(null)
 
   useEffect(() => {
     keyNow.current = key
     shownNow.current = shown
   })
 
+  useEffect(() => () => stopReorganize.current?.(), [])
+
   useEffect(() => {
+    // New frames or paper retire a reorganize of the old ones.
+    stopReorganize.current?.()
     const id = ++latest.current
     const timer = setTimeout(() => {
       const parsed = JSON.parse(key) as PackRequest
@@ -91,12 +106,17 @@ export function useSheetLayout(frames: Frame[], paper: Paper): SheetLayoutState 
 
   const reorganize = () => {
     const base = shown
-    if (!base || base.key !== key || reorganizingNow.current) return
-    reorganizingNow.current = true
+    if (!base || base.key !== key || stopReorganize.current) return
     setReorg({ from: base, outcome: null })
     const retire = () => setReorg((r) => (r?.from === base ? null : r))
     const parsed = JSON.parse(base.key) as PackRequest
-    packFrames({ ...parsed, seed: randomSeed(), effort: REORGANIZE_EFFORT })
+    const run = reorganizeFrames({ ...parsed, seed: randomSeed(), effort: REORGANIZE_EFFORT })
+    const stop = () => {
+      if (stopReorganize.current === stop) stopReorganize.current = null
+      run.cancel()
+    }
+    stopReorganize.current = stop
+    run.result
       .then(
         (layout) => {
           if (keyNow.current !== base.key || shownNow.current !== base) return retire()
@@ -110,12 +130,12 @@ export function useSheetLayout(frames: Frame[], paper: Paper): SheetLayoutState 
           }
         },
         (e: unknown) => {
-          console.error(e)
+          if (!(e instanceof PackCancelled)) console.error(e)
           retire()
         },
       )
       .finally(() => {
-        reorganizingNow.current = false
+        if (stopReorganize.current === stop) stopReorganize.current = null
       })
   }
 

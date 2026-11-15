@@ -9,6 +9,7 @@ describe('ReorganizeSection', () => {
     const onReorganize = vi.fn()
     render(
       <ReorganizeSection
+        offer
         disabled={false}
         reorganizing={false}
         reorganized={null}
@@ -24,7 +25,13 @@ describe('ReorganizeSection', () => {
 
   it('is off while it runs', () => {
     render(
-      <ReorganizeSection disabled={false} reorganizing reorganized={null} onReorganize={vi.fn()} />,
+      <ReorganizeSection
+        offer
+        disabled={false}
+        reorganizing
+        reorganized={null}
+        onReorganize={vi.fn()}
+      />,
     )
     expect(button()).toHaveTextContent('Reorganizando…')
     expect(button()).toBeDisabled()
@@ -32,7 +39,13 @@ describe('ReorganizeSection', () => {
 
   it('is off when told so', () => {
     render(
-      <ReorganizeSection disabled reorganizing={false} reorganized={null} onReorganize={vi.fn()} />,
+      <ReorganizeSection
+        offer
+        disabled
+        reorganizing={false}
+        reorganized={null}
+        onReorganize={vi.fn()}
+      />,
     )
     expect(button()).toBeDisabled()
   })
@@ -40,6 +53,7 @@ describe('ReorganizeSection', () => {
   it('says how many sheets remain after a reduction', () => {
     const { rerender } = render(
       <ReorganizeSection
+        offer
         disabled={false}
         reorganizing={false}
         reorganized={{ reduced: true, sheets: 3 }}
@@ -49,6 +63,7 @@ describe('ReorganizeSection', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Agora em 3 folhas')
     rerender(
       <ReorganizeSection
+        offer
         disabled={false}
         reorganizing={false}
         reorganized={{ reduced: true, sheets: 1 }}
@@ -61,6 +76,7 @@ describe('ReorganizeSection', () => {
   it('says when nothing better was found', () => {
     render(
       <ReorganizeSection
+        offer
         disabled={false}
         reorganizing={false}
         reorganized={{ reduced: false, sheets: 2 }}
@@ -70,5 +86,19 @@ describe('ReorganizeSection', () => {
     expect(screen.getByRole('status')).toHaveTextContent(
       'Este já é o melhor encaixe que encontrei.',
     )
+  })
+
+  it('leaves the button out when no fewer sheets are possible, keeping the outcome', () => {
+    render(
+      <ReorganizeSection
+        offer={false}
+        disabled={false}
+        reorganizing={false}
+        reorganized={{ reduced: true, sheets: 1 }}
+        onReorganize={vi.fn()}
+      />,
+    )
+    expect(screen.queryByRole('button')).toBeNull()
+    expect(screen.getByRole('status')).toHaveTextContent('Agora em 1 folha')
   })
 })

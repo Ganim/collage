@@ -1,12 +1,19 @@
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Frame, Paper } from '../../core/types'
-import { packFrames, type PackRequest, type SheetLayout } from '../../packing/pack'
+import {
+  packFrames,
+  PackCancelled,
+  reorganizeFrames,
+  type PackRequest,
+  type SheetLayout,
+} from '../../packing/pack'
 import { REORGANIZE_EFFORT, useSheetLayout } from './useSheetLayout'
 
 vi.mock('../../packing/pack', async (original) => ({
   ...(await original<typeof import('../../packing/pack')>()),
   packFrames: vi.fn(),
+  reorganizeFrames: vi.fn(),
 }))
 
 const layer = { id: 'l', photoId: 'p', cx: 0.5, cy: 0.5, widthFrac: 1, rotationDeg: 0 }
@@ -21,12 +28,15 @@ const layoutOf = (usedRatio: number, sheets = 1, lastArea = 0): SheetLayout => (
   usedRatio,
   lastArea,
   lastExtent: 0,
+  lowerBound: 1,
 })
 
 interface Deferred {
   request: PackRequest
   resolve(layout: SheetLayout): void
   reject(error: unknown): void
+  /** Set on a reorganize, which runs on its own worker. */
+  cancel?: ReturnType<typeof vi.fn>
 }
 
 describe('useSheetLayout', () => {
@@ -42,6 +52,14 @@ describe('useSheetLayout', () => {
           calls.push({ request, resolve, reject })
         }),
     )
+    vi.mocked(reorganizeFrames).mockReset()
+    vi.mocked(reorganizeFrames).mockImplementation((request) => {
+      const cancel = vi.fn()
+      const result = new Promise<SheetLayout>((resolve, reject) => {
+        calls.push({ request, resolve, reject, cancel })
+      })
+      return { result, cancel }
+    })
   })
 
   afterEach(() => vi.useRealTimers())
@@ -150,6 +168,8 @@ describe('useSheetLayout', () => {
       act(() => result.current.reorganize())
       act(() => result.current.reorganize())
       expect(calls).toHaveLength(2)
+      expect(calls[1]!.cancel).toBeDefined()
+      expect(packFrames).toHaveBeenCalledOnce()
       expect(result.current.reorganizing).toBe(true)
       const { seed, effort, ...rest } = calls[1]!.request
       expect(rest).toEqual(calls[0]!.request)
@@ -189,6 +209,40 @@ describe('useSheetLayout', () => {
       act(() => result.current.reorganize())
       await settle(calls[2]!, layoutOf(0.5, 2, 100))
       expect(result.current.layout).toBe(first)
+    })
+
+    it('stops the reorganize worker when the paper changes, and can run again', async () => {
+      const { result, rerender } = await shown(layoutOf(0.5, 3))
+      act(() => result.current.reorganize())
+      rerender(a3)
+      expect(calls[1]!.cancel).toHaveBeenCalledOnce()
+      expect(result.current.reorganizing).toBe(false)
+      await elapse(200)
+      await settle(calls[2]!, layoutOf(0.5, 3))
+      act(() => result.current.reorganize())
+      expect(calls).toHaveLength(4)
+      expect(calls[3]!.request.paper).toEqual(a3)
+      expect(result.current.reorganizing).toBe(true)
+    })
+
+    it('stops the reorganize worker on unmount', async () => {
+      const { result, unmount } = await shown(layoutOf(0.5, 3))
+      act(() => result.current.reorganize())
+      unmount()
+      expect(calls[1]!.cancel).toHaveBeenCalledOnce()
+    })
+
+    it('says nothing when a cancelled reorganize rejects', async () => {
+      const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const { result, rerender } = await shown(layoutOf(0.5, 3))
+      act(() => result.current.reorganize())
+      rerender(a3)
+      await act(async () => {
+        calls[1]!.reject(new PackCancelled())
+        await vi.advanceTimersByTimeAsync(0)
+      })
+      expect(spy).not.toHaveBeenCalled()
+      spy.mockRestore()
     })
 
     it('drops a result that arrives after the paper changed, and the message with it', async () => {

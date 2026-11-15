@@ -89,6 +89,10 @@ export function SheetScreen({ onBack }: { onBack: () => void }) {
     }
   }
 
+  // One sheet, or as few as the frames' area allows, cannot be improved on.
+  const offerReorganize =
+    layout !== null && layout.sheets.length > 1 && layout.sheets.length > layout.lowerBound
+
   const summary = layout
     ? layout.sheets.length === 1
       ? t('print.summaryOne', { percent: Math.round(layout.usedRatio * 100) })
@@ -131,8 +135,9 @@ export function SheetScreen({ onBack }: { onBack: () => void }) {
         <h1 className="print-title">{t('print.title')}</h1>
         <span className="print-summary">{summary}</span>
       </header>
-      {placed > 0 && (
+      {placed > 0 && (offerReorganize || reorganized) && (
         <ReorganizeSection
+          offer={offerReorganize}
           disabled={!current || progress !== null}
           reorganizing={reorganizing}
           reorganized={reorganized}

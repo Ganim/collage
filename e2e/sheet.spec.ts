@@ -281,6 +281,7 @@ test('three 13×18 and a 15×21 share one A3 sheet', async ({ page }) => {
   await chooseOption(page, 'Papel', 'A3')
   await expect(page.getByText(/^1 folha · \d+%$/)).toBeVisible()
   await expect(sheets(page)).toHaveCount(1)
+  await expect(reorganizeButton(page)).toHaveCount(0)
 })
 
 test('"Reorganizar encaixe" runs a deeper search and says what it found', async ({ page }) => {
@@ -306,15 +307,17 @@ test('"Reorganizar encaixe" runs a deeper search and says what it found', async 
 test('changing the paper after a reorganize lays out again and drops the message', async ({
   page,
 }) => {
-  await photoFrames(page, 2)
+  await photoFrames(page, 3)
   await openSheet(page)
   await reorganizeButton(page).click()
   await expect(page.getByText('Este já é o melhor encaixe que encontrei.')).toBeVisible({
     timeout: 15_000,
   })
   await chooseOption(page, 'Papel', 'A3')
-  await expect(page.getByText('Este já é o melhor encaixe que encontrei.')).toHaveCount(0)
   await expect(page.getByText(/^1 folha · \d+%$/)).toBeVisible()
+  await expect(page.getByText('Este já é o melhor encaixe que encontrei.')).toHaveCount(0)
+  // One sheet cannot get any shorter: the button is left out.
+  await expect(reorganizeButton(page)).toHaveCount(0)
 })
 
 test('changing the paper after generating asks to generate again', async ({ page }) => {

@@ -39,13 +39,27 @@ describe('solve', () => {
 
   it('returns an empty layout for no frames', () => {
     const layout = solve({ frames: [], paper: A4 }, pack_json)
-    expect(layout).toEqual({ sheets: [], unplaced: [], usedRatio: 0, lastArea: 0, lastExtent: 0 })
+    expect(layout).toEqual({
+      sheets: [],
+      unplaced: [],
+      usedRatio: 0,
+      lastArea: 0,
+      lastExtent: 0,
+      lowerBound: 0,
+    })
   })
 })
 
 describe('packFrames', () => {
   const request: PackRequest = { frames: [], paper: A4 }
-  const layout = (n: number) => ({ sheets: [], unplaced: [`u${n}`], usedRatio: 0 })
+  const layout = (n: number) => ({
+    sheets: [],
+    unplaced: [`u${n}`],
+    usedRatio: 0,
+    lastArea: 0,
+    lastExtent: 0,
+    lowerBound: 0,
+  })
 
   class FakeWorker {
     static instances: FakeWorker[] = []
@@ -61,7 +75,10 @@ describe('packFrames', () => {
     postMessage(msg: { id: number }) {
       this.posted.push(msg)
     }
-    terminate() {}
+    terminated = false
+    terminate() {
+      this.terminated = true
+    }
   }
 
   async function load() {
@@ -73,6 +90,45 @@ describe('packFrames', () => {
   }
 
   afterEach(() => vi.unstubAllGlobals())
+
+  it('reorganizes on a worker of its own, so the normal layout never waits behind it', async () => {
+    const { packFrames, reorganizeFrames } = await load()
+    const slow = reorganizeFrames(request)
+    const quick = packFrames(request)
+    expect(FakeWorker.instances).toHaveLength(2)
+    const [own, shared] = FakeWorker.instances as [FakeWorker, FakeWorker]
+    expect(own.posted).toHaveLength(1)
+    expect(shared.posted).toHaveLength(1)
+    shared.onmessage?.({ data: { id: shared.posted[0]!.id, layout: layout(1) } })
+    expect((await quick).unplaced).toEqual(['u1'])
+    own.onmessage?.({ data: { id: own.posted[0]!.id, layout: layout(2) } })
+    expect((await slow.result).unplaced).toEqual(['u2'])
+    expect(own.terminated).toBe(true)
+    expect(shared.terminated).toBe(false)
+  })
+
+  it('cancelling a reorganize stops its worker and rejects with PackCancelled', async () => {
+    const { reorganizeFrames, PackCancelled } = await load()
+    const running = reorganizeFrames(request)
+    running.cancel()
+    expect(FakeWorker.instances[0]!.terminated).toBe(true)
+    await expect(running.result).rejects.toBeInstanceOf(PackCancelled)
+    running.cancel()
+  })
+
+  it('a reorganize worker that fails is stopped and rejects', async () => {
+    const { reorganizeFrames } = await load()
+    const running = reorganizeFrames(request)
+    FakeWorker.instances[0]!.onerror?.({ message: '' })
+    await expect(running.result).rejects.toSatisfy((e: Error) => e.message.length > 0)
+    expect(FakeWorker.instances[0]!.terminated).toBe(true)
+  })
+
+  it('a reorganize worker that cannot start rejects', async () => {
+    const { reorganizeFrames } = await load()
+    FakeWorker.failConstruct = true
+    await expect(reorganizeFrames(request).result).rejects.toThrow('boom')
+  })
 
   it('matches replies to calls by id when they arrive out of order', async () => {
     const { packFrames } = await load()
@@ -116,6 +172,7 @@ describe('solve options and ranking', () => {
       unplaced: [],
       lastArea: 7,
       lastExtent: 9,
+      lowerBound: 1,
     })
   }
   let seen: Record<string, unknown>[] = []
@@ -134,6 +191,7 @@ describe('solve options and ranking', () => {
     const layout = solve({ frames, paper: A4 }, one)
     expect(layout.lastArea).toBe(7)
     expect(layout.lastExtent).toBe(9)
+    expect(layout.lowerBound).toBe(1)
   })
 
   it('ranks fewer sheets first, then less area and a smaller extent on the last sheet', () => {
@@ -143,6 +201,7 @@ describe('solve options and ranking', () => {
       usedRatio: 0,
       lastArea,
       lastExtent,
+      lowerBound: 1,
     })
     expect(betterLayout(of(1, 9, 9), of(2, 1, 1))).toBe(true)
     expect(betterLayout(of(2, 1, 9), of(2, 2, 1))).toBe(true)

@@ -39,6 +39,7 @@ function layoutOf(...frameIds: string[]): SheetLayout {
     usedRatio: 0,
     lastArea: 0,
     lastExtent: 0,
+    lowerBound: 0,
   }
 }
 
