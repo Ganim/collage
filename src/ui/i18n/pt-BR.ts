@@ -264,6 +264,10 @@ export const ptBR = {
   'sync.revoked': 'O acesso ao Google Drive foi removido.',
   'sync.failed': 'Não foi possível sincronizar agora. Tente de novo.',
   'sync.connect': 'Conectar ao Google Drive para sincronizar',
+  'sync.connectBody':
+    'Assim suas coleções ficam guardadas também no seu Google Drive e aparecem nos outros aparelhos.',
+  'sync.connectYes': 'Conectar',
+  'sync.connectLater': 'Agora não',
   'sync.photos': 'Baixando fotos ({done} de {total})',
   'sync.when.now': 'agora',
   'sync.when.minutes': 'há {n} min',

@@ -143,3 +143,28 @@ test('the offline app serves the privacy page, not itself', async ({ browser, ba
   await expect(button(page, 'Nova coleção')).toHaveCount(0)
   await context.close()
 })
+
+test.describe('an account without the Drive', () => {
+  test.use({ connectPrompt: true })
+
+  test('is offered once to connect it; the account menu keeps the offer', async ({ page }) => {
+    await page.goto('/#/colecoes')
+    const offer = page.getByRole('dialog', { name: 'Conectar ao Google Drive para sincronizar' })
+    await expect(offer).toBeVisible()
+    await expect(offer).toContainText('aparecem nos outros aparelhos')
+    await expect(offer.getByRole('button', { name: 'Conectar', exact: true })).toBeVisible()
+    await offer.getByRole('button', { name: 'Agora não', exact: true }).click()
+    await expect(offer).toHaveCount(0)
+
+    await page.reload()
+    await expect(button(page, 'Nova coleção')).toBeVisible()
+    await expect(button(page, 'Só neste aparelho')).toBeVisible()
+    await expect(offer).toHaveCount(0)
+    await button(page, 'Sua conta').click()
+    await expect(
+      page
+        .getByRole('dialog', { name: 'Sua conta' })
+        .getByRole('button', { name: 'Conectar ao Google Drive para sincronizar' }),
+    ).toBeVisible()
+  })
+})

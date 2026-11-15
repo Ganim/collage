@@ -4,6 +4,7 @@ import type { Account } from '../account/account'
 import { t } from '../i18n'
 import { AccountHeader } from './AccountHeader'
 import { CollectionsTab } from './CollectionsTab'
+import { ConnectDriveSheet } from './ConnectDriveSheet'
 import { FramesTab } from './FramesTab'
 import { MouldingsTab } from './MouldingsTab'
 import { Tabs, panelId, tabId, type TabName } from './Tabs'
@@ -60,7 +61,12 @@ export function HomeScreen({
         </div>
       )}
       <div className="home-panel" id={panelId} role="tabpanel" aria-labelledby={tabId(tab)}>
-        {tab === 'collections' && <CollectionsTab onOpened={onOpened} onOpen={onOpen} />}
+        {tab === 'collections' && (
+          <>
+            <CollectionsTab onOpened={onOpened} onOpen={onOpen} />
+            <ConnectDriveSheet account={account} />
+          </>
+        )}
         {tab === 'mouldings' && <MouldingsTab />}
         {tab === 'frames' && <FramesTab folderId={folderId} />}
       </div>

@@ -16,15 +16,25 @@ const { viewport, userAgent, deviceScaleFactor, isMobile, hasTouch } = devices['
  * Each test gets a fresh on-disk profile. Playwright's default context is ephemeral, and
  * WebKit refuses to keep Blobs in IndexedDB there ("Error preparing Blob/File data").
  */
-export const test = base.extend<{ installHint: boolean; loggedIn: boolean }>({
+export const test = base.extend<{
+  installHint: boolean
+  loggedIn: boolean
+  connectPrompt: boolean
+}>({
   // The suggestion covers the screen on an iPhone's first visit, which is every test's visit.
   installHint: [false, { option: true }],
   // `vite preview` has no sign-in service: the account comes from here.
   loggedIn: [true, { option: true }],
-  context: async ({ playwright, baseURL, installHint, loggedIn }, provide, testInfo) => {
+  // The one-time offer to connect the Drive covers the list for an account without it.
+  connectPrompt: [false, { option: true }],
+  context: async (
+    { playwright, baseURL, installHint, loggedIn, connectPrompt },
+    provide,
+    testInfo,
+  ) => {
     const context = await launchDevice(playwright, baseURL, testInfo.outputPath('profile'))
     if (!installHint) await skipInstallHint(context)
-    await serveAccount(context, loggedIn)
+    await serveAccount(context, loggedIn, TEST_ACCOUNT, { connectPrompt })
     await provide(context)
     await context.close()
   },
@@ -82,12 +92,22 @@ export const TEST_ACCOUNT = {
   drive: false,
 }
 
-/** Answers the app's "who is signed in" question: the test account, or nobody (401). */
+/**
+ * Answers the app's "who is signed in" question: the test account, or nobody (401). Unless
+ * `connectPrompt`, the one-time offer to connect the Drive counts as already made.
+ */
 export async function serveAccount(
   context: BrowserContext,
   loggedIn = true,
   account: typeof TEST_ACCOUNT = TEST_ACCOUNT,
+  { connectPrompt = false }: { connectPrompt?: boolean } = {},
 ): Promise<void> {
+  if (!connectPrompt) {
+    await context.addInitScript(
+      (email) => localStorage.setItem(`collage.connectDriveAsked:${email}`, '0'),
+      account.email,
+    )
+  }
   await context.route('**/api/auth/me', (route) =>
     loggedIn ? route.fulfill({ status: 200, json: account }) : route.fulfill({ status: 401 }),
   )
