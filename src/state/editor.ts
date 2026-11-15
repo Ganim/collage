@@ -42,6 +42,14 @@ const AUTOSAVE_DELAY_MS = 500
  *           StorageFullError for a full device; any other save error also lands
  *           here (and is logged), because the banner just says it could not be saved.
  */
+/** A .collage file was stored as a collection, but the open work could not be left to show it. */
+export class ImportNotOpenedError extends Error {
+  constructor() {
+    super('The imported collection could not be opened')
+    this.name = 'ImportNotOpenedError'
+  }
+}
+
 export type SaveStatus = 'saved' | 'saving' | 'full'
 
 export interface EditorState {
@@ -54,6 +62,8 @@ export interface EditorState {
   saveStatus: SaveStatus
   /** The saved work could not be read. Calling bootstrap again tries once more. */
   loadFailed: boolean
+  /** Opening the saved work waits for another tab of the app to close (it holds an older version). */
+  storageBlocked: boolean
   flush(): Promise<void>
   bootstrap(): Promise<void>
   /** False, changing nothing, if there is no such collection or the open one could not be saved. */
@@ -71,7 +81,10 @@ export interface EditorState {
   deleteCollection(id: string): Promise<void>
   /** The open collection as a .collage file. Rejects if its latest edits could not be saved. */
   exportActive(): Promise<Blob>
-  /** Opens a .collage file as a new collection. Rejects, changing nothing, if it is invalid. */
+  /**
+   * Opens a .collage file as a new collection. Rejects, changing nothing, if it is invalid; also
+   * rejects when it was stored but could not be opened (the open work could not be saved).
+   */
   importCollection(file: Blob): Promise<void>
   /** photoIds lists every readable file, including one the collection already had. */
   addPhotos(files: File[]): Promise<{ failed: string[]; photoIds: string[] }>
@@ -219,10 +232,15 @@ export function createEditorStore(
      * says why: 'moved' if something else opened a collection while the names were read,
      * 'edited' if (with strict) the open one was edited meanwhile.
      */
-    const startDraft = async (excludeId?: string, strict = true): Promise<'swapped' | 'moved' | 'edited'> => {
+    const startDraft = async (
+      excludeId?: string,
+      strict = true,
+    ): Promise<'swapped' | 'moved' | 'edited'> => {
       const token = loadToken
       const rev = revision
-      const names = (await store.listCollections()).filter((c) => c.id !== excludeId).map((c) => c.name)
+      const names = (await store.listCollections())
+        .filter((c) => c.id !== excludeId)
+        .map((c) => c.name)
       if (token !== loadToken) return 'moved'
       if (strict && rev !== revision) return 'edited'
       swap(emptyCollection(names), {}, false)
@@ -279,6 +297,7 @@ export function createEditorStore(
       savedSizes: [],
       folders: [],
       loadFailed: false,
+      storageBlocked: false,
 
       async bootstrap() {
         set({ loadFailed: false })
@@ -338,7 +357,10 @@ export function createEditorStore(
         const c = await store.getCollection(id)
         if (!c) throw new Error('missing')
         const taken = (await store.listCollections()).map((x) => x.name)
-        const copy = copyCollection(c, uniqueName(t('collection.copyName', { name: c.name }), taken))
+        const copy = copyCollection(
+          c,
+          uniqueName(t('collection.copyName', { name: c.name }), taken),
+        )
         await store.duplicateCollection(id, copy)
         return copy.id
       },
@@ -368,6 +390,8 @@ export function createEditorStore(
           queuedRevision = revision
           await queue
           await startDraft(id, false)
+          // Opened again while the draft was starting: it is on screen, so it stays.
+          if (get().collection.id === id) throw new Error('The collection was opened again')
         }
         await store.deleteCollection(id)
       },
@@ -379,7 +403,7 @@ export function createEditorStore(
 
       async importCollection(file) {
         const imported = await importBundle(store, file)
-        await get().openCollection(imported.id)
+        if (!(await get().openCollection(imported.id))) throw new ImportNotOpenedError()
       },
 
       addPhotos(files) {
@@ -636,7 +660,14 @@ export function createEditorStore(
 }
 
 /** The app talks to IndexedDB, opened on first use so importing this module has no side effects. */
-const lazyIdbStore = () => reopeningStore(() => createIdbStore())
+const lazyIdbStore = () =>
+  reopeningStore(async () => {
+    const opened = await createIdbStore('collage', {
+      onBlocked: () => getAppStore().setState({ storageBlocked: true }),
+    })
+    if (getAppStore().getState().storageBlocked) getAppStore().setState({ storageBlocked: false })
+    return opened
+  })
 
 let storage: Store | undefined
 

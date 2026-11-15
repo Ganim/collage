@@ -6,7 +6,7 @@ import { StorageFullError, type Store } from '../storage/store'
 import { defaultPaper } from '../core/presets'
 import { uniqueName } from '../core/names'
 import type { Collection, Photo } from '../core/types'
-import { createEditorStore } from './editor'
+import { createEditorStore, ImportNotOpenedError } from './editor'
 
 let n = 0
 
@@ -129,6 +129,24 @@ describe('deleteCollection', () => {
     expect(editor.getState().collection.frames).toHaveLength(0)
     expect(await store.getCollection(only)).toBeUndefined()
     expect(await store.listCollections()).toEqual([])
+  })
+
+  it('does not delete the open collection when it is opened again while the draft starts', async () => {
+    const { editor, second } = await twoCollections()
+    const list = store.listCollections.bind(store)
+    let release!: () => void
+    const gate = new Promise<void>((r) => (release = r))
+    const spy = vi.spyOn(store, 'listCollections').mockImplementationOnce(async () => {
+      await gate
+      return list()
+    })
+    const deleting = editor.getState().deleteCollection(second)
+    await vi.waitFor(() => expect(spy).toHaveBeenCalled())
+    await editor.getState().openCollection(second)
+    release()
+    await expect(deleting).rejects.toThrow()
+    expect(editor.getState().collection.id).toBe(second)
+    expect(await store.getCollection(second)).toBeDefined()
   })
 
   it('is not undone by a save that was still waiting', async () => {
@@ -720,6 +738,18 @@ describe('collections list actions', () => {
     expect(copy?.frames[0]?.layers[0]?.photoId).toBe('a')
     expect((await store.getCollection(original.id))?.name).toBe('Praia')
     expect(editor.getState().collection.id).toBe(original.id)
+  })
+
+  it('importCollection rejects when the imported collection could not be opened', async () => {
+    const editor = await setup()
+    const id = editor.getState().collection.id
+    await editor.getState().flush()
+    const bundle = await editor.getState().exportActive()
+    await editor.getState().deleteCollection(id)
+    editor.setState({ openCollection: async () => false })
+    await expect(editor.getState().importCollection(bundle)).rejects.toBeInstanceOf(
+      ImportNotOpenedError,
+    )
   })
 
   it('duplicateCollection rejects for a missing id', async () => {
