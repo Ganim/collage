@@ -214,9 +214,18 @@ export function createEditorStore(
       loadToken++
     }
 
-    /** An empty collection that is not saved until the first edit. */
-    const startDraft = async () => {
-      swap(emptyCollection((await store.listCollections()).map((c) => c.name)), {}, false)
+    /**
+     * Swaps in an empty collection that is not saved until the first edit. Does nothing, and
+     * returns false, if something else opened a collection (or, with strict, edited the open
+     * one) while the names were being read.
+     */
+    const startDraft = async (excludeId?: string, strict = true): Promise<boolean> => {
+      const token = loadToken
+      const rev = revision
+      const names = (await store.listCollections()).filter((c) => c.id !== excludeId).map((c) => c.name)
+      if (token !== loadToken || (strict && rev !== revision)) return false
+      swap(emptyCollection(names), {}, false)
+      return true
     }
 
     /** Reads first and swaps only if nothing newer (open, new collection, edit) happened meanwhile. */
@@ -285,12 +294,15 @@ export function createEditorStore(
       },
 
       async openCollection(id) {
+        // Photos still being read land in the collection that is open now.
+        await imports
         if (!(await flushSave())) return false
         return load(() => store.getCollection(id))
       },
 
       async newCollection() {
         // Leaving a collection that could not be saved would lose it.
+        await imports
         if (!(await flushSave())) throw new Error('The collection could not be saved')
         const c = emptyCollection((await store.listCollections()).map((x) => x.name))
         swap(c, {}, true)
@@ -300,11 +312,14 @@ export function createEditorStore(
       },
 
       async closeCollection() {
-        if (!(await flushSave())) throw new Error('The collection could not be saved')
-        await startDraft()
+        await imports
+        do {
+          if (!(await flushSave())) throw new Error('The collection could not be saved')
+        } while (!(await startDraft()))
       },
 
       async renameCollectionById(id, name) {
+        await imports
         if (get().collection.id === id) {
           get().renameCollection(name)
           return
@@ -315,6 +330,7 @@ export function createEditorStore(
       },
 
       async duplicateCollection(id) {
+        await imports
         if (!(await flushSave())) throw new Error('The collection could not be saved')
         const c = await store.getCollection(id)
         if (!c) throw new Error('missing')
@@ -348,11 +364,7 @@ export function createEditorStore(
           timer = undefined
           queuedRevision = revision
           await queue
-          swap(
-            emptyCollection((await store.listCollections()).filter((c) => c.id !== id).map((c) => c.name)),
-            {},
-            false,
-          )
+          await startDraft(id, false)
         }
         await store.deleteCollection(id)
       },

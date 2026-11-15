@@ -469,8 +469,9 @@ describe('never losing the latest edit', () => {
     await store.saveCollection(stored('outra'))
 
     const pending = editor.getState().addPhotos([])
-    await editor.getState().openCollection('outra')
+    const opening = editor.getState().openCollection('outra')
     finish()
+    await opening
     expect(await pending).toEqual({ failed: ['ruim.jpg'], photoIds: ['novo'] })
 
     expect(editor.getState().collection.id).toBe('outra')
@@ -593,6 +594,69 @@ describe('collections list actions', () => {
     expect(editor.getState().collection.frames).toEqual([])
     await advance(1000)
     expect(await store.listCollections()).toHaveLength(1)
+  })
+
+  it('bootstrap does not replace a collection opened while it reads', async () => {
+    await store.saveCollection(stored('x'))
+    const list = store.listCollections.bind(store)
+    let release!: () => void
+    const gate = new Promise<void>((r) => (release = r))
+    const spy = vi.spyOn(store, 'listCollections').mockImplementationOnce(async () => {
+      await gate
+      return list()
+    })
+    const editor = createEditorStore(store)
+    const booting = editor.getState().bootstrap()
+    await vi.waitFor(() => expect(spy).toHaveBeenCalled())
+    await editor.getState().openCollection('x')
+    editor.getState().renameCollection('editada')
+    release()
+    await booting
+    expect(editor.getState().collection.id).toBe('x')
+    expect(editor.getState().collection.name).toBe('editada')
+    await advance(1000)
+    expect((await store.getCollection('x'))?.name).toBe('editada')
+  })
+
+  it('closeCollection keeps an edit made while it reads the names', async () => {
+    const editor = await setup()
+    const id = editor.getState().collection.id
+    await editor.getState().flush()
+    const list = store.listCollections.bind(store)
+    let release!: () => void
+    const gate = new Promise<void>((r) => (release = r))
+    const spy = vi.spyOn(store, 'listCollections').mockImplementationOnce(async () => {
+      await gate
+      return list()
+    })
+    const closing = editor.getState().closeCollection()
+    await vi.waitFor(() => expect(spy).toHaveBeenCalled())
+    editor.getState().renameCollection('durante')
+    release()
+    await closing
+    expect((await store.getCollection(id))?.name).toBe('durante')
+    expect(editor.getState().collection.id).not.toBe(id)
+    expect(editor.getState().collection.frames).toEqual([])
+  })
+
+  it('leaving a draft while photos import keeps them in that collection', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((r) => (release = r))
+    const editor = createEditorStore(store, {
+      importPhotos: async () => {
+        await gate
+        return { photos: [photo('late')], failed: [] }
+      },
+    })
+    await editor.getState().bootstrap()
+    const draftId = editor.getState().collection.id
+    const adding = editor.getState().addPhotos([])
+    const closing = editor.getState().closeCollection()
+    await advance(0)
+    release()
+    await Promise.all([adding, closing])
+    expect((await store.getCollection(draftId))?.photoIds).toEqual(['late'])
+    expect(editor.getState().collection.id).not.toBe(draftId)
   })
 
   it('listCollections includes an edit made just before going back', async () => {
