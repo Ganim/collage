@@ -36,13 +36,28 @@ export async function loadAccount(
   fetchFn: typeof fetch = fetch,
   storage: Storage = localStorage,
 ): Promise<Account | null> {
+  // A weak signal must not keep the app blank: past this, it counts as offline.
+  // (AbortSignal.timeout only exists from Safari 16.)
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS)
+  try {
+    return await askService(fetchFn, storage, controller.signal)
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+async function askService(
+  fetchFn: typeof fetch,
+  storage: Storage,
+  signal: AbortSignal,
+): Promise<Account | null> {
   let response: Response
   try {
     response = await fetchFn('/api/auth/me', {
       cache: 'no-store',
       credentials: 'same-origin',
-      // A weak signal must not keep the app blank: past this, it counts as offline.
-      signal: AbortSignal.timeout(TIMEOUT_MS),
+      signal,
     })
   } catch {
     return readSaved(storage)

@@ -65,8 +65,14 @@ function Workspace() {
     openCollection(wantedId)
       .then((found) => {
         if (!current) return
-        if (found) setOpenedId(wantedId)
-        else navigate({ name: 'collections' }, { replace: true })
+        if (!found) {
+          navigate({ name: 'collections' }, { replace: true })
+          return
+        }
+        // True can also mean another open won the race: the address follows what is open.
+        const openId = getEditorState().collection.id
+        setOpenedId(openId)
+        if (openId !== wantedId) navigate({ name: 'editor', id: openId }, { replace: true })
       })
       .catch((e: unknown) => {
         console.error(e)

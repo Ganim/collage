@@ -104,7 +104,7 @@ p {
   min-height: var(--touch);
   margin: 8px auto 0;
   padding: 0 12px;
-  color: var(--fuchsia-600);
+  color: var(--fuchsia-700);
   font-weight: 700;
 }
 
@@ -335,7 +335,7 @@ p {
   min-width: var(--touch);
   min-height: var(--touch);
   padding: 0 12px;
-  color: var(--fuchsia-600);
+  color: var(--fuchsia-700);
   font-weight: 700;
 }
 
@@ -359,7 +359,7 @@ p {
   position: sticky;
   right: 0;
   background: var(--fuchsia-50);
-  color: var(--fuchsia-600);
+  color: var(--fuchsia-700);
 }
 
 .dot {
@@ -487,7 +487,7 @@ p {
   justify-content: center;
   gap: 8px;
   border: 1.5px dashed var(--fuchsia-600);
-  color: var(--fuchsia-600);
+  color: var(--fuchsia-700);
   cursor: pointer;
 }
 
@@ -685,7 +685,7 @@ p {
 
 .flip-button[aria-pressed='true'] {
   border-color: var(--fuchsia-600);
-  color: var(--fuchsia-600);
+  color: var(--fuchsia-700);
 }
 
 .size-grid {
@@ -1000,7 +1000,7 @@ p {
 }
 
 .library-info[aria-current='true'] span {
-  color: var(--fuchsia-600);
+  color: var(--fuchsia-700);
   font-weight: 700;
 }
 

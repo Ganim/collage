@@ -188,13 +188,13 @@ h2 {
 .start-dots {
   display: flex;
   justify-content: center;
-  gap: 2px;
+  gap: 0;
 }
 
 .start-dot {
   display: grid;
   place-items: center;
-  width: 32px;
+  width: var(--touch);
   height: var(--touch);
 }
 

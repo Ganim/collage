@@ -29,6 +29,17 @@ test.describe('without an account', () => {
     await expect(page.getByRole('heading', { name: 'Imprima no tamanho exato' })).toBeInViewport()
   })
 
+  test('the dots are big enough to touch', async ({ page }) => {
+    await page.goto('/')
+    for (const position of [1, 2, 3]) {
+      const box = await page
+        .getByRole('button', { name: `Ir para o passo ${position}`, exact: true })
+        .boundingBox()
+      expect(box!.width).toBeGreaterThanOrEqual(44)
+      expect(box!.height).toBeGreaterThanOrEqual(44)
+    }
+  })
+
   test('a failed sign-in says so', async ({ page }) => {
     await page.goto('/#/entrar?erro=1')
     await expect(page.getByText('Não foi possível entrar. Tente de novo.')).toBeVisible()

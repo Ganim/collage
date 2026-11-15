@@ -56,6 +56,38 @@ describe('loadAccount', () => {
     expect(storage.getItem(KEY)).not.toBeNull()
   })
 
+  it('works where AbortSignal.timeout does not exist (Safari before 16)', async () => {
+    const timeout = AbortSignal.timeout
+    // @ts-expect-error removing it, as older Safari lacks it
+    delete AbortSignal.timeout
+    try {
+      const storage = memoryStorage()
+      const fresh = { email: 'bia@exemplo.com', name: 'Bia', picture: null }
+      expect(await loadAccount(respond(200, fresh), storage)).toEqual(fresh)
+    } finally {
+      AbortSignal.timeout = timeout
+    }
+  })
+
+  it('a connection that never answers counts as offline', async () => {
+    vi.useFakeTimers()
+    try {
+      const hanging = vi.fn<typeof fetch>(
+        (_url, init) =>
+          new Promise((_resolve, reject) =>
+            init?.signal?.addEventListener('abort', () =>
+              reject(new DOMException('', 'AbortError')),
+            ),
+          ),
+      )
+      const result = loadAccount(hanging, memoryStorage(saved))
+      await vi.advanceTimersByTimeAsync(10_000)
+      expect(await result).toEqual(saved)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('asks the service without a cached answer', async () => {
     const fetchFn = respond(401)
     await loadAccount(fetchFn, memoryStorage())
