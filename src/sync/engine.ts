@@ -3,7 +3,12 @@ import { decodeImage, type Decode } from '../photos/import'
 import type { Owner, Store, Tombstone } from '../storage/store'
 import { t } from '../ui/i18n'
 import { DriveError, RATE_LIMIT_REASONS, type Drive, type RemoteFile } from './drive'
-import { forgetCollectionDeletion, mergeLibrary } from './library'
+import {
+  forgetCollectionDeletion,
+  forgetCollectionDetachment,
+  mergeLibrary,
+  recordCollectionDetachment,
+} from './library'
 import { md5 } from './md5'
 import { planCollections, type Action } from './plan'
 import {
@@ -44,6 +49,15 @@ export interface SyncEngineDeps {
   now?: () => number
 }
 
+/**
+ * What the pass knows of the collection files on the Drive: the photo ids of each file it read or
+ * wrote, by file id, and the files it trashed. Feeds the photo cleanup after a removal.
+ */
+interface Seen {
+  photos: Map<string, string[]>
+  trashed: Set<string>
+}
+
 /** What a pass changed on this device: collection ids, and whether sizes or folders. */
 interface Changes {
   ids: Set<string>
@@ -51,6 +65,9 @@ interface Changes {
 }
 
 const LIBRARY_NAME = 'library.json'
+
+/** Forgets the collection's Drive file, as a setSyncState patch. */
+const FORGET_FILE = { remoteFileId: undefined, remoteVersion: undefined, remoteMd5: undefined }
 
 /** A photo download that will not work on any retry: the file is gone or refused to us. */
 function isSkippablePhotoError(e: unknown): boolean {
@@ -170,6 +187,7 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
       owner: Owner,
       listing: Listing,
       remote: Map<string, RemoteFile>,
+      seen: Seen,
     ): Promise<void> {
       const c = await store.getCollection(id)
       if (!c) return
@@ -195,10 +213,12 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
             fitAppProperties({ kind: 'collection', collectionId: id }),
           )
       remote.set(id, file)
+      seen.photos.set(file.id, c.photoIds)
       await store.markPushed(id, c.updatedAt, file.id, file.version, md5(text))
       // Deleted during its first upload: no tombstone knows this file, so it goes now.
       if (!existing && !(await store.getCollection(id))) {
         await drive.trash(file.id)
+        seen.trashed.add(file.id)
         remote.delete(id)
       }
     }
@@ -207,9 +227,11 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
       action: Extract<Action, { kind: 'pull' }>,
       owner: Owner,
       changed: Set<string>,
+      seen: Seen,
     ): Promise<void> {
       const c = await readJson(action.fileId)
       if (!isCollection(c, action.id)) return
+      seen.photos.set(action.fileId, c.photoIds)
       // The store skips a collection edited here since the plan: the next pass sees a conflict.
       const wrote = await store.putRemoteCollection(c, {
         ownerId: owner.id,
@@ -228,9 +250,11 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
       listing: Listing,
       remote: Map<string, RemoteFile>,
       changed: Set<string>,
+      seen: Seen,
     ): Promise<void> {
       const theirs = await readJson(action.fileId)
       const mine = await store.getCollection(action.id)
+      if (isCollection(theirs, action.id)) seen.photos.set(action.fileId, theirs.photoIds)
       if (mine && isCollection(theirs, action.id)) {
         if (canonical(theirs) === canonical(mine)) {
           // Same content (an upload whose record never got written): just adopt the file.
@@ -254,12 +278,12 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
         // Recording the seen version makes a retry of this pass a plain push, not a second copy.
         await store.saveConflictCopy(copy, action.id, action.fileId, action.version)
         changed.add(copy.id)
-        await push(action.id, owner, listing, remote)
-        await push(copy.id, owner, listing, remote)
+        await push(action.id, owner, listing, remote, seen)
+        await push(copy.id, owner, listing, remote, seen)
         return
       }
       // The Drive's file is not a readable collection: the local version replaces it.
-      await push(action.id, owner, listing, remote)
+      await push(action.id, owner, listing, remote, seen)
     }
 
     /** Library merge and every collection action, noting in `changes` what changed locally. */
@@ -324,9 +348,12 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
         ),
         remoteDeleted: remoteLibrary?.deleted.collection ?? {},
         localTombstones: [...allTombs.values()],
+        remoteDetached: remoteLibrary?.detached.collection ?? {},
       })
 
+      const seen: Seen = { photos: new Map(), trashed: new Set() }
       const toTrash: Extract<Action, { kind: 'trashRemote' }>[] = []
+      const toDetach: Extract<Action, { kind: 'detachRemote' }>[] = []
       const cleared: { kind: Tombstone['kind']; id: string }[] = libraryTombs.map(
         ({ kind, id }) => ({
           kind,
@@ -336,13 +363,13 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
       for (const action of actions) {
         switch (action.kind) {
           case 'push':
-            await push(action.id, owner, listing, remote)
+            await push(action.id, owner, listing, remote, seen)
             break
           case 'pull':
-            await pull(action, owner, changed)
+            await pull(action, owner, changed, seen)
             break
           case 'conflict':
-            await resolveConflict(action, owner, listing, remote, changed)
+            await resolveConflict(action, owner, listing, remote, changed, seen)
             break
           case 'deleteLocal':
             // Edited since the plan: kept, and the next pass pushes it back (push + forget).
@@ -361,6 +388,20 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
             if (tomb) cleared.push({ kind: 'collection', id: action.id })
             break
           }
+          case 'detachRemote':
+            // Recorded now and published below, before the file goes to the trash.
+            library = recordCollectionDetachment(library, action.id, now())
+            toDetach.push(action)
+            break
+          case 'markLocalOnly':
+            // Removed from the Drive elsewhere: kept here, out of the sync.
+            await store.setSyncState(action.id, { localOnly: true, ...FORGET_FILE })
+            changed.add(action.id)
+            break
+          case 'forgetDetached':
+            // Planned after its push: the collection is on the Drive again.
+            library = forgetCollectionDetachment(library, action.id)
+            break
         }
       }
 
@@ -378,7 +419,82 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
 
       for (const action of toTrash) {
         await drive.trash(action.fileId)
+        seen.trashed.add(action.fileId)
         await store.clearTombstones([{ kind: 'collection', id: action.id }])
+      }
+
+      if (toDetach.length === 0) return
+      for (const action of toDetach) {
+        await drive.trash(action.fileId)
+        seen.trashed.add(action.fileId)
+        // Only now: a pass cut short before this plans the removal again.
+        await store.setSyncState(action.id, FORGET_FILE)
+      }
+      await trashUnusedPhotos(
+        toDetach.map((a) => a.id),
+        listing,
+        remote,
+        seen,
+      )
+    }
+
+    /**
+     * After a removal from the Drive: trashes each photo of the removed collections that no
+     * collection left in the sync uses, that is, no local collection of this account that is not
+     * local-only, and no collection file still on the Drive. A Drive file's photos are known when
+     * this pass read or wrote it, or when the local copy is clean and records exactly that file and
+     * version; nothing is downloaded for this. Any other file (another device's collection not
+     * pulled here, a second file of an id) could use any photo, so then this pass trashes none and
+     * those photos stay on the Drive. Photos never leave a device.
+     */
+    async function trashUnusedPhotos(
+      detached: string[],
+      listing: Listing,
+      remote: Map<string, RemoteFile>,
+      seen: Seen,
+    ): Promise<void> {
+      const [summaries, states] = await Promise.all([
+        store.listCollections(),
+        store.getSyncStates(),
+      ])
+      const photosOf = async (id: string) => (await store.getCollection(id))?.photoIds ?? []
+
+      // Every collection file left on the Drive, at its newest known version.
+      const files = new Map<string, { id: string; version: string }>()
+      for (const [id, list] of listing.collections)
+        for (const f of list) files.set(f.id, { id, version: f.version })
+      for (const [id, f] of remote) files.set(f.id, { id, version: f.version })
+
+      const used = new Set<string>()
+      for (const [fileId, { id, version }] of files) {
+        if (seen.trashed.has(fileId)) continue
+        const state = states[id]
+        const known =
+          seen.photos.get(fileId) ??
+          (state &&
+          !state.dirty &&
+          !state.localOnly &&
+          state.remoteFileId === fileId &&
+          state.remoteVersion === version
+            ? await photosOf(id)
+            : undefined)
+        if (!known) return
+        for (const p of known) used.add(p)
+      }
+      for (const { id, localOnly } of summaries) {
+        if (!localOnly) for (const p of await photosOf(id)) used.add(p)
+      }
+
+      for (const photoId of new Set((await Promise.all(detached.map(photosOf))).flat())) {
+        const file = listing.photos.get(photoId)
+        if (!file || used.has(photoId)) continue
+        try {
+          await drive.trash(file.id)
+        } catch (e) {
+          // Already gone since the listing: nothing left to trash.
+          if (!(e instanceof DriveError && e.status === 404)) throw e
+        }
+        listing.photos.delete(photoId)
       }
     }
 

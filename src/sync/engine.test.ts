@@ -726,3 +726,222 @@ describe('fitAppProperties', () => {
     expect(bytes('name' + fits)).toBe(124)
   })
 })
+
+describe('remove from and send to the Drive', () => {
+  const libraryOnDrive = async () =>
+    JSON.parse(await filesOf(drive, 'library')[0]!.body.text()) as {
+      detached: { collection: Record<string, number> }
+    }
+  const collectionFile = (id: string) =>
+    filesOf(drive, 'collection').find((f) => f.appProperties.collectionId === id)!
+  const photoIdsOnDrive = () =>
+    filesOf(drive, 'photo')
+      .map((f) => f.appProperties.photoId)
+      .sort()
+  const collectionIdsOnDrive = () =>
+    filesOf(drive, 'collection')
+      .map((f) => f.appProperties.collectionId)
+      .sort()
+
+  /** A and B both hold c1 (photos p1, p2) and c2 (photos p2, p3), all synced. */
+  async function bothSynced(): Promise<void> {
+    await a.importCollection([photo('p1'), photo('p2')], collection('c1', ['p1', 'p2']))
+    await a.importCollection([photo('p3')], collection('c2', ['p2', 'p3']))
+    await engineFor(a, drive).run()
+    await engineFor(b, drive).run()
+    expect(await b.getCollection('c1')).toBeDefined()
+  }
+
+  it('A removes; the file goes to the trash and B keeps its copy, local-only, out of the sync', async () => {
+    await bothSynced()
+    const c1File = collectionFile('c1')
+    await a.setLocalOnly('c1', true)
+
+    await engineFor(a, drive).run()
+    expect(status().state).toBe('idle')
+    expect(drive.files.get(c1File.id)?.trashed).toBe(true)
+    expect((await libraryOnDrive()).detached.collection).toEqual({ c1: NOW })
+    // Never removed from the device that removed it.
+    expect(await a.getCollection('c1')).toEqual(collection('c1', ['p1', 'p2']))
+    expect((await a.getSyncStates()).c1).toMatchObject({ localOnly: true })
+    expect((await a.getSyncStates()).c1?.remoteFileId).toBeUndefined()
+    expect(await a.getPhoto('p1')).toBeDefined()
+
+    await engineFor(b, drive).run()
+    expect(status().state).toBe('idle')
+    expect(await b.getCollection('c1')).toEqual(collection('c1', ['p1', 'p2']))
+    expect(await b.getPhoto('p1')).toBeDefined()
+    const stateB = (await b.getSyncStates()).c1
+    expect(stateB).toMatchObject({ localOnly: true })
+    expect(stateB?.remoteFileId).toBeUndefined()
+    expect(stateB?.remoteVersion).toBeUndefined()
+    expect(status().changedIds).toContain('c1')
+    expect((await b.listCollections()).find((c) => c.id === 'c1')?.localOnly).toBe(true)
+
+    // Later passes upload nothing of it, from either device, even after an edit.
+    await b.saveCollection(collection('c1', ['p1', 'p2'], { name: 'De B', updatedAt: 2000 }))
+    await a.saveCollection(collection('c1', ['p1', 'p2'], { name: 'De A', updatedAt: 2000 }))
+    const before = drive.files.size
+    await engineFor(b, drive).run()
+    await engineFor(a, drive).run()
+    await engineFor(b, drive).run()
+    expect(status().state).toBe('idle')
+    expect(drive.files.size).toBe(before)
+    expect(collectionIdsOnDrive()).toEqual(['c2'])
+    expect((await b.getCollection('c1'))?.name).toBe('De B')
+    expect((await a.getCollection('c1'))?.name).toBe('De A')
+  })
+
+  it.each([
+    ['created', false],
+    ['updated', true],
+  ])(
+    'a removal whose library upload (%s) fails trashes nothing; the next pass completes it',
+    async (_, hasLibrary) => {
+      // With a size, library.json exists already and is updated; without, it is created.
+      if (hasLibrary) await a.saveSize({ id: 's1', name: '3x4', widthMm: 30, heightMm: 40 })
+      await bothSynced()
+      const c1File = collectionFile('c1')
+      const library = filesOf(drive, 'library')[0]
+      expect(library !== undefined).toBe(hasLibrary)
+      await a.setLocalOnly('c1', true)
+      const trashed: string[] = []
+      const watching: Drive = {
+        ...drive,
+        trash: (id) => {
+          trashed.push(id)
+          return drive.trash(id)
+        },
+      }
+      const down = new DriveError('offline', 'down')
+      await engineFor(
+        a,
+        library
+          ? failingOnce(watching, 'update', down, (id) => id === library.id)
+          : failingOnce(watching, 'create', down, (_folder, name) => name === 'library.json'),
+      ).run()
+      expect(status().state).toBe('offline')
+      expect(trashed).toEqual([])
+      expect(drive.files.get(c1File.id)?.trashed).toBe(false)
+      expect((await a.getSyncStates()).c1).toMatchObject({
+        localOnly: true,
+        remoteFileId: c1File.id,
+      })
+
+      await engineFor(a, watching).run()
+      expect(status().state).toBe('idle')
+      expect(trashed[0]).toBe(c1File.id)
+      expect(drive.files.get(c1File.id)?.trashed).toBe(true)
+      expect((await a.getSyncStates()).c1?.remoteFileId).toBeUndefined()
+    },
+  )
+
+  it('a removal whose trash fails keeps the file known, and the next pass trashes it', async () => {
+    await bothSynced()
+    const c1File = collectionFile('c1')
+    await a.setLocalOnly('c1', true)
+    await engineFor(a, failingOnce(drive, 'trash', new DriveError('offline', 'down'))).run()
+    expect(status().state).toBe('offline')
+    expect((await a.getSyncStates()).c1?.remoteFileId).toBe(c1File.id)
+    // The record is on the Drive while the file is still there: B goes on syncing it.
+    await engineFor(b, drive).run()
+    expect((await b.getSyncStates()).c1?.localOnly).toBeUndefined()
+
+    await engineFor(a, drive).run()
+    expect(status().state).toBe('idle')
+    expect(drive.files.get(c1File.id)?.trashed).toBe(true)
+    expect((await a.getSyncStates()).c1?.remoteFileId).toBeUndefined()
+    await engineFor(b, drive).run()
+    expect((await b.getSyncStates()).c1?.localOnly).toBe(true)
+  })
+
+  it('A sends again; it goes up, and B stays local-only with its own copy', async () => {
+    await bothSynced()
+    await a.setLocalOnly('c1', true)
+    await engineFor(a, drive).run()
+    await engineFor(b, drive).run()
+    await b.saveCollection(collection('c1', ['p1', 'p2'], { name: 'De B', updatedAt: 2000 }))
+
+    await a.setLocalOnly('c1', false)
+    await engineFor(a, drive).run()
+    expect(status().state).toBe('idle')
+    const files = filesOf(drive, 'collection').filter((f) => f.appProperties.collectionId === 'c1')
+    expect(files).toHaveLength(1)
+    expect((await a.getSyncStates()).c1).toMatchObject({ dirty: false, remoteFileId: files[0]!.id })
+    expect((await a.getSyncStates()).c1?.localOnly).toBeUndefined()
+    // The record is dropped, and the photo trashed with the removal is back.
+    expect((await libraryOnDrive()).detached.collection).toEqual({})
+    expect(photoIdsOnDrive()).toEqual(['p1', 'p2', 'p3'])
+
+    for (let i = 0; i < 2; i++) {
+      await engineFor(b, drive).run()
+      expect(status().state).toBe('idle')
+      expect((await b.getCollection('c1'))?.name).toBe('De B')
+      expect((await b.getSyncStates()).c1).toMatchObject({ localOnly: true, dirty: true })
+      expect((await b.getSyncStates()).c1?.remoteFileId).toBeUndefined()
+    }
+    expect(JSON.parse(await files[0]!.body.text())).toMatchObject({ name: 'Colecao c1' })
+
+    // Not even a deletion from A removes B's local-only copy.
+    await a.deleteCollection('c1')
+    await engineFor(a, drive).run()
+    expect(collectionIdsOnDrive()).toEqual(['c2'])
+    await engineFor(b, drive).run()
+    expect(status().state).toBe('idle')
+    expect((await b.getCollection('c1'))?.name).toBe('De B')
+    expect(await b.getPhoto('p1')).toBeDefined()
+  })
+
+  it('a photo shared with another synced collection stays; one used only by the removed one goes', async () => {
+    await bothSynced()
+    await a.setLocalOnly('c1', true)
+    await engineFor(a, drive).run()
+    // p2 is also in c2; p1 was only in c1.
+    expect(photoIdsOnDrive()).toEqual(['p2', 'p3'])
+    // Photos never leave a device.
+    expect(await a.getPhoto('p1')).toBeDefined()
+    await engineFor(b, drive).run()
+    expect(status().state).toBe('idle')
+    expect(await b.getPhoto('p1')).toBeDefined()
+  })
+
+  it('a photo a collection pulled in the same pass uses stays', async () => {
+    await a.importCollection([photo('p1')], collection('c1', ['p1']))
+    await engineFor(a, drive).run()
+    await engineFor(b, drive).run()
+    await b.saveCollection(collection('c3', ['p1']))
+    await engineFor(b, drive).run()
+    // A pulls c3 in the same pass that removes c1.
+    await a.setLocalOnly('c1', true)
+    await engineFor(a, drive).run()
+    expect(status().state).toBe('idle')
+    expect(await a.getCollection('c3')).toBeDefined()
+    expect(photoIdsOnDrive()).toEqual(['p1'])
+  })
+
+  it('keeps every photo while a collection on the Drive is not known here', async () => {
+    await a.importCollection([photo('p1')], collection('c1', ['p1']))
+    await engineFor(a, drive).run()
+    // A second file of c1 from elsewhere: this device never reads it.
+    await drive.create(
+      await drive.ensureFolder(),
+      'collection-c1.json',
+      new Blob([JSON.stringify(collection('c1', ['p1']))], { type: 'application/json' }),
+      { kind: 'collection', collectionId: 'c1' },
+    )
+    await a.setLocalOnly('c1', true)
+    await engineFor(a, drive).run()
+    expect(status().state).toBe('idle')
+    expect(collectionIdsOnDrive()).toEqual(['c1'])
+    expect(photoIdsOnDrive()).toEqual(['p1'])
+  })
+
+  it('a local-only collection never uploads its photos', async () => {
+    await a.importCollection([photo('p1')], collection('c1', ['p1']))
+    await a.setLocalOnly('c1', true)
+    await engineFor(a, drive).run()
+    expect(status().state).toBe('idle')
+    expect(filesOf(drive, 'photo')).toEqual([])
+    expect(filesOf(drive, 'collection')).toEqual([])
+  })
+})
