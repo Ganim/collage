@@ -95,16 +95,34 @@ export interface Store {
   setSyncState(id: string, patch: Partial<SyncState>): Promise<void>
   listTombstones(): Promise<Tombstone[]>
   clearTombstones(keys: { kind: Tombstone['kind']; id: string }[]): Promise<void>
-  /** Writes a collection that came from the Drive, with `state` as is: not marked dirty. */
-  putRemoteCollection(c: Collection, state: SyncState): Promise<void>
+  /**
+   * Writes a collection that came from the Drive, with `state` as is: not marked dirty. Skips it
+   * when the local one is dirty, so an edit is never overwritten; resolves to whether it wrote.
+   */
+  putRemoteCollection(c: Collection, state: SyncState): Promise<boolean>
+  /**
+   * Saves the Drive's version of a conflicting collection as `copy` (dirty, like saveCollection)
+   * and, in the same transaction, records on the original that this remote version was seen, so
+   * a retried pass uploads the original instead of copying again. The original stays dirty.
+   */
+  saveConflictCopy(
+    copy: Collection,
+    originalId: string,
+    remoteFileId: string,
+    remoteVersion: string,
+  ): Promise<void>
   /**
    * After an upload: records the Drive file and clears dirty, unless the collection changed since
    * the uploaded copy (its updatedAt differs), in which case it stays dirty. A collection deleted
    * meanwhile is left alone.
    */
   markPushed(id: string, uploadedUpdatedAt: number, fileId: string, version: string): Promise<void>
-  /** Deletes the collection and its sync state without a tombstone, freeing unused photos. */
-  removeLocalCollection(id: string): Promise<void>
+  /**
+   * Deletes the collection and its sync state without a tombstone, freeing unused photos. With
+   * `onlyIfClean`, a collection that is dirty at that moment is kept. Resolves to whether it
+   * removed the collection.
+   */
+  removeLocalCollection(id: string, options?: { onlyIfClean?: boolean }): Promise<boolean>
   isLibraryDirty(): Promise<boolean>
   setLibraryDirty(v: boolean): Promise<void>
   /** Replaces every size and folder with the Drive's, without marking the library dirty. */

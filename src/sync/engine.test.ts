@@ -290,6 +290,85 @@ describe('sync engine between two devices', () => {
     expect(JSON.parse(await files[0]!.body.text())).toMatchObject({ name: 'Durante' })
   })
 
+  it('an edit saved during the pass is never deleted by a deletion from elsewhere', async () => {
+    await a.importCollection([photo('p1')], collection('c1', ['p1']))
+    await engineFor(a, drive).run()
+    await engineFor(b, drive).run()
+    await a.deleteCollection('c1')
+    await engineFor(a, drive).run()
+    // B plans deleteLocal; the person edits right before it runs.
+    const editingB: Store = {
+      ...b,
+      async removeLocalCollection(id, options) {
+        await b.saveCollection(collection('c1', ['p1'], { name: 'No meio', updatedAt: 2000 }))
+        return b.removeLocalCollection(id, options)
+      },
+    }
+    await engineFor(editingB, drive).run()
+    expect((await b.getCollection('c1'))?.name).toBe('No meio')
+
+    await engineFor(b, drive).run()
+    await engineFor(a, drive).run()
+    expect((await a.getCollection('c1'))?.name).toBe('No meio')
+  })
+
+  it('an edit saved before a pull is never overwritten', async () => {
+    await a.importCollection([photo('p1')], collection('c1', ['p1']))
+    await engineFor(a, drive).run()
+    await engineFor(b, drive).run()
+    await a.saveCollection(collection('c1', ['p1'], { name: 'De A', updatedAt: 2000 }))
+    await engineFor(a, drive).run()
+    const editingB: Store = {
+      ...b,
+      async putRemoteCollection(c, state) {
+        await b.saveCollection(collection('c1', ['p1'], { name: 'De B', updatedAt: 3000 }))
+        return b.putRemoteCollection(c, state)
+      },
+    }
+    await engineFor(editingB, drive).run()
+    expect((await b.getCollection('c1'))?.name).toBe('De B')
+    expect((await b.getSyncStates()).c1?.dirty).toBe(true)
+  })
+
+  it('a conflict cut short after the copy makes no second copy on the next pass', async () => {
+    await a.importCollection([photo('p1')], collection('c1', ['p1']))
+    await engineFor(a, drive).run()
+    await engineFor(b, drive).run()
+    await b.saveCollection(collection('c1', ['p1'], { name: 'De B', updatedAt: 2000 }))
+    await engineFor(b, drive).run()
+    await a.saveCollection(collection('c1', ['p1'], { name: 'De A', updatedAt: 3000 }))
+
+    await engineFor(a, failingOnce(drive, 'update', new DriveError('offline', 'down'))).run()
+    expect(status().state).toBe('offline')
+    expect(await a.listCollections()).toHaveLength(2)
+
+    await engineFor(a, drive).run()
+    expect(status().state).toBe('idle')
+    const names = (await a.listCollections()).map((c) => c.name).sort()
+    expect(names).toEqual(['De A', `De B${SUFFIX}`])
+    expect(filesOf(drive, 'collection')).toHaveLength(2)
+  })
+
+  it('a photo file that vanished before its download is skipped; a lost connection is not', async () => {
+    await a.importCollection([photo('p1'), photo('p2')], collection('c1', ['p1', 'p2']))
+    await engineFor(a, drive).run()
+    const p2 = filesOf(drive, 'photo').find((f) => f.appProperties.photoId === 'p2')!
+    const gone = failingOnce(
+      drive,
+      'download',
+      new DriveError('other', 'Google Drive request failed (404)'),
+      (id) => id === p2.id,
+    )
+    await engineFor(b, gone).run()
+    expect(status().state).toBe('idle')
+    expect(await b.getPhoto('p1')).toBeDefined()
+    expect(await b.getPhoto('p2')).toBeUndefined()
+
+    const down = failingOnce(drive, 'download', new DriveError('offline', 'down'))
+    await engineFor(b, down).run()
+    expect(status().state).toBe('offline')
+  })
+
   it('skips a photo whose Drive file is missing', async () => {
     await a.importCollection([photo('p1'), photo('p2')], collection('c1', ['p1', 'p2']))
     await engineFor(a, drive).run()

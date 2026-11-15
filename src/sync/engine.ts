@@ -2,7 +2,7 @@ import type { Collection } from '../core/types'
 import { decodeImage, type Decode } from '../photos/import'
 import type { Owner, Store, Tombstone } from '../storage/store'
 import { t } from '../ui/i18n'
-import type { Drive, RemoteFile } from './drive'
+import { DriveError, type Drive, type RemoteFile } from './drive'
 import { forgetCollectionDeletion, mergeLibrary } from './library'
 import { planCollections, type Action } from './plan'
 import {
@@ -133,16 +133,15 @@ export function createSyncEngine({
   ): Promise<void> {
     const c = await readJson(action.fileId)
     if (!isCollection(c, action.id)) return
-    // Edited here since the plan: the next pass sees a conflict instead of losing the edit.
-    if ((await store.getSyncStates())[action.id]?.dirty) return
-    await store.putRemoteCollection(c, {
+    // The store skips a collection edited here since the plan: the next pass sees a conflict.
+    const wrote = await store.putRemoteCollection(c, {
       ownerId: owner.id,
       ownerEmail: owner.email,
       remoteFileId: action.fileId,
       remoteVersion: action.version,
       dirty: false,
     })
-    changed.add(action.id)
+    if (wrote) changed.add(action.id)
   }
 
   /** Keeps the Drive's version as a new collection, then uploads the local one over it. */
@@ -166,12 +165,14 @@ export function createSyncEngine({
         id: crypto.randomUUID(),
         name: theirs.name + t('sync.conflictSuffix'),
       }
-      await store.saveCollection(copy)
+      // Recording the seen version makes a retry of this pass a plain push, not a second copy.
+      await store.saveConflictCopy(copy, action.id, action.fileId, action.version)
       changed.add(copy.id)
       await push(action.id, owner, listing, remote)
       await push(copy.id, owner, listing, remote)
       return
     }
+    // The Drive's file is not a readable collection: the local version replaces it.
     await push(action.id, owner, listing, remote)
   }
 
@@ -246,8 +247,9 @@ export function createSyncEngine({
           await resolveConflict(action, owner, listing, remote, changed)
           break
         case 'deleteLocal':
-          await store.removeLocalCollection(action.id)
-          changed.add(action.id)
+          // Edited since the plan: kept, and the next pass pushes it back (push + forget).
+          if (await store.removeLocalCollection(action.id, { onlyIfClean: true }))
+            changed.add(action.id)
           break
         case 'trashRemote':
           toTrash.push(action)
@@ -311,7 +313,15 @@ export function createSyncEngine({
     try {
       for (const [i, photoId] of order.entries()) {
         const file = listing.photos.get(photoId)!
-        const original = await drive.download(file.id)
+        let original: Blob
+        try {
+          original = await drive.download(file.id)
+        } catch (e) {
+          // Gone since the listing (a 404 is 'other'): skipped. Anything else stops the pass.
+          if (!(e instanceof DriveError && e.kind === 'other')) throw e
+          setStatus({ photos: { done: i + 1, total } })
+          continue
+        }
         const name = file.appProperties.name || photoId
         let decoded: Awaited<ReturnType<Decode>> | undefined
         try {

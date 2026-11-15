@@ -425,6 +425,45 @@ describe('sync bookkeeping', () => {
     expect((await store.getSyncStates()).c1).toEqual(state)
   })
 
+  it('removeLocalCollection with onlyIfClean keeps a dirty collection', async () => {
+    await store.saveCollection(collection('c1', []))
+    expect(await store.removeLocalCollection('c1', { onlyIfClean: true })).toBe(false)
+    expect(await store.getCollection('c1')).toBeDefined()
+    await store.setSyncState('c1', { dirty: false })
+    expect(await store.removeLocalCollection('c1', { onlyIfClean: true })).toBe(true)
+    expect(await store.getCollection('c1')).toBeUndefined()
+  })
+
+  it('putRemoteCollection skips a collection that is dirty here', async () => {
+    await store.saveCollection({ ...collection('c1', []), name: 'Local' })
+    const wrote = await store.putRemoteCollection(collection('c1', []), {
+      remoteFileId: 'r1',
+      remoteVersion: '2',
+      dirty: false,
+    })
+    expect(wrote).toBe(false)
+    expect((await store.getCollection('c1'))?.name).toBe('Local')
+    expect((await store.getSyncStates()).c1).toEqual({ dirty: true })
+  })
+
+  it('saveConflictCopy writes the copy dirty and records the seen remote version on the original', async () => {
+    await store.setOwner(ANA)
+    await store.saveCollection(collection('c1', []))
+    await store.setSyncState('c1', { remoteFileId: 'r1', remoteVersion: '1' })
+    await store.saveConflictCopy(collection('c2', []), 'c1', 'r1', '2')
+    expect(await store.getCollection('c2')).toEqual(collection('c2', []))
+    expect(await store.getSyncStates()).toEqual({
+      c1: {
+        ownerId: 'ana',
+        ownerEmail: ANA.email,
+        remoteFileId: 'r1',
+        remoteVersion: '2',
+        dirty: true,
+      },
+      c2: { ownerId: 'ana', ownerEmail: ANA.email, dirty: true },
+    })
+  })
+
   it('getOwner returns the current owner, or null', async () => {
     expect(await store.getOwner()).toBeNull()
     await store.setOwner(ANA)

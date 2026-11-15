@@ -123,18 +123,25 @@ async function putTombstone(tombstones: WriteStore<'tombstones'>, t: Tombstone):
 }
 
 /** Deletes a collection, its sync state and the photos no other collection uses. */
-function removeCollection(db: Db, id: string, leaveTombstone: boolean): Promise<void> {
-  return write(db, ['collections', 'photos', 'sync', 'tombstones'], async (tx) => {
+async function removeCollection(
+  db: Db,
+  id: string,
+  leaveTombstone: boolean,
+  onlyIfClean = false,
+): Promise<boolean> {
+  let done = false
+  await write(db, ['collections', 'photos', 'sync', 'tombstones'], async (tx) => {
     const collections = tx.objectStore('collections')
     const removed = await collections.get(id)
     if (!removed) return
+    const sync = tx.objectStore('sync')
+    const state = await sync.get(id)
+    if (onlyIfClean && (state?.dirty ?? true)) return
     await collections.delete(id)
     const stillUsed = new Set((await collections.getAll()).flatMap((c) => c.photoIds))
     for (const photoId of removed.photoIds) {
       if (!stillUsed.has(photoId)) await tx.objectStore('photos').delete(photoId)
     }
-    const sync = tx.objectStore('sync')
-    const state = await sync.get(id)
     // Only an uploaded collection has a Drive file for the sync to trash.
     if (leaveTombstone && state?.remoteFileId !== undefined) {
       await putTombstone(tx.objectStore('tombstones'), {
@@ -145,7 +152,9 @@ function removeCollection(db: Db, id: string, leaveTombstone: boolean): Promise<
       })
     }
     await sync.delete(id)
+    done = true
   })
+  return done
 }
 
 export interface IdbStoreEvents {
@@ -234,8 +243,8 @@ export async function createIdbStore(
           photoCount: c.photoIds.length,
         }))
     },
-    deleteCollection: (id) => removeCollection(db, id, true),
-    removeLocalCollection: (id) => removeCollection(db, id, false),
+    deleteCollection: async (id) => void (await removeCollection(db, id, true)),
+    removeLocalCollection: (id, options) => removeCollection(db, id, false, options?.onlyIfClean),
     deletePhotoIfUnused: (id) =>
       write(db, ['collections', 'photos'], async (tx) => {
         const collections = await tx.objectStore('collections').getAll()
@@ -316,10 +325,26 @@ export async function createIdbStore(
         const tombstones = tx.objectStore('tombstones')
         for (const { kind, id } of keys) await tombstones.delete(tombstoneKey(kind, id))
       }),
-    putRemoteCollection: (c, state) =>
-      write(db, ['collections', 'sync'], async (tx) => {
+    async putRemoteCollection(c, state) {
+      let wrote = false
+      await write(db, ['collections', 'sync'], async (tx) => {
+        const sync = tx.objectStore('sync')
+        const current = await sync.get(c.id)
+        const exists = (await tx.objectStore('collections').getKey(c.id)) !== undefined
+        // A local edit wins until the next pass weighs it against the Drive's version.
+        if (exists && current?.dirty) return
         await tx.objectStore('collections').put(c)
-        await tx.objectStore('sync').put(state, c.id)
+        await sync.put(state, c.id)
+        wrote = true
+      })
+      return wrote
+    },
+    saveConflictCopy: (copy, originalId, remoteFileId, remoteVersion) =>
+      write(db, ['collections', 'sync', 'meta'], async (tx) => {
+        const sync = tx.objectStore('sync')
+        await putChanged(tx.objectStore('collections'), sync, tx.objectStore('meta'), copy)
+        const original = await sync.get(originalId)
+        if (original) await sync.put({ ...original, remoteFileId, remoteVersion }, originalId)
       }),
     markPushed: (id, uploadedUpdatedAt, fileId, version) =>
       write(db, ['collections', 'sync'], async (tx) => {
