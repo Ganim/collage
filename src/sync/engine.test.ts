@@ -900,7 +900,7 @@ describe('remove from and send to the Drive', () => {
     expect(files).toHaveLength(1)
     expect((await a.getSyncStates()).c1).toMatchObject({ dirty: false, remoteFileId: files[0]!.id })
     expect((await a.getSyncStates()).c1?.localOnly).toBeUndefined()
-    // The record is dropped, and the photo trashed with the removal is back.
+    // The record is dropped; the photos never left the Drive.
     expect((await libraryOnDrive()).detached.collection).toEqual({})
     expect(photoIdsOnDrive()).toEqual(['p1', 'p2', 'p3'])
 
@@ -923,48 +923,21 @@ describe('remove from and send to the Drive', () => {
     expect(await b.getPhoto('p1')).toBeDefined()
   })
 
-  it('a photo shared with another synced collection stays; one used only by the removed one goes', async () => {
+  it('removing collections from the Drive trashes no photo file', async () => {
     await bothSynced()
     await a.setLocalOnly('c1', true)
+    await a.setLocalOnly('c2', true)
+
     await engineFor(a, drive).run()
-    // p2 is also in c2; p1 was only in c1.
-    expect(photoIdsOnDrive()).toEqual(['p2', 'p3'])
-    // Photos never leave a device.
+    expect(status().state).toBe('idle')
+    expect(collectionIdsOnDrive()).toEqual([])
+    // p1 was only in c1 and p3 only in c2: another device may still need them, so they stay.
+    expect(photoIdsOnDrive()).toEqual(['p1', 'p2', 'p3'])
+    // Photos never leave a device either.
     expect(await a.getPhoto('p1')).toBeDefined()
     await engineFor(b, drive).run()
     expect(status().state).toBe('idle')
     expect(await b.getPhoto('p1')).toBeDefined()
-  })
-
-  it('a photo a collection pulled in the same pass uses stays', async () => {
-    await a.importCollection([photo('p1')], collection('c1', ['p1']))
-    await engineFor(a, drive).run()
-    await engineFor(b, drive).run()
-    await b.saveCollection(collection('c3', ['p1']))
-    await engineFor(b, drive).run()
-    // A pulls c3 in the same pass that removes c1.
-    await a.setLocalOnly('c1', true)
-    await engineFor(a, drive).run()
-    expect(status().state).toBe('idle')
-    expect(await a.getCollection('c3')).toBeDefined()
-    expect(photoIdsOnDrive()).toEqual(['p1'])
-  })
-
-  it('keeps every photo while a collection on the Drive is not known here', async () => {
-    await a.importCollection([photo('p1')], collection('c1', ['p1']))
-    await engineFor(a, drive).run()
-    // A second file of c1 from elsewhere: this device never reads it.
-    await drive.create(
-      await drive.ensureFolder(),
-      'collection-c1.json',
-      new Blob([JSON.stringify(collection('c1', ['p1']))], { type: 'application/json' }),
-      { kind: 'collection', collectionId: 'c1' },
-    )
-    await a.setLocalOnly('c1', true)
-    await engineFor(a, drive).run()
-    expect(status().state).toBe('idle')
-    expect(collectionIdsOnDrive()).toEqual(['c1'])
-    expect(photoIdsOnDrive()).toEqual(['p1'])
   })
 
   it('a local-only collection never uploads its photos', async () => {
