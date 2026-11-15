@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { createServer } from 'node:http'
 import { after, before, describe, it, mock } from 'node:test'
-import { createHandler } from './auth.mjs'
+import { createHandler, readConfig } from './auth.mjs'
 
 const CLIENT_ID = 'client-123.apps.googleusercontent.com'
 const ORIGIN = 'https://collage.example.test'
@@ -19,12 +19,13 @@ const profile = {
   picture: 'https://example.com/ana.png',
 }
 
-function setup(googleClaims) {
+function setup(googleClaims, { tokenStatus = 200, tokenError } = {}) {
   const googleCalls = []
   const fakeFetch = async (url, init) => {
     googleCalls.push({ url: String(url), body: String(init?.body ?? '') })
+    if (tokenError) throw tokenError
     return new Response(JSON.stringify({ id_token: idToken({ aud: CLIENT_ID, ...googleClaims }) }), {
-      status: 200,
+      status: tokenStatus,
       headers: { 'content-type': 'application/json' },
     })
   }
@@ -43,8 +44,10 @@ describe('collage auth', () => {
   let base
   let current
 
+  let logged
+
   before(async () => {
-    mock.method(console, 'error', () => {})
+    logged = mock.method(console, 'error', () => {})
     server = createServer((req, res) => current.handler(req, res))
     await new Promise((r) => server.listen(0, '127.0.0.1', r))
     base = `http://127.0.0.1:${server.address().port}`
@@ -133,6 +136,72 @@ describe('collage auth', () => {
     assert.equal(cookiePair(res, 'collage_session'), undefined)
   })
 
+  async function callbackWith(claims, options) {
+    current = setup(claims, options)
+    const { location, oauth } = await startFlow()
+    const state = location.searchParams.get('state')
+    return call(`/api/auth/google/callback?code=abc&state=${state}`, {
+      headers: { cookie: oauth },
+    })
+  }
+
+  function assertSignInFailed(res) {
+    assert.equal(res.status, 302)
+    assert.equal(res.headers.get('location'), '/#/entrar?erro=1')
+    assert.equal(cookiePair(res, 'collage_session'), undefined)
+    assert.match(cookiePair(res, 'collage_oauth'), /Max-Age=0/)
+  }
+
+  it('callback refuses an e-mail Google has not verified', async () => {
+    assertSignInFailed(await callbackWith({ ...profile, email_verified: false }))
+  })
+
+  it('callback without the oauth cookie fails without asking Google', async () => {
+    current = setup(profile)
+    const res = await call('/api/auth/google/callback?code=abc&state=anything')
+    assertSignInFailed(res)
+    assert.equal(current.googleCalls.length, 0)
+  })
+
+  it('callback fails when the token endpoint does not answer 200', async () => {
+    assertSignInFailed(await callbackWith(profile, { tokenStatus: 400 }))
+  })
+
+  it('callback with a wrong state also clears the oauth cookie', async () => {
+    current = setup(profile)
+    const { oauth } = await startFlow()
+    const res = await call('/api/auth/google/callback?code=abc&state=wrong', {
+      headers: { cookie: oauth },
+    })
+    assertSignInFailed(res)
+  })
+
+  it('logs a fixed reason, never the error text', async () => {
+    logged.mock.resetCalls()
+    const tokenError = new Error('leaked-secret-value')
+    assertSignInFailed(await callbackWith(profile, { tokenError }))
+    const lines = logged.mock.calls.map((c) => c.arguments.map(String).join(' '))
+    assert.ok(lines.length > 0)
+    for (const line of lines) assert.ok(!line.includes('leaked-secret-value'), line)
+  })
+
+  it('me with a cookie too short to hold a tag is 401', async () => {
+    current = setup(profile)
+    const short = Buffer.alloc(20, 1).toString('base64url')
+    const me = await call('/api/auth/me', { headers: { cookie: `collage_session=${short}` } })
+    assert.equal(me.status, 401)
+  })
+
+  it('callback with a short oauth cookie fails', async () => {
+    current = setup(profile)
+    const short = Buffer.alloc(20, 1).toString('base64url')
+    const res = await call('/api/auth/google/callback?code=abc&state=x', {
+      headers: { cookie: `collage_oauth=${short}` },
+    })
+    assertSignInFailed(res)
+    assert.equal(current.googleCalls.length, 0)
+  })
+
   it('me without a cookie is 401', async () => {
     current = setup(profile)
     const res = await call('/api/auth/me')
@@ -160,5 +229,42 @@ describe('collage auth', () => {
     const set = cookiePair(res, 'collage_session')
     assert.match(set, /Max-Age=0/)
     assert.match(set, /Path=\/api/)
+  })
+})
+
+describe('readConfig', () => {
+  const env = {
+    GOOGLE_CLIENT_ID: CLIENT_ID,
+    GOOGLE_CLIENT_SECRET: 'secret-value',
+    COOKIE_KEY: Buffer.alloc(32, 7).toString('base64'),
+    PUBLIC_ORIGIN: ORIGIN,
+  }
+
+  it('reads a complete environment', () => {
+    assert.deepEqual(readConfig(env), {
+      clientId: CLIENT_ID,
+      clientSecret: 'secret-value',
+      cookieKey: env.COOKIE_KEY,
+      publicOrigin: ORIGIN,
+    })
+  })
+
+  it('names the missing variables without printing any value', () => {
+    assert.throws(
+      () => readConfig({ ...env, GOOGLE_CLIENT_SECRET: '', PUBLIC_ORIGIN: undefined }),
+      (e) =>
+        e.message.includes('GOOGLE_CLIENT_SECRET') &&
+        e.message.includes('PUBLIC_ORIGIN') &&
+        !e.message.includes('secret-value') &&
+        !e.message.includes(CLIENT_ID),
+    )
+  })
+
+  it('refuses a COOKIE_KEY that is not 32 bytes', () => {
+    const shortKey = Buffer.alloc(16, 7).toString('base64')
+    assert.throws(
+      () => readConfig({ ...env, COOKIE_KEY: shortKey }),
+      (e) => e.message.includes('COOKIE_KEY') && !e.message.includes(shortKey),
+    )
   })
 })

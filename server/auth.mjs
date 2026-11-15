@@ -7,14 +7,37 @@ const SCOPES = 'openid email profile'
 const YEAR = 365 * 24 * 60 * 60
 const ERROR_PAGE = '/#/entrar?erro=1'
 
+const IV_BYTES = 12
+const TAG_BYTES = 16
+
 const b64url = (b) => Buffer.from(b).toString('base64url')
+
+/** A failure whose message is fixed text, safe to log (never a token, cookie or value). */
+class AuthFailure extends Error {}
+
+const REQUIRED_ENV = ['GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'COOKIE_KEY', 'PUBLIC_ORIGIN']
+
+/** The service's settings from the environment. Throws a message naming, never printing, what is wrong. */
+export function readConfig(env) {
+  const missing = REQUIRED_ENV.filter((name) => !env[name])
+  if (missing.length > 0) throw new Error(`Missing environment variables: ${missing.join(', ')}`)
+  if (Buffer.from(env.COOKIE_KEY, 'base64').length !== 32) {
+    throw new Error('COOKIE_KEY must be 32 bytes, base64 encoded')
+  }
+  return {
+    clientId: env.GOOGLE_CLIENT_ID,
+    clientSecret: env.GOOGLE_CLIENT_SECRET,
+    cookieKey: env.COOKIE_KEY,
+    publicOrigin: env.PUBLIC_ORIGIN,
+  }
+}
 
 export function createHandler({ clientId, clientSecret, cookieKey, publicOrigin, fetch }) {
   const key = Buffer.from(cookieKey, 'base64')
   const redirectUri = `${publicOrigin}/api/auth/google/callback`
 
   function seal(text) {
-    const iv = randomBytes(12)
+    const iv = randomBytes(IV_BYTES)
     const c = createCipheriv('aes-256-gcm', key, iv)
     const body = Buffer.concat([c.update(text, 'utf8'), c.final()])
     return b64url(Buffer.concat([iv, c.getAuthTag(), body]))
@@ -23,9 +46,14 @@ export function createHandler({ clientId, clientSecret, cookieKey, publicOrigin,
   // Throws when the value is malformed or was not sealed with our key.
   function open(sealed) {
     const raw = Buffer.from(sealed, 'base64url')
-    const d = createDecipheriv('aes-256-gcm', key, raw.subarray(0, 12))
-    d.setAuthTag(raw.subarray(12, 28))
-    return Buffer.concat([d.update(raw.subarray(28)), d.final()]).toString('utf8')
+    if (raw.length < IV_BYTES + TAG_BYTES) throw new AuthFailure('malformed cookie')
+    const d = createDecipheriv('aes-256-gcm', key, raw.subarray(0, IV_BYTES), {
+      authTagLength: TAG_BYTES,
+    })
+    d.setAuthTag(raw.subarray(IV_BYTES, IV_BYTES + TAG_BYTES))
+    return Buffer.concat([d.update(raw.subarray(IV_BYTES + TAG_BYTES)), d.final()]).toString(
+      'utf8',
+    )
   }
 
   const cookies = (req) =>
@@ -64,7 +92,7 @@ export function createHandler({ clientId, clientSecret, cookieKey, publicOrigin,
   async function callback(req, res, url) {
     const [state, verifier] = open(cookies(req).collage_oauth ?? '').split(' ')
     const code = url.searchParams.get('code')
-    if (!code || url.searchParams.get('state') !== state) throw new Error('state mismatch')
+    if (!code || url.searchParams.get('state') !== state) throw new AuthFailure('state mismatch')
 
     const r = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
@@ -78,14 +106,14 @@ export function createHandler({ clientId, clientSecret, cookieKey, publicOrigin,
         code_verifier: verifier,
       }),
     })
-    if (!r.ok) throw new Error(`token endpoint ${r.status}`)
+    if (!r.ok) throw new AuthFailure(`token endpoint answered ${r.status}`)
     const { id_token: idToken } = await r.json()
 
     // The token came straight from Google over TLS in answer to our own request, so
     // reading its payload without checking the signature is acceptable here.
     const claims = JSON.parse(Buffer.from(String(idToken).split('.')[1], 'base64url').toString())
-    if (claims.aud !== clientId) throw new Error('wrong audience')
-    if (claims.email_verified !== true) throw new Error('email not verified')
+    if (claims.aud !== clientId) throw new AuthFailure('wrong audience')
+    if (claims.email_verified !== true) throw new AuthFailure('email not verified')
 
     const { sub, email, name, picture } = claims
     redirect(res, '/#/colecoes', [
@@ -115,8 +143,9 @@ export function createHandler({ clientId, clientSecret, cookieKey, publicOrigin,
   }
 
   return async (req, res) => {
-    const url = new URL(req.url, publicOrigin)
+    let url
     try {
+      url = new URL(req.url, publicOrigin)
       if (req.method === 'GET' && url.pathname === '/api/auth/google/start') return start(res)
       if (req.method === 'GET' && url.pathname === '/api/auth/google/callback') {
         return await callback(req, res, url)
@@ -126,23 +155,30 @@ export function createHandler({ clientId, clientSecret, cookieKey, publicOrigin,
       res.writeHead(404)
       res.end()
     } catch (e) {
-      console.error(url.pathname, e.message)
-      if (url.pathname.endsWith('/callback')) return redirect(res, ERROR_PAGE)
-      res.writeHead(500)
+      // Only fixed text: an error from elsewhere could carry a token or a cookie.
+      const reason = e instanceof AuthFailure ? e.message : 'unexpected error'
+      console.error(url?.pathname ?? '(bad address)', reason)
+      if (url?.pathname.endsWith('/callback')) {
+        return redirect(res, ERROR_PAGE, [cookie('collage_oauth', '', 0)])
+      }
+      res.writeHead(url ? 500 : 400)
       res.end()
     }
   }
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, COOKIE_KEY, PUBLIC_ORIGIN } = process.env
-  createServer(
-    createHandler({
-      clientId: GOOGLE_CLIENT_ID,
-      clientSecret: GOOGLE_CLIENT_SECRET,
-      cookieKey: COOKIE_KEY,
-      publicOrigin: PUBLIC_ORIGIN,
-      fetch,
-    }),
-  ).listen(8080)
+  let config
+  try {
+    config = readConfig(process.env)
+  } catch (e) {
+    console.error(e.message)
+    process.exit(1)
+  }
+  const server = createServer(createHandler({ ...config, fetch })).listen(8080)
+  // The container is stopped with SIGTERM: finish the requests in flight, then leave.
+  process.on('SIGTERM', () => {
+    server.close(() => process.exit(0))
+    server.closeIdleConnections()
+  })
 }
