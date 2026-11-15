@@ -1,4 +1,4 @@
-import type { Drive, RemoteFile } from './drive'
+import { DriveError, type Drive, type RemoteFile } from './drive'
 
 export interface FakeFile {
   id: string
@@ -27,7 +27,7 @@ export function createFakeDrive(): FakeDrive {
 
   const get = (fileId: string): FakeFile => {
     const file = files.get(fileId)
-    if (!file) throw new Error(`No such file: ${fileId}`)
+    if (!file) throw new DriveError('other', 'Google Drive request failed (404)')
     return file
   }
 

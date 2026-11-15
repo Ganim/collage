@@ -78,7 +78,7 @@ export function createDrive(
   getToken: (forceRefresh?: boolean) => Promise<string>,
   fetchFn: typeof fetch = (input, init) => fetch(input, init),
 ): Drive {
-  let folderId: string | null = null
+  let folderId: Promise<string> | null = null
 
   async function attempt(url: string, init: RequestInit, token: string): Promise<Response> {
     const headers = new Headers(init.headers)
@@ -137,20 +137,28 @@ export function createDrive(
     return toRemoteFile(await readJson<RawFile>(done))
   }
 
+  async function findOrCreateFolder(): Promise<string> {
+    const q = `name='${FOLDER_NAME}' and mimeType='${FOLDER_MIME}' and 'root' in parents and trashed=false`
+    const found = await request(
+      `${API}/drive/v3/files?${new URLSearchParams({ q, fields: 'files(id)' })}`,
+    )
+    const { files = [] } = await readJson<{ files?: RawFile[] }>(found)
+    if (files[0]) return files[0].id
+    const created = await request(
+      `${API}/drive/v3/files?fields=id`,
+      jsonInit('POST', { name: FOLDER_NAME, mimeType: FOLDER_MIME, parents: ['root'] }),
+    )
+    return (await readJson<RawFile>(created)).id
+  }
+
   return {
-    async ensureFolder() {
-      if (folderId) return folderId
-      const q = `name='${FOLDER_NAME}' and mimeType='${FOLDER_MIME}' and 'root' in parents and trashed=false`
-      const found = await request(
-        `${API}/drive/v3/files?${new URLSearchParams({ q, fields: 'files(id)' })}`,
-      )
-      const { files = [] } = await readJson<{ files?: RawFile[] }>(found)
-      if (files[0]) return (folderId = files[0].id)
-      const created = await request(
-        `${API}/drive/v3/files?fields=id`,
-        jsonInit('POST', { name: FOLDER_NAME, mimeType: FOLDER_MIME, parents: ['root'] }),
-      )
-      return (folderId = (await readJson<RawFile>(created)).id)
+    ensureFolder() {
+      // The in-flight promise is shared so concurrent first calls never create two folders.
+      folderId ??= findOrCreateFolder().catch((e: unknown) => {
+        folderId = null
+        throw e
+      })
+      return folderId
     },
 
     async list(folder) {

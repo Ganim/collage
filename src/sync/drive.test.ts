@@ -40,6 +40,24 @@ describe('ensureFolder', () => {
     expect(header(fetchFn.mock.calls[0]![1]!, 'authorization')).toBe('Bearer tok')
   })
 
+  it('creates the folder once when called concurrently, and retries after a failure', async () => {
+    let posts = 0
+    let fail = true
+    const { drive } = setup((_url, init) => {
+      if (init.method === 'POST') {
+        posts++
+        return json(200, { id: 'NEW' })
+      }
+      if (fail) return json(500, {})
+      return json(200, { files: [] })
+    })
+    await expect(drive.ensureFolder()).rejects.toMatchObject({ kind: 'other' })
+    fail = false
+    const [a, b] = await Promise.all([drive.ensureFolder(), drive.ensureFolder()])
+    expect([a, b]).toEqual(['NEW', 'NEW'])
+    expect(posts).toBe(1)
+  })
+
   it('creates the folder when absent', async () => {
     const { drive, fetchFn } = setup((_url, init) =>
       init.method === 'POST' ? json(200, { id: 'NEW' }) : json(200, { files: [] }),

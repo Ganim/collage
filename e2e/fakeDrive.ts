@@ -23,11 +23,16 @@ export function createFakeDriveState(): FakeDriveState {
 const FOLDER_MIME = 'application/vnd.google-apps.folder'
 const UPLOAD_PATH = '/__fake_upload/'
 
-const CORS = {
-  'access-control-allow-origin': '*',
-  'access-control-allow-headers': '*',
-  'access-control-allow-methods': 'GET,POST,PUT,PATCH,OPTIONS',
-  'access-control-expose-headers': 'Location',
+/** "*" does not cover Authorization in preflights, so the requested headers are reflected. */
+function cors(route: Route): Record<string, string> {
+  return {
+    'access-control-allow-origin': '*',
+    'access-control-allow-headers':
+      route.request().headers()['access-control-request-headers'] ??
+      'authorization,content-type,x-upload-content-type',
+    'access-control-allow-methods': 'GET,POST,PUT,PATCH,OPTIONS',
+    'access-control-expose-headers': 'Location',
+  }
 }
 
 interface Metadata {
@@ -52,7 +57,7 @@ function view(f: FakeDriveFile) {
 function reply(route: Route, status: number, json?: unknown, headers: Record<string, string> = {}) {
   return route.fulfill({
     status,
-    headers: { ...CORS, ...headers },
+    headers: { ...cors(route), ...headers },
     ...(json === undefined ? {} : { json }),
   })
 }
@@ -162,7 +167,7 @@ export async function routeFakeDrive(
       if (method === 'GET' && url.searchParams.get('alt') === 'media') {
         return route.fulfill({
           status: 200,
-          headers: { ...CORS, 'content-type': file.mimeType },
+          headers: { ...cors(route), 'content-type': file.mimeType },
           body: file.body,
         })
       }
