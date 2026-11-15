@@ -1,0 +1,269 @@
+/* The look: tokens, the gradient behind everything, glass surfaces and the main button. */
+
+:root {
+  --fuchsia-50: #fdf4ff;
+  --fuchsia-200: #f5d0fe;
+  --fuchsia-600: #c026d3;
+  --fuchsia-700: #a21caf;
+  --pink-600: #db2777;
+  --plum-900: #3b0a3f;
+  --plum-500: #7a4a7e;
+  --peach-200: #fed7cc;
+  --lilac-200: #e9d5ff;
+  --danger: #be123c;
+
+  --line: rgba(122, 74, 126, 0.22);
+  --dot: rgba(122, 74, 126, 0.32);
+  --shadow: 0 8px 28px rgba(59, 10, 63, 0.12);
+  --warning-bg: var(--peach-200);
+  --warning-ink: var(--danger);
+
+  --glass: rgba(255, 255, 255, 0.55);
+  --glass-strong: rgba(255, 255, 255, 0.82);
+  --glass-border: 1px solid rgba(255, 255, 255, 0.7);
+  --glass-blur: blur(18px) saturate(1.4);
+
+  --radius-card: 24px;
+  --radius-pill: 999px;
+  --radius-field: 14px;
+  --main-gradient: linear-gradient(135deg, var(--fuchsia-600), var(--pink-600));
+
+  --text-xs: 13px;
+  --text-sm: 15px;
+  --text-md: 17px;
+  --text-lg: 22px;
+  --text-xl: 30px;
+  --weight-body: 500;
+  --weight-title: 750;
+
+  --touch: 44px;
+
+  font-family:
+    'Nunito Variable',
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    Roboto,
+    sans-serif;
+  font-weight: var(--weight-body);
+  color: var(--plum-900);
+  -webkit-text-size-adjust: 100%;
+}
+
+html,
+body {
+  background-color: var(--fuchsia-50);
+  background-image:
+    radial-gradient(95% 60% at 0% 0%, var(--fuchsia-200) 0%, rgba(245, 208, 254, 0) 100%),
+    radial-gradient(85% 55% at 100% 45%, var(--peach-200) 0%, rgba(254, 215, 204, 0) 100%),
+    radial-gradient(120% 60% at 40% 100%, var(--lilac-200) 20%, rgba(233, 213, 255, 0) 100%);
+  background-attachment: fixed;
+}
+
+h1,
+h2 {
+  font-weight: var(--weight-title);
+}
+
+.glass {
+  background: var(--glass);
+  border: var(--glass-border);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+}
+
+.primary-button {
+  min-height: var(--touch);
+  padding: 0 22px;
+  border-radius: var(--radius-pill);
+  background: var(--main-gradient);
+  color: #fff;
+  font-weight: var(--weight-title);
+  box-shadow: 0 6px 18px rgba(192, 38, 211, 0.28);
+  transition: transform 0.15s ease;
+}
+
+.primary-button:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.illustration {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Start page */
+
+.start {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.start-brand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 14px 16px 4px;
+  font-size: var(--text-lg);
+  letter-spacing: -0.01em;
+}
+
+.start-brand svg {
+  color: var(--fuchsia-600);
+  fill: var(--fuchsia-600);
+}
+
+.start-steps {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+}
+
+.start-steps::-webkit-scrollbar {
+  display: none;
+}
+
+.start-step {
+  flex: 0 0 100%;
+  display: grid;
+  place-items: center;
+  padding: 12px 24px;
+  scroll-snap-align: center;
+  scroll-snap-stop: always;
+}
+
+.start-card {
+  width: 100%;
+  max-width: 380px;
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 20px 24px 28px;
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow);
+  text-align: center;
+}
+
+.start-card .illustration {
+  flex: 0 1 auto;
+  min-height: 0;
+  max-width: 260px;
+  max-height: 34dvh;
+  margin-bottom: 12px;
+}
+
+.start-card h2 {
+  font-size: var(--text-lg);
+  line-height: 1.2;
+  text-wrap: balance;
+}
+
+.start-card p {
+  margin-top: 8px;
+  color: var(--plum-500);
+  font-size: var(--text-sm);
+  line-height: 1.45;
+  text-wrap: pretty;
+}
+
+.start-dots {
+  display: flex;
+  justify-content: center;
+  gap: 2px;
+}
+
+.start-dot {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: var(--touch);
+}
+
+.start-dot::after {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-pill);
+  background: var(--dot);
+  transition:
+    width 0.2s ease,
+    background-color 0.2s ease;
+}
+
+.start-dot[aria-current='step']::after {
+  width: 22px;
+  background: var(--fuchsia-600);
+}
+
+.start-footer {
+  display: grid;
+  gap: 10px;
+  margin: 4px 16px 12px;
+  padding: 16px 16px 14px;
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow);
+}
+
+.start-error {
+  color: var(--danger);
+  font-size: var(--text-sm);
+  font-weight: 650;
+  text-align: center;
+}
+
+.google-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 54px;
+  font-size: var(--text-md);
+}
+
+.google-mark {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: #fff;
+}
+
+.start-privacy {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: var(--plum-500);
+  font-size: var(--text-xs);
+}
+
+/* Until the collections screen is built */
+
+.collections-placeholder .illustration {
+  max-width: 220px;
+  margin: 0 auto 8px;
+}
+
+.collections-placeholder h1 {
+  margin-bottom: 20px;
+}

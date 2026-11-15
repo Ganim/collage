@@ -664,3 +664,8 @@ function getAppStore(): StoreApi<EditorState> {
 export function useEditor<T>(selector: (state: EditorState) => T): T {
   return useStore(getAppStore(), selector)
 }
+
+/** The state right now, for code that runs after an await and must not read a stale render. */
+export function getEditorState(): EditorState {
+  return getAppStore().getState()
+}

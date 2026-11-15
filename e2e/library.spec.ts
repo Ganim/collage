@@ -1,11 +1,19 @@
 import { readFile } from 'node:fs/promises'
 import { expect, type Page } from '@playwright/test'
-import { makeJpeg, savedCollection, test, uploadPhotos } from './helpers'
+import {
+  makeJpeg,
+  openNewCollection,
+  savedCollection,
+  serveAccount,
+  test,
+  uploadPhotos,
+} from './helpers'
 
 const more = (page: Page) => page.getByRole('button', { name: 'Mais opções', exact: true })
 const menuItem = (page: Page, name: string) => page.getByRole('button', { name, exact: true })
 const closeSheet = (page: Page) => page.getByRole('button', { name: 'Fechar', exact: true }).click()
-const frameLabel = (page: Page, label: string) => page.getByRole('img', { name: label, exact: true })
+const frameLabel = (page: Page, label: string) =>
+  page.getByRole('img', { name: label, exact: true })
 
 async function openCollections(page: Page) {
   await more(page).click()
@@ -41,8 +49,10 @@ async function exportCollection(page: Page) {
   return downloading
 }
 
-test.beforeEach(async ({ page }) => {
-  await page.goto('/')
+test.beforeEach(async ({ page, installHint }) => {
+  // The install suggestion covers the list, so those tests start under it.
+  if (installHint) await page.goto('/#/colecoes')
+  else await openNewCollection(page)
 })
 
 test('the menu lists collections, saving, sizes and the frame actions', async ({ page }) => {
@@ -121,7 +131,8 @@ test('a second collection leaves the first one as it was', async ({ page }) => {
   await expect(summary).toHaveText(before!)
 })
 
-test('deleting a collection takes a second tap and opens another', async ({ page }) => {
+// Deleting the open collection leaves an empty draft, not saved, rather than opening another.
+test('deleting a collection takes a second tap and leaves the others', async ({ page }) => {
   await frameWithPhoto(page)
   await nameCollection(page, 'Maio')
   await openCollections(page)
@@ -134,8 +145,8 @@ test('deleting a collection takes a second tap and opens another', async ({ page
   await expect(page.getByRole('button', { name: /^Junho\b/ })).toBeVisible()
   await page.getByRole('button', { name: 'Confirmar apagar Junho', exact: true }).click()
   await expect(page.getByRole('button', { name: /^Junho\b/ })).toHaveCount(0)
-  await expect(page.getByLabel('Nome da coleção')).toHaveValue('Maio')
-  await closeSheet(page)
+  await expect(page.getByLabel('Nome da coleção')).not.toHaveValue('Junho')
+  await page.getByRole('button', { name: /^Maio\b/ }).click()
   await expect(frameLabel(page, 'Frame 1 de 1').locator('img')).toHaveCount(1)
 })
 
@@ -177,16 +188,18 @@ test('an invalid file shows a message and changes nothing', async ({ page }) => 
 // The service worker never became ready in the persistent profile the other tests need for Blobs.
 test('after the first visit the app loads offline', async ({ browser, baseURL }) => {
   const context = await browser.newContext({ baseURL })
+  await serveAccount(context)
   const page = await context.newPage()
   await page.goto('/')
-  await expect(page.getByRole('heading', { name: 'Seu primeiro frame' })).toBeVisible()
+  const newCollection = page.getByRole('button', { name: 'Nova coleção', exact: true })
+  await expect(newCollection).toBeVisible()
   await page.evaluate(async () => {
     await navigator.serviceWorker.ready
   })
 
   await context.setOffline(true)
   await page.reload()
-  await expect(page.getByRole('heading', { name: 'Seu primeiro frame' })).toBeVisible()
+  await expect(newCollection).toBeVisible()
   await context.close()
 })
 
@@ -229,9 +242,10 @@ test('a very long name keeps the top bar and the frame in place', async ({ page 
 test('closing the app and opening it again brings the work back', async ({ page, context }) => {
   await frameWithPhoto(page)
   await expect.poll(async () => (await savedCollection(page))?.frames.length).toBe(1)
+  const address = page.url()
   await page.close()
   const reopened = await context.newPage()
-  await reopened.goto('/')
+  await reopened.goto(address)
   await expect(frameLabel(reopened, 'Frame 1 de 1').locator('img')).toHaveCount(1)
 })
 
@@ -242,10 +256,11 @@ test('a failure reading the saved work offers a retry and loses nothing', async 
   await frameWithPhoto(page)
   await expect.poll(async () => (await savedCollection(page))?.frames.length).toBe(1)
   await context.addInitScript(() => {
-    const open = indexedDB.open.bind(indexedDB)
-    indexedDB.open = (...args: Parameters<typeof open>) => {
+    // On the prototype: WebKit can hand the page a different factory than this script saw.
+    const open = IDBFactory.prototype.open
+    IDBFactory.prototype.open = function (...args: Parameters<typeof open>) {
       if (sessionStorage.getItem('failReads')) throw new Error('cannot read')
-      return open(...args)
+      return open.apply(this, args)
     }
   })
   await page.evaluate(() => sessionStorage.setItem('failReads', '1'))
@@ -259,20 +274,24 @@ test('a failure reading the saved work offers a retry and loses nothing', async 
   await expect(frameLabel(page, 'Frame 1 de 1').locator('img')).toHaveCount(1)
 })
 
-test('when the last work cannot be read, the others can still be opened', async ({
+test('when the open work cannot be read, the others can still be opened', async ({
   page,
   context,
 }) => {
   await frameWithPhoto(page)
   await nameCollection(page, 'Maio')
   await expect.poll(async () => (await savedCollection(page))?.name).toBe('Maio')
-  await context.addInitScript(() => {
+  await openNewCollection(page)
+  await nameCollection(page, 'Junho')
+  await expect.poll(async () => (await savedCollection(page))?.name).toBe('Junho')
+  const unreadable = decodeURIComponent(new URL(page.url()).hash.replace('#/c/', ''))
+  await context.addInitScript((id) => {
     const get = IDBObjectStore.prototype.get
     IDBObjectStore.prototype.get = function (key: IDBValidKey | IDBKeyRange) {
-      if (key === 'lastCollectionId') throw new Error('cannot read')
+      if (key === id) throw new Error('cannot read')
       return get.call(this, key)
     }
-  })
+  }, unreadable)
 
   await page.reload()
   await expect(page.getByRole('alert')).toHaveText(/Não foi possível abrir/)
@@ -291,7 +310,7 @@ test.describe('on a first visit in Safari', () => {
     await page.getByRole('button', { name: 'Agora não', exact: true }).click()
     await expect(dialog).toHaveCount(0)
     await page.reload()
-    await expect(page.getByRole('heading', { name: 'Seu primeiro frame' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Nova coleção', exact: true })).toBeVisible()
     await expect(dialog).toHaveCount(0)
 
     await page.evaluate(() => {

@@ -1,5 +1,5 @@
 import { expect, type Page } from '@playwright/test'
-import { makeJpeg, savedCollection, test, uploadPhotos } from './helpers'
+import { makeJpeg, openNewCollection, savedCollection, test, uploadPhotos } from './helpers'
 
 const trayPhoto = (page: Page, name: string) =>
   page.getByRole('button', { name: `Colocar ${name} no frame` })
@@ -33,10 +33,10 @@ async function swipeTo(page: Page, position: number) {
 }
 
 test.beforeEach(async ({ page }) => {
-  await page.goto('/')
+  await openNewCollection(page)
 })
 
-test('opens without sign-up on a welcoming empty state', async ({ page }) => {
+test('a new collection opens on a welcoming empty state', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Seu primeiro frame' })).toBeVisible()
   await page.getByRole('button', { name: 'Adicionar primeiro frame' }).click()
   await page.getByRole('button', { name: '13×18 cm', exact: true }).click()

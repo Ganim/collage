@@ -1,4 +1,4 @@
-import { devices, test as base, type Page } from '@playwright/test'
+import { devices, expect, test as base, type BrowserContext, type Page } from '@playwright/test'
 
 const { viewport, userAgent, deviceScaleFactor, isMobile, hasTouch } = devices['iPhone 15 Pro Max']!
 
@@ -6,10 +6,12 @@ const { viewport, userAgent, deviceScaleFactor, isMobile, hasTouch } = devices['
  * Each test gets a fresh on-disk profile. Playwright's default context is ephemeral, and
  * WebKit refuses to keep Blobs in IndexedDB there ("Error preparing Blob/File data").
  */
-export const test = base.extend<{ installHint: boolean }>({
+export const test = base.extend<{ installHint: boolean; loggedIn: boolean }>({
   // The suggestion covers the screen on an iPhone's first visit, which is every test's visit.
   installHint: [false, { option: true }],
-  context: async ({ playwright, baseURL, installHint }, provide, testInfo) => {
+  // `vite preview` has no sign-in service: the account comes from here.
+  loggedIn: [true, { option: true }],
+  context: async ({ playwright, baseURL, installHint, loggedIn }, provide, testInfo) => {
     const context = await playwright.webkit.launchPersistentContext(
       testInfo.outputPath('profile'),
       {
@@ -26,6 +28,7 @@ export const test = base.extend<{ installHint: boolean }>({
         localStorage.setItem('collage.installHintDismissed', String(Date.now())),
       )
     }
+    await serveAccount(context, loggedIn)
     await provide(context)
     await context.close()
   },
@@ -33,6 +36,23 @@ export const test = base.extend<{ installHint: boolean }>({
     await provide(context.pages()[0] ?? (await context.newPage()))
   },
 })
+
+export const TEST_ACCOUNT = { email: 'teste@exemplo.com', name: 'Conta de teste', picture: null }
+
+/** Answers the app's "who is signed in" question: the test account, or nobody (401). */
+export async function serveAccount(context: BrowserContext, loggedIn = true): Promise<void> {
+  await context.route('**/api/auth/me', (route) =>
+    loggedIn ? route.fulfill({ status: 200, json: TEST_ACCOUNT }) : route.fulfill({ status: 401 }),
+  )
+}
+
+/** Starts the way a person would: from the list, on a new empty collection. */
+export async function openNewCollection(page: Page): Promise<void> {
+  await page.goto('/#/colecoes')
+  await page.getByRole('button', { name: 'Nova coleção', exact: true }).click()
+  await expect(page).toHaveURL(/#\/c\/[^/]+$/)
+  await expect(page.getByRole('heading', { name: 'Seu primeiro frame' })).toBeVisible()
+}
 
 /** Draws a JPEG with a canvas in the page. Use a different color per photo: identical bytes are one photo. */
 export async function makeJpeg(page: Page, w: number, h: number, color: string): Promise<Buffer> {

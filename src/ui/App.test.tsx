@@ -2,10 +2,33 @@ import { render, screen } from '@testing-library/react'
 import 'fake-indexeddb/auto'
 import { App } from './App'
 
+function serveMe(status: number, body?: unknown) {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => new Response(body === undefined ? null : JSON.stringify(body), { status })),
+  )
+}
+
 describe('App', () => {
-  it('opens on the build screen', async () => {
+  beforeEach(() => {
+    localStorage.clear()
+    location.hash = ''
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('without an account, shows the start page with the Google sign-in', async () => {
+    serveMe(401)
     render(<App />)
-    expect(screen.getByRole('main')).toBeInTheDocument()
-    expect(await screen.findByRole('button', { name: 'Adicionar primeiro frame' })).toBeVisible()
+    expect(await screen.findByRole('button', { name: 'Entrar com Google' })).toBeVisible()
+  })
+
+  it('with an account, opens on the collections', async () => {
+    serveMe(200, { email: 'teste@exemplo.com', name: 'Conta de teste', picture: null })
+    render(<App />)
+    expect(await screen.findByRole('button', { name: 'Nova coleção' })).toBeVisible()
+    expect(screen.queryByRole('button', { name: 'Entrar com Google' })).toBeNull()
   })
 })

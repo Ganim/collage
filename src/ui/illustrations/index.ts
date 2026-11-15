@@ -1,0 +1,7 @@
+export { ComingSoonIllustration } from './ComingSoon'
+export { EmptyCollectionsIllustration } from './EmptyCollections'
+export { EmptyFolderIllustration } from './EmptyFolder'
+export { EmptyFrameIllustration } from './EmptyFrame'
+export { FramesIllustration } from './Frames'
+export { PrintIllustration } from './Print'
+export { WelcomeIllustration } from './Welcome'

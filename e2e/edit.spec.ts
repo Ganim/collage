@@ -1,5 +1,5 @@
 import { expect, type Page } from '@playwright/test'
-import { makeJpeg, savedCollection, test, uploadPhotos } from './helpers'
+import { makeJpeg, openNewCollection, savedCollection, test, uploadPhotos } from './helpers'
 
 type Point = [number, number]
 
@@ -175,7 +175,7 @@ function wheel(page: Page, deltaY: number) {
 }
 
 test.beforeEach(async ({ page }) => {
-  await page.goto('/')
+  await openNewCollection(page)
 })
 
 test('tapping a frame locks the carousel for editing; OK and tapping outside leave', async ({

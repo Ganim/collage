@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises'
 import { inflateSync } from 'node:zlib'
 import { expect, type Download, type Page } from '@playwright/test'
 import { PDFDocument, PDFName, PDFRawStream } from 'pdf-lib'
-import { makeJpeg, savedCollection, test, uploadPhotos } from './helpers'
+import { makeJpeg, openNewCollection, savedCollection, test, uploadPhotos } from './helpers'
 
 const COLORS = ['#a8552f', '#2f5fa8', '#6a8f3a', '#7a3f8f', '#b5862b', '#3f8f7a']
 
@@ -137,7 +137,7 @@ function drawnImageSizes(doc: PDFDocument): { width: number; height: number }[] 
 }
 
 test.beforeEach(async ({ page }) => {
-  await page.goto('/')
+  await openNewCollection(page)
 })
 
 test('two 10×15 frames fit one A4, and the PDF is that exact physical size', async ({ page }) => {
