@@ -1,53 +1,19 @@
-import { readFile } from 'node:fs/promises'
 import { expect, type Page } from '@playwright/test'
 import {
-  makeJpeg,
+  addFrame,
+  frameLabel,
+  frameWithPhoto,
+  goHome,
+  nameOpenCollection,
   openNewCollection,
   savedCollection,
   serveAccount,
   test,
-  uploadPhotos,
+  workChip,
 } from './helpers'
 
 const more = (page: Page) => page.getByRole('button', { name: 'Mais opções', exact: true })
 const menuItem = (page: Page, name: string) => page.getByRole('button', { name, exact: true })
-const closeSheet = (page: Page) => page.getByRole('button', { name: 'Fechar', exact: true }).click()
-const frameLabel = (page: Page, label: string) =>
-  page.getByRole('img', { name: label, exact: true })
-
-async function openCollections(page: Page) {
-  await more(page).click()
-  await menuItem(page, 'Coleções').click()
-  await expect(page.getByRole('dialog', { name: 'Coleções' })).toBeVisible()
-}
-
-async function addFrame(page: Page, size = '10×15 cm') {
-  await page.getByRole('button', { name: 'Adicionar frame', exact: true }).click()
-  await page.getByRole('button', { name: size, exact: true }).click()
-}
-
-async function frameWithPhoto(page: Page) {
-  await uploadPhotos(page, [await makeJpeg(page, 400, 600, '#a8552f')])
-  const photo = page.getByRole('button', { name: 'Colocar foto-1.jpg no frame' })
-  await expect(photo).toBeVisible()
-  await addFrame(page)
-  await photo.click()
-  await expect(frameLabel(page, 'Frame 1 de 1').locator('img')).toHaveCount(1)
-}
-
-async function nameCollection(page: Page, name: string) {
-  await openCollections(page)
-  await page.getByLabel('Nome da coleção').fill(name)
-  await closeSheet(page)
-}
-
-async function exportCollection(page: Page) {
-  await more(page).click()
-  await menuItem(page, 'Salvar em arquivo').click()
-  const downloading = page.waitForEvent('download')
-  await menuItem(page, 'Baixar arquivo').click()
-  return downloading
-}
 
 test.beforeEach(async ({ page, installHint }) => {
   // The install suggestion covers the list, so those tests start under it.
@@ -74,6 +40,14 @@ test('the menu leaves out the frame actions when there is no frame', async ({ pa
   await expect(menuItem(page, 'Coleções')).toBeVisible()
   await expect(menuItem(page, 'Duplicar frame')).toHaveCount(0)
   await expect(menuItem(page, 'Remover frame')).toHaveCount(0)
+})
+
+test('the menu row goes back to the list', async ({ page }) => {
+  await more(page).click()
+  await menuItem(page, 'Coleções').click()
+  await expect(page).toHaveURL(/#\/colecoes$/)
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await expect(page.getByRole('tab', { name: 'Coleções' })).toBeVisible()
 })
 
 test('duplicating a frame copies its photos', async ({ page }) => {
@@ -109,80 +83,26 @@ test('a saved size shows in Meus tamanhos and can be deleted there', async ({ pa
 
 test('a second collection leaves the first one as it was', async ({ page }) => {
   await frameWithPhoto(page)
-  await nameCollection(page, 'Maio')
+  await nameOpenCollection(page, 'Maio')
   await page.getByRole('button', { name: 'Baixar', exact: true }).click()
   const summary = page.getByText(/^\d+ folhas? · \d+%$/)
   await expect(summary).toBeVisible()
   const before = await summary.textContent()
   await page.getByRole('button', { name: 'Voltar', exact: true }).click()
 
-  await openCollections(page)
+  await goHome(page)
   await menuItem(page, 'Nova coleção').click()
   await expect(page.getByRole('heading', { name: 'Seu primeiro frame' })).toBeVisible()
   await addFrame(page, '13×18 cm')
   await addFrame(page, '13×18 cm')
   await expect(frameLabel(page, 'Frame 2 de 2')).toBeVisible()
-  await nameCollection(page, 'Junho')
+  await nameOpenCollection(page, 'Junho')
 
-  await openCollections(page)
-  await page.getByRole('button', { name: /^Maio\b/ }).click()
+  await goHome(page)
+  await menuItem(page, 'Maio').click()
   await expect(frameLabel(page, 'Frame 1 de 1').locator('img')).toHaveCount(1)
   await page.getByRole('button', { name: 'Baixar', exact: true }).click()
   await expect(summary).toHaveText(before!)
-})
-
-// Deleting the open collection leaves an empty draft, not saved, rather than opening another.
-test('deleting a collection takes a second tap and leaves the others', async ({ page }) => {
-  await frameWithPhoto(page)
-  await nameCollection(page, 'Maio')
-  await openCollections(page)
-  await menuItem(page, 'Nova coleção').click()
-  await expect(page.getByRole('heading', { name: 'Seu primeiro frame' })).toBeVisible()
-  await nameCollection(page, 'Junho')
-
-  await openCollections(page)
-  await page.getByRole('button', { name: 'Apagar Junho', exact: true }).click()
-  await expect(page.getByRole('button', { name: /^Junho\b/ })).toBeVisible()
-  await page.getByRole('button', { name: 'Confirmar apagar Junho', exact: true }).click()
-  await expect(page.getByRole('button', { name: /^Junho\b/ })).toHaveCount(0)
-  await expect(page.getByLabel('Nome da coleção')).not.toHaveValue('Junho')
-  await page.getByRole('button', { name: /^Maio\b/ }).click()
-  await expect(frameLabel(page, 'Frame 1 de 1').locator('img')).toHaveCount(1)
-})
-
-test('a collection exported and deleted comes back from its file', async ({ page }) => {
-  await frameWithPhoto(page)
-  await nameCollection(page, 'Maio')
-  const download = await exportCollection(page)
-  expect(download.suggestedFilename()).toBe('Maio.collage')
-  const file = await readFile(await download.path())
-
-  await openCollections(page)
-  await page.getByRole('button', { name: 'Apagar Maio', exact: true }).click()
-  await page.getByRole('button', { name: 'Confirmar apagar Maio', exact: true }).click()
-  await expect(page.getByRole('button', { name: /^Maio\b/ })).toHaveCount(0)
-
-  await page.getByLabel('Abrir de um arquivo').setInputFiles({
-    name: 'Maio.collage',
-    mimeType: 'application/zip',
-    buffer: file,
-  })
-  await expect(frameLabel(page, 'Frame 1 de 1').locator('img')).toHaveCount(1)
-  await expect.poll(async () => (await savedCollection(page))?.frames.length).toBe(1)
-})
-
-test('an invalid file shows a message and changes nothing', async ({ page }) => {
-  await frameWithPhoto(page)
-  await nameCollection(page, 'Maio')
-  await openCollections(page)
-  await page.getByLabel('Abrir de um arquivo').setInputFiles({
-    name: 'nota.txt',
-    mimeType: 'text/plain',
-    buffer: Buffer.from('isto não é uma coleção'),
-  })
-  await expect(page.getByText('Este arquivo não é uma coleção do Collage.')).toBeVisible()
-  await expect(page.getByLabel('Nome da coleção')).toHaveValue('Maio')
-  await expect(page.getByRole('button', { name: /^Maio\b/ })).toHaveCount(1)
 })
 
 // The service worker never became ready in the persistent profile the other tests need for Blobs.
@@ -203,34 +123,27 @@ test('after the first visit the app loads offline', async ({ browser, baseURL })
   await context.close()
 })
 
-const workChip = (page: Page) => page.getByRole('button', { name: /^Coleções: / })
-
 test('the top bar names the open work and one tap lists the others', async ({ page }) => {
   await frameWithPhoto(page)
-  await nameCollection(page, 'Maio')
+  await nameOpenCollection(page, 'Maio')
   await expect(workChip(page)).toHaveText('Maio')
-  await openCollectionsFromChip(page)
+  await goHome(page)
   await menuItem(page, 'Nova coleção').click()
   await expect(page.getByRole('heading', { name: 'Seu primeiro frame' })).toBeVisible()
 
-  await openCollectionsFromChip(page)
-  await page.getByRole('button', { name: /^Maio\b/ }).click()
+  await goHome(page)
+  await menuItem(page, 'Maio').click()
   await expect(frameLabel(page, 'Frame 1 de 1').locator('img')).toHaveCount(1)
   await expect(workChip(page)).toHaveText('Maio')
 })
 
-async function openCollectionsFromChip(page: Page) {
-  await workChip(page).click()
-  await expect(page.getByRole('dialog', { name: 'Coleções' })).toBeVisible()
-}
-
 test('a very long name keeps the top bar and the frame in place', async ({ page }) => {
   await frameWithPhoto(page)
-  await nameCollection(page, 'Maio')
+  await nameOpenCollection(page, 'Maio')
   const frame = frameLabel(page, 'Frame 1 de 1')
   const before = (await frame.boundingBox())!
 
-  await nameCollection(page, 'Muito longo '.repeat(20))
+  await nameOpenCollection(page, 'Muito longo '.repeat(20))
   await expect(page.getByRole('button', { name: 'Baixar', exact: true })).toBeInViewport({
     ratio: 1,
   })
@@ -279,10 +192,10 @@ test('when the open work cannot be read, the others can still be opened', async 
   context,
 }) => {
   await frameWithPhoto(page)
-  await nameCollection(page, 'Maio')
+  await nameOpenCollection(page, 'Maio')
   await expect.poll(async () => (await savedCollection(page))?.name).toBe('Maio')
   await openNewCollection(page)
-  await nameCollection(page, 'Junho')
+  await nameOpenCollection(page, 'Junho')
   await expect.poll(async () => (await savedCollection(page))?.name).toBe('Junho')
   const unreadable = decodeURIComponent(new URL(page.url()).hash.replace('#/c/', ''))
   await context.addInitScript((id) => {
@@ -296,8 +209,8 @@ test('when the open work cannot be read, the others can still be opened', async 
   await page.reload()
   await expect(page.getByRole('alert')).toHaveText(/Não foi possível abrir/)
   await page.getByRole('button', { name: 'Ver meus trabalhos', exact: true }).click()
-  await expect(page.getByLabel('Nome da coleção')).toHaveCount(0)
-  await page.getByRole('button', { name: /^Maio\b/ }).click()
+  await expect(page).toHaveURL(/#\/colecoes$/)
+  await menuItem(page, 'Maio').click()
   await expect(frameLabel(page, 'Frame 1 de 1').locator('img')).toHaveCount(1)
 })
 

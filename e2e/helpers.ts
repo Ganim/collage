@@ -1,4 +1,11 @@
-import { devices, expect, test as base, type BrowserContext, type Page } from '@playwright/test'
+import {
+  devices,
+  expect,
+  test as base,
+  type BrowserContext,
+  type Download,
+  type Page,
+} from '@playwright/test'
 
 const { viewport, userAgent, deviceScaleFactor, isMobile, hasTouch } = devices['iPhone 15 Pro Max']!
 
@@ -118,4 +125,57 @@ export function savedCollection(page: Page): Promise<SavedCollection | undefined
         }
       }),
   )
+}
+
+/** The editor's top-bar chip naming the open collection; it leads back to the list. */
+export const workChip = (page: Page) => page.getByRole('button', { name: /^Coleções: / })
+
+export async function goHome(page: Page): Promise<void> {
+  await workChip(page).click()
+  await expect(page).toHaveURL(/#\/colecoes$/)
+}
+
+/** On the list: renames a collection through its card's options. */
+export async function renameFromCard(page: Page, from: string, to: string): Promise<void> {
+  await page.getByRole('button', { name: `Opções de ${from}`, exact: true }).click()
+  await page.getByRole('button', { name: 'Renomear', exact: true }).click()
+  await page.getByLabel('Nome', { exact: true }).fill(to)
+  await page.getByRole('button', { name: 'Salvar', exact: true }).click()
+  await expect(page.getByRole('button', { name: to.trim(), exact: true })).toBeVisible()
+}
+
+/** Renames the collection open in the editor from the list, and opens it again. */
+export async function nameOpenCollection(page: Page, name: string): Promise<void> {
+  const from = (await workChip(page).innerText()).trim()
+  await goHome(page)
+  await renameFromCard(page, from, name)
+  await page.getByRole('button', { name: name.trim(), exact: true }).click()
+  await expect(page).toHaveURL(/#\/c\/[^/]+$/)
+}
+
+export const frameLabel = (page: Page, label: string) =>
+  page.getByRole('img', { name: label, exact: true })
+
+export async function addFrame(page: Page, size = '10×15 cm'): Promise<void> {
+  await page.getByRole('button', { name: 'Adicionar frame', exact: true }).click()
+  await page.getByRole('button', { name: size, exact: true }).click()
+}
+
+/** In the editor: one 10×15 frame with one photo on it. */
+export async function frameWithPhoto(page: Page): Promise<void> {
+  await uploadPhotos(page, [await makeJpeg(page, 400, 600, '#a8552f')])
+  const photo = page.getByRole('button', { name: 'Colocar foto-1.jpg no frame' })
+  await expect(photo).toBeVisible()
+  await addFrame(page)
+  await photo.click()
+  await expect(frameLabel(page, 'Frame 1 de 1').locator('img')).toHaveCount(1)
+}
+
+/** Saves the open collection to a .collage file through the editor's menu. */
+export async function exportCollection(page: Page): Promise<Download> {
+  await page.getByRole('button', { name: 'Mais opções', exact: true }).click()
+  await page.getByRole('button', { name: 'Salvar em arquivo', exact: true }).click()
+  const downloading = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Baixar arquivo', exact: true }).click()
+  return downloading
 }

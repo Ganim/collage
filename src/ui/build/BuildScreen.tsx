@@ -3,7 +3,6 @@ import { useEditor } from '../../state/editor'
 import { ActionBar } from '../edit/ActionBar'
 import { ZoomSlider } from '../edit/ZoomSlider'
 import { t } from '../i18n'
-import { CollectionsScreen } from '../library/CollectionsScreen'
 import { MoreMenu } from '../library/MoreMenu'
 import { SizesScreen } from '../library/SizesScreen'
 import { Carousel } from './Carousel'
@@ -14,7 +13,12 @@ import { SizeSheet } from './SizeSheet'
 
 const NOTICE_MS = 6000
 
-export function BuildScreen({ onDownload }: { onDownload: () => void }) {
+interface BuildScreenProps {
+  onCollections: () => void
+  onDownload: () => void
+}
+
+export function BuildScreen({ onCollections, onDownload }: BuildScreenProps) {
   const hasFrames = useEditor((s) => s.collection.frames.length > 0)
   const addPhotos = useEditor((s) => s.addPhotos)
   const tapPhoto = useEditor((s) => s.tapPhoto)
@@ -23,9 +27,7 @@ export function BuildScreen({ onDownload }: { onDownload: () => void }) {
   const replacing = useEditor((s) => s.replacing)
   const selectedId = useEditor((s) => s.selectedLayerId)
   const selectLayer = useEditor((s) => s.selectLayer)
-  const [sheet, setSheet] = useState<'change' | 'new' | 'more' | 'collections' | 'sizes' | null>(
-    null,
-  )
+  const [sheet, setSheet] = useState<'change' | 'new' | 'more' | 'sizes' | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [importing, setImporting] = useState(false)
 
@@ -64,7 +66,7 @@ export function BuildScreen({ onDownload }: { onDownload: () => void }) {
     <>
       <Header
         onSizeClick={() => setSheet('change')}
-        onCollections={() => setSheet('collections')}
+        onCollections={onCollections}
         onMore={() => setSheet('more')}
         onDownload={onDownload}
       />
@@ -123,11 +125,10 @@ export function BuildScreen({ onDownload }: { onDownload: () => void }) {
       {sheet === 'more' && (
         <MoreMenu
           onClose={() => setSheet(null)}
-          onCollections={() => setSheet('collections')}
+          onCollections={onCollections}
           onSizes={() => setSheet('sizes')}
         />
       )}
-      {sheet === 'collections' && <CollectionsScreen onClose={() => setSheet(null)} />}
       {sheet === 'sizes' && <SizesScreen onClose={() => setSheet(null)} />}
     </>
   )

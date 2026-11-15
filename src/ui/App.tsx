@@ -1,21 +1,21 @@
 import { useEffect, useState } from 'react'
 import { getEditorState, useEditor } from '../state/editor'
 import { requestPersistentStorage } from '../storage/persist'
+import type { Account } from './account/account'
 import { useAccount } from './account/useAccount'
 import { BuildScreen } from './build/BuildScreen'
+import { HomeScreen } from './home/HomeScreen'
 import { t } from './i18n'
-import { EmptyCollectionsIllustration } from './illustrations'
 import { InstallHint } from './install/InstallHint'
-import { CollectionsScreen } from './library/CollectionsScreen'
 import { useRoute, type Route } from './router'
 import { SheetScreen } from './sheet/SheetScreen'
 import { StartScreen } from './start/StartScreen'
 
 export function App() {
-  const { status } = useAccount()
+  const { status, account, signOut } = useAccount()
 
   if (status === 'checking') return <main className="app" aria-busy="true" />
-  if (status === 'out') {
+  if (status === 'out' || !account) {
     return (
       <main className="app">
         <StartScreen />
@@ -23,23 +23,22 @@ export function App() {
       </main>
     )
   }
-  return <Workspace />
+  return <Workspace account={account} onSignOut={() => void signOut()} />
 }
 
 const collectionId = (r: Route) => (r.name === 'editor' || r.name === 'share' ? r.id : null)
 
-function Workspace() {
+function Workspace({ account, onSignOut }: { account: Account; onSignOut: () => void }) {
   const bootstrap = useEditor((s) => s.bootstrap)
   const openCollection = useEditor((s) => s.openCollection)
   const exitEdit = useEditor((s) => s.exitEdit)
   const saveStatus = useEditor((s) => s.saveStatus)
   const loadFailed = useEditor((s) => s.loadFailed)
+  const currentId = useEditor((s) => s.collection.id)
   const [route, navigate] = useRoute()
   // Until sizes and folders are in, the screens would flash empty on every visit.
   const [ready, setReady] = useState(false)
-  /** While the list is open from the failure screen: the id that was open before it. */
-  const [recovering, setRecovering] = useState<string | null>(null)
-  /** The collection the route names, once it is the one open in the editor. */
+  /** The collection the route names, once it was opened in the editor. */
   const [openedId, setOpenedId] = useState<string | null>(null)
   /** A collection the route names whose reading failed (not a missing one). */
   const [openFailedId, setOpenFailedId] = useState<string | null>(null)
@@ -49,6 +48,8 @@ function Workspace() {
   if (saveStatus === 'saved' && saveFailed) setSaveFailed(false)
 
   const wantedId = collectionId(route)
+  // Deleted from the list, or another one opened since: it has to be opened again.
+  const shownId = openedId === currentId ? openedId : null
 
   useEffect(() => {
     void requestPersistentStorage()
@@ -58,7 +59,7 @@ function Workspace() {
   }, [bootstrap, navigate])
 
   useEffect(() => {
-    if (!ready || loadFailed || !wantedId || wantedId === openedId || wantedId === openFailedId) {
+    if (!ready || loadFailed || !wantedId || wantedId === shownId || wantedId === openFailedId) {
       return
     }
     let current = true
@@ -81,7 +82,7 @@ function Workspace() {
     return () => {
       current = false
     }
-  }, [ready, loadFailed, wantedId, openedId, openFailedId, openCollection, navigate])
+  }, [ready, loadFailed, wantedId, shownId, openFailedId, openCollection, navigate])
 
   const retry = () => {
     // Hidden while it reads, or a retry would flash the screens behind.
@@ -97,13 +98,22 @@ function Workspace() {
     navigate({ name: 'editor', id })
   }
 
-  const failed = loadFailed || (wantedId !== null && wantedId === openFailedId)
+  // On the list, a failed reading shows in the list itself, with its own retry.
+  const failed = wantedId !== null && (loadFailed || wantedId === openFailedId)
 
   let screen = null
   if (ready && !failed) {
     if (!wantedId) {
-      screen = <CollectionsPlaceholder onCreated={showOpened} />
-    } else if (wantedId === openedId) {
+      screen = (
+        <HomeScreen
+          tab={route.name === 'mouldings' || route.name === 'frames' ? route.name : 'collections'}
+          account={account}
+          onSignOut={onSignOut}
+          onOpened={showOpened}
+          onOpen={(id) => navigate({ name: 'editor', id })}
+        />
+      )
+    } else if (wantedId === shownId) {
       screen =
         route.name === 'share' ? (
           <SheetScreen
@@ -111,6 +121,7 @@ function Workspace() {
           />
         ) : (
           <BuildScreen
+            onCollections={() => navigate({ name: 'collections' })}
             onDownload={() => {
               exitEdit()
               navigate({ name: 'share', id: wantedId })
@@ -137,60 +148,18 @@ function Workspace() {
           <button
             type="button"
             className="load-others"
-            onClick={() => setRecovering(getEditorState().collection.id)}
+            onClick={() => {
+              // Picking the same one again from the list tries to read it again.
+              setOpenFailedId(null)
+              navigate({ name: 'collections' })
+            }}
           >
             {t('load.others')}
           </button>
-          {recovering !== null && (
-            <CollectionsScreen
-              recovering
-              onClose={() => {
-                setRecovering(null)
-                // Closing the list without picking anything leaves the failure on screen.
-                const { collection } = getEditorState()
-                if (collection.id !== recovering) showOpened(collection.id)
-              }}
-            />
-          )}
         </div>
       )}
       {screen}
       {ready && <InstallHint />}
     </main>
-  )
-}
-
-/** Stands in for the collections screen until it is built; its button keeps the same name. */
-function CollectionsPlaceholder({ onCreated }: { onCreated: (id: string) => void }) {
-  const newCollection = useEditor((s) => s.newCollection)
-  const [busy, setBusy] = useState(false)
-  const [failed, setFailed] = useState(false)
-
-  const create = async () => {
-    setBusy(true)
-    setFailed(false)
-    try {
-      onCreated(await newCollection())
-    } catch (e) {
-      console.error(e)
-      setFailed(true)
-      setBusy(false)
-    }
-  }
-
-  return (
-    <div className="empty-stage collections-placeholder">
-      <EmptyCollectionsIllustration />
-      <h1>{t('library.title')}</h1>
-      {failed && <p role="alert">{t('library.newFailed')}</p>}
-      <button
-        type="button"
-        className="primary-button"
-        disabled={busy}
-        onClick={() => void create()}
-      >
-        {t('library.new')}
-      </button>
-    </div>
   )
 }

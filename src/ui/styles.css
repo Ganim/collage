@@ -959,24 +959,6 @@ p {
   color: var(--plum-500);
 }
 
-.library-name {
-  display: grid;
-  gap: 4px;
-  font-size: 13px;
-  color: var(--plum-500);
-}
-
-.library-name input {
-  min-height: var(--touch);
-  padding: 0 10px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-field);
-  background: #fff;
-  color: var(--plum-900);
-  /* Below 16px, iOS zooms the page on focus. */
-  font-size: 16px;
-}
-
 .library-list {
   margin-top: 10px;
 }
@@ -999,20 +981,9 @@ p {
   text-align: left;
 }
 
-.library-info[aria-current='true'] span {
-  color: var(--fuchsia-700);
-  font-weight: 700;
-}
-
 .library-info small {
   color: var(--plum-500);
   font-size: 13px;
-}
-
-.library-armed {
-  background: var(--warning-bg);
-  color: var(--warning-ink);
-  border-radius: var(--radius-field);
 }
 
 .library-empty {
@@ -1023,30 +994,6 @@ p {
   margin: 12px 0 0;
   color: var(--warning-ink);
   font-size: 14px;
-}
-
-.library-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 14px;
-}
-
-.library-import {
-  position: relative;
-  cursor: pointer;
-}
-
-.library-import input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  opacity: 0;
-}
-
-.library-import:focus-within {
-  outline: 2px solid var(--fuchsia-600);
-  outline-offset: 2px;
 }
 
 /* Install suggestion */
