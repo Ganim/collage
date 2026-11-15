@@ -250,6 +250,47 @@ describe('error mapping', () => {
     await expect(drive.list('F')).rejects.toMatchObject({ kind: 'other' })
   })
 
+  it('maps a 403 insufficientPermissions (Drive left unchecked) to revoked', async () => {
+    const { drive } = setup(() =>
+      json(403, {
+        error: {
+          code: 403,
+          message: 'Request had insufficient authentication scopes.',
+          errors: [{ reason: 'insufficientPermissions' }],
+          status: 'PERMISSION_DENIED',
+        },
+      }),
+    )
+    await expect(drive.list('F')).rejects.toMatchObject({ kind: 'revoked', status: 403 })
+  })
+
+  it('maps a 403 ACCESS_TOKEN_SCOPE_INSUFFICIENT detail to revoked', async () => {
+    const { drive } = setup(() =>
+      json(403, {
+        error: {
+          code: 403,
+          status: 'PERMISSION_DENIED',
+          details: [
+            {
+              '@type': 'type.googleapis.com/google.rpc.ErrorInfo',
+              reason: 'ACCESS_TOKEN_SCOPE_INSUFFICIENT',
+            },
+          ],
+        },
+      }),
+    )
+    await expect(drive.ensureFolder()).rejects.toMatchObject({ kind: 'revoked' })
+  })
+
+  it('keeps the reason of a Drive error', async () => {
+    const { drive } = setup(() => json(403, { error: { errors: [{ reason: 'forbidden' }] } }))
+    await expect(drive.download('x')).rejects.toMatchObject({
+      kind: 'other',
+      status: 403,
+      reason: 'forbidden',
+    })
+  })
+
   it('lets a DriveAuthError from getToken through unchanged', async () => {
     const auth = new DriveAuthError('no_drive')
     const { drive, fetchFn } = setup(
@@ -260,5 +301,85 @@ describe('error mapping', () => {
     )
     await expect(drive.list('F')).rejects.toBe(auth)
     expect(fetchFn).not.toHaveBeenCalled()
+  })
+})
+
+describe('timeouts', () => {
+  // A request that never answers until its signal aborts it, as fetch does.
+  const hang = (_url: string, init: RequestInit) =>
+    new Promise<Response>((_resolve, reject) => {
+      init.signal?.addEventListener('abort', () =>
+        reject(new DOMException('The operation was aborted.', 'AbortError')),
+      )
+    })
+
+  it('gives up on a metadata request after 30 s as offline', async () => {
+    vi.useFakeTimers()
+    try {
+      const { drive } = setup(hang)
+      const result = drive.list('F').catch((e: unknown) => e)
+      await vi.advanceTimersByTimeAsync(29_999)
+      let settled = false
+      void result.then(() => (settled = true))
+      await vi.advanceTimersByTimeAsync(0)
+      expect(settled).toBe(false)
+      await vi.advanceTimersByTimeAsync(1)
+      const error = await result
+      expect(error).toBeInstanceOf(DriveError)
+      expect(error).toMatchObject({ kind: 'offline' })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('gives up on a download that does not start after 30 s', async () => {
+    vi.useFakeTimers()
+    try {
+      const { drive } = setup(hang)
+      const result = drive.download('X').catch((e: unknown) => e)
+      await vi.advanceTimersByTimeAsync(30_000)
+      expect(await result).toMatchObject({ kind: 'offline' })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('gives the upload PUT 120 s', async () => {
+    vi.useFakeTimers()
+    try {
+      const { drive } = setup((url, init) =>
+        init.method === 'POST'
+          ? new Response(null, { headers: { location: 'https://up.example/s' } })
+          : hang(url, init),
+      )
+      let settled = false
+      const result = drive
+        .create('F', 'n', new Blob(['x']), {})
+        .catch((e: unknown) => e)
+        .finally(() => (settled = true))
+      await vi.advanceTimersByTimeAsync(119_000)
+      expect(settled).toBe(false)
+      await vi.advanceTimersByTimeAsync(1_000)
+      expect(await result).toMatchObject({ kind: 'offline' })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('a request that answers in time is not aborted later', async () => {
+    vi.useFakeTimers()
+    try {
+      const signals: AbortSignal[] = []
+      const { drive } = setup((_u, init) => {
+        signals.push(init.signal!)
+        return new Response('bytes')
+      })
+      const blob = await drive.download('X')
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(signals[0]!.aborted).toBe(false)
+      expect(await blob.text()).toBe('bytes')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

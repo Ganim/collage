@@ -33,6 +33,8 @@ export class DriveError extends Error {
     message: string,
     /** The HTTP status, when the Drive answered with an error. */
     readonly status?: number,
+    /** The first reason Google gave for the error (e.g. `forbidden`), when it gave one. */
+    readonly reason?: string,
   ) {
     super(message)
     this.name = 'DriveError'
@@ -60,15 +62,29 @@ function toRemoteFile(raw: RawFile): RemoteFile {
   }
 }
 
-async function isQuotaError(response: Response): Promise<boolean> {
-  if (response.status !== 403 && response.status !== 429) return false
+/** Each request gives up after this long without an answer; a timeout counts as offline. */
+const TIMEOUT_MS = 30_000
+const UPLOAD_TIMEOUT_MS = 120_000
+
+/** Reasons that mean the token lacks the Drive permission (left unchecked on the consent screen). */
+const SCOPE_REASONS = new Set(['insufficientPermissions', 'ACCESS_TOKEN_SCOPE_INSUFFICIENT'])
+
+/** The reasons Google put in an error answer, in `error.errors[]` and `error.details[]`. */
+async function errorReasons(response: Response): Promise<string[]> {
   try {
     const body = (await response.clone().json()) as {
-      error?: { errors?: { reason?: unknown }[] }
+      error?: {
+        status?: unknown
+        errors?: { reason?: unknown }[]
+        details?: { reason?: unknown }[]
+      }
     }
-    return body.error?.errors?.some((e) => e.reason === 'storageQuotaExceeded') === true
+    const error = body.error
+    return [...(error?.errors ?? []), ...(error?.details ?? []), { reason: error?.status }]
+      .map((e) => e?.reason)
+      .filter((r): r is string => typeof r === 'string')
   } catch {
-    return false
+    return []
   }
 }
 
@@ -85,10 +101,18 @@ export function createDrive(
   async function attempt(url: string, init: RequestInit, token: string): Promise<Response> {
     const headers = new Headers(init.headers)
     headers.set('Authorization', `Bearer ${token}`)
+    // The timer runs until the answer starts: a body being read is never cut.
+    const controller = new AbortController()
+    const timer = setTimeout(
+      () => controller.abort(),
+      init.method === 'PUT' ? UPLOAD_TIMEOUT_MS : TIMEOUT_MS,
+    )
     try {
-      return await fetchFn(url, { ...init, headers })
+      return await fetchFn(url, { ...init, headers, signal: controller.signal })
     } catch {
       throw new DriveError('offline', 'No connection to Google Drive')
+    } finally {
+      clearTimeout(timer)
     }
   }
 
@@ -102,13 +126,16 @@ export function createDrive(
       }
     }
     if (response.ok) return response
-    if (await isQuotaError(response))
-      throw new DriveError('full', 'Google Drive is full', response.status)
-    throw new DriveError(
-      'other',
-      `Google Drive request failed (${response.status})`,
-      response.status,
-    )
+    const { status } = response
+    const reasons = status === 403 || status === 429 ? await errorReasons(response) : []
+    const reason = reasons[0]
+    if (reasons.includes('storageQuotaExceeded')) {
+      throw new DriveError('full', 'Google Drive is full', status, reason)
+    }
+    if (status === 403 && reasons.some((r) => SCOPE_REASONS.has(r))) {
+      throw new DriveError('revoked', 'Google Drive access was not granted', status, reason)
+    }
+    throw new DriveError('other', `Google Drive request failed (${status})`, status, reason)
   }
 
   async function readJson<T>(response: Response): Promise<T> {
