@@ -184,6 +184,14 @@ describe('getDriveToken', () => {
     expect(next).toHaveBeenCalledTimes(1)
   })
 
+  it('force skips a still-valid cached token', async () => {
+    await getDriveToken(ok('t1'))
+    const next = ok('t2')
+    expect((await getDriveToken(next, true)).accessToken).toBe('t2')
+    expect(next).toHaveBeenCalledTimes(1)
+    expect((await getDriveToken(ok('t3'))).accessToken).toBe('t2')
+  })
+
   it('clearDriveToken forces a new request, and signOut clears it', async () => {
     await getDriveToken(ok('t1'))
     clearDriveToken()

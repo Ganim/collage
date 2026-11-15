@@ -147,9 +147,14 @@ export function clearDriveToken(): void {
  * A short-lived Drive access token from the service, kept in memory only. Throws
  * {@link DriveAuthError} when the person must act, and a plain Error for anything else
  * (no connection, Google down), which callers treat as "try again later".
+ * `force` skips the cache.
  */
-export async function getDriveToken(fetchFn: typeof fetch = fetch): Promise<DriveToken> {
-  if (driveToken && driveToken.expiresAt - EXPIRY_MARGIN_MS > Date.now()) return driveToken
+export async function getDriveToken(
+  fetchFn: typeof fetch = fetch,
+  force = false,
+): Promise<DriveToken> {
+  if (!force && driveToken && driveToken.expiresAt - EXPIRY_MARGIN_MS > Date.now())
+    return driveToken
   const response = await fetchFn('/api/auth/drive-token', {
     method: 'POST',
     cache: 'no-store',
