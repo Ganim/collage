@@ -1,7 +1,13 @@
 import type { Plugin } from 'vite'
 
 const COOKIE = 'collage_session'
-const PROFILE = { email: 'teste@exemplo.com', name: 'Conta de teste', picture: null }
+const PROFILE = {
+  id: 'dev-user',
+  drive: true,
+  email: 'teste@exemplo.com',
+  name: 'Conta de teste',
+  picture: null,
+}
 
 // Stands in for the collage-auth service in `npm run dev`: same routes, fake account.
 export function authMock(): Plugin {
@@ -11,7 +17,9 @@ export function authMock(): Plugin {
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
         const path = (req.url ?? '').split('?')[0]
-        const signedIn = (req.headers.cookie ?? '').split(';').some((c) => c.trim() === `${COOKIE}=dev`)
+        const signedIn = (req.headers.cookie ?? '')
+          .split(';')
+          .some((c) => c.trim() === `${COOKIE}=dev`)
 
         if (req.method === 'GET' && path === '/api/auth/google/start') {
           res.writeHead(302, { location: '/api/auth/google/callback' })
@@ -33,8 +41,19 @@ export function authMock(): Plugin {
           res.setHeader('content-type', 'application/json')
           return res.end(JSON.stringify(PROFILE))
         }
+        if (req.method === 'POST' && path === '/api/auth/drive-token') {
+          res.setHeader('cache-control', 'no-store')
+          if (!signedIn) {
+            res.statusCode = 401
+            return res.end()
+          }
+          res.setHeader('content-type', 'application/json')
+          return res.end(JSON.stringify({ accessToken: 'dev', expiresIn: 3600 }))
+        }
         if (req.method === 'POST' && path === '/api/auth/logout') {
-          res.writeHead(204, { 'set-cookie': `${COOKIE}=; Path=/api; HttpOnly; SameSite=Lax; Max-Age=0` })
+          res.writeHead(204, {
+            'set-cookie': `${COOKIE}=; Path=/api; HttpOnly; SameSite=Lax; Max-Age=0`,
+          })
           return res.end()
         }
         next()

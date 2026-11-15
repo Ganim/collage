@@ -3,7 +3,7 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:
 import { createServer } from 'node:http'
 import { pathToFileURL } from 'node:url'
 
-const SCOPES = 'openid email profile'
+const SCOPES = 'openid email profile https://www.googleapis.com/auth/drive.file'
 const YEAR = 365 * 24 * 60 * 60
 const ERROR_PAGE = '/#/entrar?erro=1'
 
@@ -51,9 +51,7 @@ export function createHandler({ clientId, clientSecret, cookieKey, publicOrigin,
       authTagLength: TAG_BYTES,
     })
     d.setAuthTag(raw.subarray(IV_BYTES, IV_BYTES + TAG_BYTES))
-    return Buffer.concat([d.update(raw.subarray(IV_BYTES + TAG_BYTES)), d.final()]).toString(
-      'utf8',
-    )
+    return Buffer.concat([d.update(raw.subarray(IV_BYTES + TAG_BYTES)), d.final()]).toString('utf8')
   }
 
   const cookies = (req) =>
@@ -81,7 +79,8 @@ export function createHandler({ clientId, clientSecret, cookieKey, publicOrigin,
       redirect_uri: redirectUri,
       response_type: 'code',
       scope: SCOPES,
-      prompt: 'select_account',
+      access_type: 'offline',
+      prompt: 'consent select_account',
       state,
       code_challenge: b64url(createHash('sha256').update(verifier).digest()),
       code_challenge_method: 'S256',
@@ -107,7 +106,7 @@ export function createHandler({ clientId, clientSecret, cookieKey, publicOrigin,
       }),
     })
     if (!r.ok) throw new AuthFailure(`token endpoint answered ${r.status}`)
-    const { id_token: idToken } = await r.json()
+    const { id_token: idToken, refresh_token: newRt } = await r.json()
 
     // The token came straight from Google over TLS in answer to our own request, so
     // reading its payload without checking the signature is acceptable here.
@@ -116,22 +115,78 @@ export function createHandler({ clientId, clientSecret, cookieKey, publicOrigin,
     if (claims.email_verified !== true) throw new AuthFailure('email not verified')
 
     const { sub, email, name, picture } = claims
+    // Google may omit the refresh token on a repeat grant: keep ours if it is the same account.
+    const previous = readSession(req)
+    const keep = newRt ? newRt : previous?.sub === sub ? previous.rt : undefined
     redirect(res, '/#/colecoes', [
       cookie('collage_oauth', '', 0),
-      cookie('collage_session', seal(JSON.stringify({ sub, email, name, picture })), YEAR),
+      cookie('collage_session', sealSession({ sub, email, name, picture, rt: keep }), YEAR),
     ])
+  }
+
+  const sealSession = (s) => seal(JSON.stringify({ ...s, iat: Math.floor(Date.now() / 1000) }))
+
+  // The session in the request, or null when absent, malformed or not sealed with our key.
+  function readSession(req) {
+    try {
+      return JSON.parse(open(cookies(req).collage_session ?? ''))
+    } catch {
+      return null
+    }
   }
 
   function me(req, res) {
     const headers = { 'cache-control': 'no-store' }
-    try {
-      const { email, name, picture } = JSON.parse(open(cookies(req).collage_session ?? ''))
-      res.writeHead(200, { ...headers, 'content-type': 'application/json' })
-      res.end(JSON.stringify({ email, name, picture }))
-    } catch {
+    const session = readSession(req)
+    if (!session) {
       res.writeHead(401, headers)
-      res.end()
+      return res.end()
     }
+    const { sub, email, name, picture, rt } = session
+    // Sliding renewal: every visit re-seals the session with the current time.
+    res.writeHead(200, {
+      ...headers,
+      'content-type': 'application/json',
+      'set-cookie': cookie('collage_session', sealSession({ sub, email, name, picture, rt }), YEAR),
+    })
+    res.end(JSON.stringify({ id: sub, email, name, picture, drive: Boolean(rt) }))
+  }
+
+  // Trades the refresh token kept in the session for a short-lived Drive access token.
+  async function driveToken(req, res) {
+    const headers = { 'cache-control': 'no-store', 'content-type': 'application/json' }
+    const send = (status, body) => {
+      res.writeHead(status, headers)
+      res.end(JSON.stringify(body))
+    }
+    const session = readSession(req)
+    if (!session) return send(401, { error: 'no_session' })
+    if (!session.rt) return send(403, { error: 'no_drive' })
+
+    let r
+    let body
+    try {
+      r = await fetch('https://oauth2.googleapis.com/token', {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          client_id: clientId,
+          client_secret: clientSecret,
+          grant_type: 'refresh_token',
+          refresh_token: session.rt,
+        }),
+      })
+      body = await r.json()
+    } catch {
+      console.error('/api/auth/drive-token', 'token endpoint unreachable or unreadable')
+      return send(502, { error: 'google' })
+    }
+    if (r.status === 400 && body?.error === 'invalid_grant') return send(403, { error: 'revoked' })
+    if (!r.ok || typeof body?.access_token !== 'string') {
+      console.error('/api/auth/drive-token', `token endpoint answered ${r.status}`)
+      return send(502, { error: 'google' })
+    }
+    send(200, { accessToken: body.access_token, expiresIn: Number(body.expires_in) })
   }
 
   function logout(res) {
@@ -151,6 +206,9 @@ export function createHandler({ clientId, clientSecret, cookieKey, publicOrigin,
         return await callback(req, res, url)
       }
       if (req.method === 'GET' && url.pathname === '/api/auth/me') return me(req, res)
+      if (req.method === 'POST' && url.pathname === '/api/auth/drive-token') {
+        return await driveToken(req, res)
+      }
       if (req.method === 'POST' && url.pathname === '/api/auth/logout') return logout(res)
       res.writeHead(404)
       res.end()

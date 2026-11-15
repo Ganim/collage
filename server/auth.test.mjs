@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { createCipheriv, randomBytes } from 'node:crypto'
 import { createServer } from 'node:http'
 import { after, before, describe, it, mock } from 'node:test'
 import { createHandler, readConfig } from './auth.mjs'
@@ -19,14 +20,26 @@ const profile = {
   picture: 'https://example.com/ana.png',
 }
 
-function setup(googleClaims, { tokenStatus = 200, tokenError } = {}) {
+function setup(
+  googleClaims,
+  { tokenStatus = 200, tokenError, refreshToken, refreshStatus = 200, refreshBody } = {},
+) {
   const googleCalls = []
-  const fakeFetch = async (url, init) => {
-    googleCalls.push({ url: String(url), body: String(init?.body ?? '') })
-    if (tokenError) throw tokenError
-    return new Response(JSON.stringify({ id_token: idToken({ aud: CLIENT_ID, ...googleClaims }) }), {
-      status: tokenStatus,
+  const json = (status, body) =>
+    new Response(JSON.stringify(body), {
+      status,
       headers: { 'content-type': 'application/json' },
+    })
+  const fakeFetch = async (url, init) => {
+    const body = String(init?.body ?? '')
+    googleCalls.push({ url: String(url), body })
+    if (tokenError) throw tokenError
+    if (body.includes('grant_type=refresh_token')) {
+      return json(refreshStatus, refreshBody ?? { access_token: 'access-1', expires_in: 3599 })
+    }
+    return json(tokenStatus, {
+      id_token: idToken({ aud: CLIENT_ID, ...googleClaims }),
+      ...(refreshToken ? { refresh_token: refreshToken } : {}),
     })
   }
   const handler = createHandler({
@@ -55,8 +68,7 @@ describe('collage auth', () => {
   after(() => server.close())
 
   const call = (path, init = {}) => fetch(base + path, { redirect: 'manual', ...init })
-  const cookiePair = (res, name) =>
-    res.headers.getSetCookie().find((c) => c.startsWith(`${name}=`))
+  const cookiePair = (res, name) => res.headers.getSetCookie().find((c) => c.startsWith(`${name}=`))
   const pairOnly = (setCookie) => setCookie.split(';')[0]
 
   async function startFlow() {
@@ -69,12 +81,16 @@ describe('collage auth', () => {
     current = setup(profile)
     const { res, location } = await startFlow()
     assert.equal(res.status, 302)
-    assert.equal(location.origin + location.pathname, 'https://accounts.google.com/o/oauth2/v2/auth')
+    assert.equal(
+      location.origin + location.pathname,
+      'https://accounts.google.com/o/oauth2/v2/auth',
+    )
     const q = location.searchParams
     assert.equal(q.get('client_id'), CLIENT_ID)
     assert.equal(q.get('redirect_uri'), `${ORIGIN}/api/auth/google/callback`)
-    assert.equal(q.get('scope'), 'openid email profile')
-    assert.equal(q.get('prompt'), 'select_account')
+    assert.equal(q.get('scope'), 'openid email profile https://www.googleapis.com/auth/drive.file')
+    assert.equal(q.get('access_type'), 'offline')
+    assert.equal(q.get('prompt'), 'consent select_account')
     assert.equal(q.get('code_challenge_method'), 'S256')
     assert.ok(q.get('code_challenge'))
     assert.ok(q.get('state'))
@@ -119,9 +135,11 @@ describe('collage auth', () => {
     assert.equal(me.status, 200)
     assert.equal(me.headers.get('cache-control'), 'no-store')
     assert.deepEqual(await me.json(), {
+      id: '42',
       email: 'ana@example.com',
       name: 'Ana',
       picture: 'https://example.com/ana.png',
+      drive: false,
     })
   })
 
@@ -229,6 +247,175 @@ describe('collage auth', () => {
     const set = cookiePair(res, 'collage_session')
     assert.match(set, /Max-Age=0/)
     assert.match(set, /Path=\/api/)
+  })
+})
+
+describe('collage auth: Drive access', () => {
+  let server
+  let base
+  let current
+  let logged
+
+  before(async () => {
+    logged = mock.method(console, 'error', () => {})
+    server = createServer((req, res) => current.handler(req, res))
+    await new Promise((r) => server.listen(0, '127.0.0.1', r))
+    base = `http://127.0.0.1:${server.address().port}`
+  })
+  after(() => server.close())
+
+  const call = (path, init = {}) => fetch(base + path, { redirect: 'manual', ...init })
+  const sessionPair = (res) =>
+    res.headers
+      .getSetCookie()
+      .find((c) => c.startsWith('collage_session='))
+      ?.split(';')[0]
+
+  // Runs the whole sign-in and returns the session cookie pair.
+  async function signIn(options, claims = profile, cookie) {
+    current = setup(claims, options)
+    const start = await call('/api/auth/google/start')
+    const state = new URL(start.headers.get('location')).searchParams.get('state')
+    const oauth = start.headers
+      .getSetCookie()
+      .find((c) => c.startsWith('collage_oauth='))
+      .split(';')[0]
+    const res = await call(`/api/auth/google/callback?code=abc&state=${state}`, {
+      headers: { cookie: cookie ? `${oauth}; ${cookie}` : oauth },
+    })
+    return sessionPair(res)
+  }
+
+  const driveToken = (session) =>
+    call('/api/auth/drive-token', {
+      method: 'POST',
+      headers: session ? { cookie: session } : {},
+    })
+
+  it('callback keeps the refresh token in the session and me reports drive: true', async () => {
+    const session = await signIn({ refreshToken: 'rt-secret' })
+    const me = await call('/api/auth/me', { headers: { cookie: session } })
+    const body = await me.json()
+    assert.equal(body.drive, true)
+    assert.equal(body.id, '42')
+    assert.ok(!JSON.stringify(body).includes('rt-secret'))
+    assert.ok(!session.includes('rt-secret'), 'cookie must be sealed')
+  })
+
+  it('callback keeps the old refresh token when Google sends none for the same account', async () => {
+    const first = await signIn({ refreshToken: 'rt-old' })
+    const second = await signIn({}, profile, first)
+    const res = await driveToken(second)
+    assert.equal(res.status, 200)
+    assert.equal(
+      new URLSearchParams(current.googleCalls.at(-1).body).get('refresh_token'),
+      'rt-old',
+    )
+  })
+
+  it('callback does not carry the old refresh token over to another account', async () => {
+    const first = await signIn({ refreshToken: 'rt-old' })
+    const second = await signIn({}, { ...profile, sub: '99' }, first)
+    const me = await call('/api/auth/me', { headers: { cookie: second } })
+    assert.equal((await me.json()).drive, false)
+  })
+
+  it('me renews the cookie with a year of life', async () => {
+    const session = await signIn({ refreshToken: 'rt-secret' })
+    const me = await call('/api/auth/me', { headers: { cookie: session } })
+    const set = me.headers.getSetCookie().find((c) => c.startsWith('collage_session='))
+    assert.match(set, new RegExp(`Max-Age=${365 * 24 * 60 * 60}`))
+    assert.match(set, /HttpOnly/)
+    assert.match(set, /Secure/)
+    const again = await call('/api/auth/me', { headers: { cookie: set.split(';')[0] } })
+    assert.equal((await again.json()).drive, true)
+  })
+
+  it('me still accepts a session sealed before Drive access existed', async () => {
+    const iv = randomBytes(12)
+    const c = createCipheriv('aes-256-gcm', Buffer.alloc(32, 7), iv)
+    const text = JSON.stringify({ sub: '42', email: 'ana@example.com', name: 'Ana', picture: null })
+    const body = Buffer.concat([c.update(text, 'utf8'), c.final()])
+    const old = Buffer.concat([iv, c.getAuthTag(), body]).toString('base64url')
+    current = setup(profile)
+    const me = await call('/api/auth/me', { headers: { cookie: `collage_session=${old}` } })
+    assert.equal(me.status, 200)
+    assert.deepEqual(await me.json(), {
+      id: '42',
+      email: 'ana@example.com',
+      name: 'Ana',
+      picture: null,
+      drive: false,
+    })
+    assert.ok(me.headers.getSetCookie().some((s) => s.startsWith('collage_session=')))
+  })
+
+  it('drive-token exchanges the refresh token for an access token', async () => {
+    const session = await signIn({ refreshToken: 'rt-secret' })
+    const res = await driveToken(session)
+    assert.equal(res.status, 200)
+    assert.equal(res.headers.get('cache-control'), 'no-store')
+    assert.deepEqual(await res.json(), { accessToken: 'access-1', expiresIn: 3599 })
+    const sent = current.googleCalls.at(-1)
+    assert.equal(sent.url, 'https://oauth2.googleapis.com/token')
+    const form = new URLSearchParams(sent.body)
+    assert.equal(form.get('grant_type'), 'refresh_token')
+    assert.equal(form.get('refresh_token'), 'rt-secret')
+    assert.equal(form.get('client_id'), CLIENT_ID)
+    assert.equal(form.get('client_secret'), 'secret')
+  })
+
+  it('drive-token without a cookie is 401', async () => {
+    current = setup(profile)
+    assert.equal((await driveToken()).status, 401)
+  })
+
+  it('drive-token without a refresh token is 403 no_drive', async () => {
+    const session = await signIn({})
+    const res = await driveToken(session)
+    assert.equal(res.status, 403)
+    assert.deepEqual(await res.json(), { error: 'no_drive' })
+  })
+
+  it('drive-token answers 403 revoked when Google says invalid_grant', async () => {
+    const session = await signIn({
+      refreshToken: 'rt-secret',
+      refreshStatus: 400,
+      refreshBody: { error: 'invalid_grant' },
+    })
+    const res = await driveToken(session)
+    assert.equal(res.status, 403)
+    assert.deepEqual(await res.json(), { error: 'revoked' })
+  })
+
+  it('drive-token answers 502 for any other Google failure', async () => {
+    const session = await signIn({
+      refreshToken: 'rt-secret',
+      refreshStatus: 500,
+      refreshBody: { error: 'backend_error' },
+    })
+    assert.equal((await driveToken(session)).status, 502)
+  })
+
+  it('never logs a token', async () => {
+    logged.mock.resetCalls()
+    const revoked = await signIn({
+      refreshToken: 'rt-secret',
+      refreshStatus: 400,
+      refreshBody: { error: 'invalid_grant', error_description: 'rt-secret access-1' },
+    })
+    await driveToken(revoked)
+    const failing = await signIn({
+      refreshToken: 'rt-secret',
+      refreshStatus: 500,
+      refreshBody: { error: 'rt-secret access-1' },
+    })
+    await driveToken(failing)
+    assert.ok(logged.mock.calls.length > 0)
+    for (const c of logged.mock.calls) {
+      const line = c.arguments.map(String).join(' ')
+      assert.ok(!line.includes('rt-secret') && !line.includes('access-1'), line)
+    }
   })
 })
 
