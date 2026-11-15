@@ -32,13 +32,6 @@ export interface SyncState {
   dirty: boolean
 }
 
-/** The stored version an edited collection started from. */
-export interface SaveBase {
-  remoteVersion: string | undefined
-  /** The stored collection's updatedAt: this device's own uploads change the remote version only. */
-  updatedAt: number
-}
-
 export type SaveOutcome = 'saved' | { conflictCopyId: string }
 
 /** A local deletion the sync has yet to carry to the Drive. */
@@ -59,13 +52,13 @@ export interface Store {
   /**
    * Also marks it dirty; an unowned collection goes to the current owner.
    *
-   * With `base` (what the editor's copy was read from), a save whose base is out of date because a
-   * Drive version was pulled meanwhile (the stored remote version and content both differ from
-   * the base) keeps that pulled version as a new collection named with the conflict suffix,
-   * then saves `c` over the original, dirty and with the current remote version, in one
-   * transaction. Resolves to the copy's id then, else to 'saved'.
+   * With `baseUpdatedAt` (the updatedAt of the stored version the edit started from): when the
+   * stored collection's updatedAt differs, something else (a pull) wrote it meanwhile. That
+   * version is then kept as a new collection named with the conflict suffix, and `c` is saved
+   * over the original, dirty and with its current remote version, in one transaction. Resolves
+   * to the copy's id then, else to 'saved'. This device's own uploads never change updatedAt.
    */
-  saveCollection(c: Collection, options?: { base?: SaveBase }): Promise<SaveOutcome>
+  saveCollection(c: Collection, options?: { baseUpdatedAt?: number }): Promise<SaveOutcome>
   /**
    * Atomically writes the collection and its photos; never overwrites a photo that already exists.
    * Marks the collection dirty like saveCollection.

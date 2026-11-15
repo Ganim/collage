@@ -280,7 +280,7 @@ describe('saving against a base version', () => {
     const c = await pulled()
     const outcome = await store.saveCollection(
       { ...c, name: 'Mine', updatedAt: 2000 },
-      { base: { remoteVersion: '1', updatedAt: c.updatedAt } },
+      { baseUpdatedAt: c.updatedAt },
     )
     expect(outcome).toBe('saved')
     expect(await ids()).toEqual(['c1'])
@@ -293,7 +293,7 @@ describe('saving against a base version', () => {
     await store.markPushed('c1', 2000, 'file1', '2')
     const outcome = await store.saveCollection(
       { ...c, name: 'Mine', updatedAt: 3000 },
-      { base: { remoteVersion: '1', updatedAt: 2000 } },
+      { baseUpdatedAt: 2000 },
     )
     expect(outcome).toBe('saved')
     expect(await ids()).toEqual(['c1'])
@@ -307,7 +307,7 @@ describe('saving against a base version', () => {
     )
     const outcome = await store.saveCollection(
       { ...c, name: 'Mine', updatedAt: 2000 },
-      { base: { remoteVersion: '1', updatedAt: c.updatedAt } },
+      { baseUpdatedAt: c.updatedAt },
     )
     expect(outcome).toEqual({ conflictCopyId: expect.any(String) })
     const copyId = (outcome as { conflictCopyId: string }).conflictCopyId

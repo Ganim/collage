@@ -214,15 +214,10 @@ export async function createIdbStore(
         const collections = tx.objectStore('collections')
         const sync = tx.objectStore('sync')
         const meta = tx.objectStore('meta')
-        const base = options?.base
-        if (base) {
-          const [state, stored] = await Promise.all([sync.get(c.id), collections.get(c.id)])
-          if (
-            state &&
-            stored &&
-            state.remoteVersion !== base.remoteVersion &&
-            stored.updatedAt !== base.updatedAt
-          ) {
+        const baseUpdatedAt = options?.baseUpdatedAt
+        if (baseUpdatedAt !== undefined) {
+          const stored = await collections.get(c.id)
+          if (stored && stored.updatedAt !== baseUpdatedAt) {
             // A pulled version landed after this edit began: it is kept, not overwritten.
             const copy: Collection = {
               ...stored,

@@ -1086,6 +1086,25 @@ describe('an edit based on an older version', () => {
     expect(await names()).toEqual(['Mine'])
   })
 
+  it('a pull that lands while the collection is being opened is kept as a copy', async () => {
+    await store.setOwner({ id: 'ana', email: 'ana@example.com' })
+    await store.putRemoteCollection(pulledCollection('Original', 1000), remote('1'))
+    const editor = createEditorStore(store)
+    await editor.getState().bootstrap()
+    // The pull lands right after the editor read the collection, before anything else it reads.
+    const read = store.getCollection.bind(store)
+    vi.spyOn(store, 'getCollection').mockImplementationOnce(async (id) => {
+      const c = await read(id)
+      await store.putRemoteCollection(pulledCollection('Theirs', 1500), remote('2'))
+      return c
+    })
+    expect(await editor.getState().openCollection('c1')).toBe(true)
+    expect(editor.getState().collection.name).toBe('Original')
+    editor.getState().renameCollection('Mine')
+    await advance(500)
+    expect(await names()).toEqual(['Mine', 'Theirs' + SUFFIX])
+  })
+
   it('an upload of its own does not make the next edit a conflict', async () => {
     const editor = await openPulled()
     editor.getState().renameCollection('Mine')
