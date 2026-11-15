@@ -234,7 +234,16 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
       if (mine && isCollection(theirs, action.id)) {
         if (canonical(theirs) === canonical(mine)) {
           // Same content (an upload whose record never got written): just adopt the file.
-          await store.markPushed(action.id, mine.updatedAt, action.fileId, action.version)
+          // The Drive's checksum names this content now: keep it, so a later metadata-only
+          // version is no conflict.
+          const md5Checksum = remote.get(action.id)?.md5Checksum
+          await store.markPushed(
+            action.id,
+            mine.updatedAt,
+            action.fileId,
+            action.version,
+            md5Checksum,
+          )
           return
         }
         const copy: Collection = {

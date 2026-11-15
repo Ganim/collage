@@ -107,12 +107,13 @@ export function indexListing(folder: string, files: RemoteFile[]): Listing {
 }
 
 /**
- * Failures that only mean "no connection": fetch rejecting (a TypeError), a request cut by its
- * timer (AbortError), the Drive client's own offline error, and the token service unreachable.
+ * Failures that only mean "no connection": the Drive client's offline error (fetch rejected or
+ * timed out), the token service unreachable, and a request aborted by its timer. A bare
+ * TypeError is not one: real fetch rejections are already wrapped, so it is a bug.
  */
 function isNetworkFailure(e: unknown): boolean {
   if (e instanceof DriveError) return e.kind === 'offline'
-  if (e instanceof DriveNetworkError || e instanceof TypeError) return true
+  if (e instanceof DriveNetworkError) return true
   return e instanceof Error && (e.name === 'AbortError' || e.name === 'TimeoutError')
 }
 

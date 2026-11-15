@@ -1,6 +1,6 @@
 // @vitest-environment node
 import 'fake-indexeddb/auto'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest'
 import type { Collection } from '../core/types'
 import type { Decode } from '../photos/import'
 import { createIdbStore } from '../storage/indexeddb'
@@ -85,7 +85,10 @@ const status = () => useSyncStatus.getState()
 let drive: FakeDrive
 let a: Store
 let b: Store
+/** The engine logs unexpected failures; the tests keep that quiet and look at it when it matters. */
+let errorLog: MockInstance<typeof console.error>
 beforeEach(async () => {
+  errorLog = vi.spyOn(console, 'error').mockImplementation(() => {})
   useSyncStatus.setState({
     state: 'off',
     error: undefined,
@@ -101,6 +104,7 @@ beforeEach(async () => {
 })
 
 afterEach(() => {
+  errorLog.mockRestore()
   vi.useRealTimers()
 })
 
@@ -201,6 +205,9 @@ describe('sync engine between two devices', () => {
     await engineFor(a, drive).run()
     expect(await a.listCollections()).toHaveLength(1)
     expect((await a.getSyncStates()).c1?.dirty).toBe(false)
+    // The adopted file's checksum is kept, so a later metadata-only version is no conflict.
+    const [listed] = await drive.list(await drive.ensureFolder())
+    expect((await a.getSyncStates()).c1?.remoteMd5).toBe(listed?.md5Checksum)
     expect(filesOf(drive, 'collection')).toHaveLength(1)
   })
 
@@ -398,8 +405,10 @@ describe('sync engine between two devices', () => {
       'download',
       new DriveError('other', 'Google Drive request failed (503)', 503),
     )
+    expect(errorLog).not.toHaveBeenCalled()
     await engineFor(b, busy).run()
     expect(status()).toMatchObject({ state: 'error', error: 'other' })
+    expect(errorLog.mock.calls).toEqual([['Sync failed:', 'DriveError']])
 
     const down = failingOnce(drive, 'download', new DriveError('offline', 'down'))
     await engineFor(b, down).run()
@@ -647,7 +656,9 @@ describe('sync status', () => {
     [new DriveError('revoked', 'x'), { state: 'error', error: 'revoked' }],
     [new DriveError('other', 'x'), { state: 'error', error: 'other' }],
     [new DriveNetworkError(), { state: 'offline' }],
-    [new TypeError('Failed to fetch'), { state: 'offline' }],
+    // Real fetch rejections arrive as DriveError('offline') or DriveNetworkError; a bare
+    // TypeError is a bug.
+    [new TypeError('x is not a function'), { state: 'error', error: 'other' }],
     [new DOMException('The operation was aborted.', 'AbortError'), { state: 'offline' }],
     [new Error('Drive token request failed (502)'), { state: 'error', error: 'other' }],
     [new RangeError('a bug'), { state: 'error', error: 'other' }],
@@ -655,23 +666,27 @@ describe('sync status', () => {
     await engineFor(a, failingOnce(drive, 'ensureFolder', error)).run()
     expect(status()).toMatchObject(expected)
     expect(status().lastSyncedAt).toBeUndefined()
+    // Only a failure that reads as "Não foi possível sincronizar" is logged.
+    const unexpected = 'error' in expected && expected.error === 'other'
+    expect(errorLog.mock.calls).toEqual(unexpected ? [['Sync failed:', error.name]] : [])
   })
 
   it('logs an unexpected failure with a fixed text and the error name only', async () => {
-    const log = vi.spyOn(console, 'error').mockImplementation(() => {})
-    try {
-      const secret = new SyntaxError('token=abc123 at /api/auth')
-      await engineFor(a, failingOnce(drive, 'ensureFolder', secret)).run()
-      expect(status()).toMatchObject({ state: 'error', error: 'other' })
-      expect(log).toHaveBeenCalledTimes(1)
-      expect(log.mock.calls[0]).toEqual(['Sync failed:', 'SyntaxError'])
+    const log = errorLog
+    const secret = new SyntaxError('token=abc123 at /api/auth')
+    await engineFor(a, failingOnce(drive, 'ensureFolder', secret)).run()
+    expect(status()).toMatchObject({ state: 'error', error: 'other' })
+    expect(log).toHaveBeenCalledTimes(1)
+    expect(log.mock.calls[0]).toEqual(['Sync failed:', 'SyntaxError'])
 
-      log.mockClear()
-      await engineFor(a, failingOnce(drive, 'ensureFolder', new TypeError('x'))).run()
-      expect(log).not.toHaveBeenCalled()
-    } finally {
-      log.mockRestore()
-    }
+    log.mockClear()
+    await engineFor(a, failingOnce(drive, 'ensureFolder', new TypeError('x'))).run()
+    expect(log.mock.calls).toEqual([['Sync failed:', 'TypeError']])
+
+    log.mockClear()
+    await engineFor(a, failingOnce(drive, 'ensureFolder', new DriveError('offline', 'x'))).run()
+    await engineFor(a, failingOnce(drive, 'ensureFolder', new DriveNetworkError())).run()
+    expect(log).not.toHaveBeenCalled()
   })
 
   it('a full Drive is an error with the reason full, and the next pass clears it', async () => {
