@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createIdbStore } from '../storage/indexeddb'
 import { StorageFullError, type Store } from '../storage/store'
 import { defaultPaper } from '../core/presets'
+import { uniqueName } from '../core/names'
 import type { Collection, Photo } from '../core/types'
 import { createEditorStore } from './editor'
 
@@ -73,6 +74,7 @@ describe('deleteCollection', () => {
       },
     })
     await editor.getState().bootstrap()
+    editor.getState().addFrame({ widthMm: 100, heightMm: 150 })
     const other = editor.getState().collection.id
     await editor.getState().flush()
     await editor.getState().newCollection()
@@ -107,14 +109,18 @@ describe('deleteCollection', () => {
     expect((await store.listCollections()).map((c) => c.id)).toEqual([second])
   })
 
-  it('opens the next collection when the open one is deleted', async () => {
+  it('deleting the open collection leaves an unsaved draft', async () => {
     const { editor, first, second } = await twoCollections()
     await editor.getState().deleteCollection(second)
-    expect(editor.getState().collection.id).toBe(first)
+    expect(editor.getState().collection.id).not.toBe(second)
+    expect(editor.getState().collection.id).not.toBe(first)
+    expect(editor.getState().collection.frames).toHaveLength(0)
+    await advance(1000)
+    await editor.getState().listCollections()
     expect((await store.listCollections()).map((c) => c.id)).toEqual([first])
   })
 
-  it('starts an empty collection when the only one is deleted', async () => {
+  it('leaves a draft when the only collection is deleted', async () => {
     const editor = await setup()
     const only = editor.getState().collection.id
     await editor.getState().flush()
@@ -122,6 +128,7 @@ describe('deleteCollection', () => {
     expect(editor.getState().collection.id).not.toBe(only)
     expect(editor.getState().collection.frames).toHaveLength(0)
     expect(await store.getCollection(only)).toBeUndefined()
+    expect(await store.listCollections()).toEqual([])
   })
 
   it('is not undone by a save that was still waiting', async () => {
@@ -351,32 +358,29 @@ describe('bootstrap', () => {
     const editor = createEditorStore(store)
     await editor.getState().bootstrap()
     const first = editor.getState().collection.name
+    editor.getState().addFrame({ widthMm: 100, heightMm: 150 })
     await editor.getState().flush()
     await editor.getState().newCollection()
     expect(editor.getState().collection.name).toBe(`${first} (2)`)
   })
 
-  it('reopens the last collection with its photos and saved sizes', async () => {
+  it('opens nothing and saves nothing, but loads sizes and folders', async () => {
+    await store.saveCollection({ ...stored('a'), updatedAt: 1 })
+    await store.saveCollection({ ...stored('b'), updatedAt: 2 })
+    await store.setLastCollectionId('a')
     await store.saveSize({ id: 's1', name: 'Mini', widthMm: 50, heightMm: 50 })
-    const first = createEditorStore(store)
-    await first.getState().bootstrap()
-    await store.putPhoto({
-      ...photo('p1'),
-      original: new Blob(['o']),
-      preview: new Blob(['p']),
-      thumb: new Blob(['t']),
-    })
-    first.getState().renameCollection('Minha')
-    first.setState((s) => ({ collection: { ...s.collection, photoIds: ['p1'] } }))
-    await advance(500)
-    const id = first.getState().collection.id
-
-    const second = createEditorStore(store)
-    await second.getState().bootstrap()
-    expect(second.getState().collection.id).toBe(id)
-    expect(second.getState().collection.name).toBe('Minha')
-    expect(second.getState().photos['p1']?.width).toBe(800)
-    expect(second.getState().savedSizes).toHaveLength(1)
+    await store.saveFolder({ id: 'f1', name: 'Pasta', createdAt: 1 })
+    const save = vi.spyOn(store, 'saveCollection')
+    const editor = createEditorStore(store)
+    await editor.getState().bootstrap()
+    await advance(1000)
+    expect(editor.getState().collection.id).not.toBe('a')
+    expect(editor.getState().collection.id).not.toBe('b')
+    expect(editor.getState().collection.frames).toEqual([])
+    expect(editor.getState().savedSizes).toHaveLength(1)
+    expect(editor.getState().folders.map((f) => f.id)).toEqual(['f1'])
+    expect(await store.listCollections()).toHaveLength(2)
+    expect(save).not.toHaveBeenCalled()
   })
 })
 
@@ -438,7 +442,7 @@ describe('never losing the latest edit', () => {
     expect(editor.getState().collection.id).toBe(id)
     expect(editor.getState().saveStatus).toBe('full')
 
-    await editor.getState().newCollection()
+    await expect(editor.getState().newCollection()).rejects.toThrow()
     expect(editor.getState().collection.id).toBe(id)
     expect(editor.getState().collection.name).toBe('pendente')
     expect(log).toHaveBeenCalled()
@@ -459,6 +463,7 @@ describe('never losing the latest edit', () => {
       },
     })
     await editor.getState().bootstrap()
+    editor.getState().addFrame({ widthMm: 100, heightMm: 150 })
     await advance(600)
     const originalId = editor.getState().collection.id
     await store.saveCollection(stored('outra'))
@@ -506,15 +511,10 @@ describe('never losing the latest edit', () => {
   })
 
   describe('when the saved work cannot be read at first', () => {
-    async function savedWork() {
-      await store.saveCollection(stored('a'))
-      await store.setLastCollectionId('a')
-    }
-
     it('writes nothing and reports the failure', async () => {
       const log = vi.spyOn(console, 'error').mockImplementation(() => {})
-      await savedWork()
-      vi.spyOn(store, 'getLastCollectionId').mockRejectedValueOnce(new Error('read'))
+      await store.saveCollection(stored('a'))
+      vi.spyOn(store, 'listSizes').mockRejectedValueOnce(new Error('read'))
       const setLast = vi.spyOn(store, 'setLastCollectionId')
       const save = vi.spyOn(store, 'saveCollection')
       const editor = createEditorStore(store)
@@ -526,60 +526,163 @@ describe('never losing the latest edit', () => {
       expect(save).not.toHaveBeenCalled()
     })
 
-    it('still opens the work when remembering it cannot be written', async () => {
-      vi.spyOn(console, 'error').mockImplementation(() => {})
-      await savedWork()
-      vi.spyOn(store, 'setLastCollectionId').mockRejectedValue(new StorageFullError())
-      const editor = createEditorStore(store)
-      await editor.getState().bootstrap()
-      expect(editor.getState().loadFailed).toBe(false)
-      expect(editor.getState().collection.id).toBe('a')
-    })
-
     it('leaves the failure behind when another work is opened', async () => {
       vi.spyOn(console, 'error').mockImplementation(() => {})
-      await savedWork()
       await store.saveCollection(stored('b'))
-      vi.spyOn(store, 'getLastCollectionId').mockRejectedValueOnce(new Error('read'))
+      vi.spyOn(store, 'listSizes').mockRejectedValueOnce(new Error('read'))
       const editor = createEditorStore(store)
       await editor.getState().bootstrap()
-      await editor.getState().openCollection('b')
+      expect(editor.getState().loadFailed).toBe(true)
+      expect(await editor.getState().openCollection('b')).toBe(true)
       expect(editor.getState().loadFailed).toBe(false)
       expect(editor.getState().collection.id).toBe('b')
     })
 
-    it('brings the last collection back on a retry', async () => {
+    it('recovers on a retry', async () => {
       vi.spyOn(console, 'error').mockImplementation(() => {})
-      await savedWork()
-      vi.spyOn(store, 'getLastCollectionId').mockRejectedValueOnce(new Error('read'))
+      vi.spyOn(store, 'listSizes').mockRejectedValueOnce(new Error('read'))
       const editor = createEditorStore(store)
       await editor.getState().bootstrap()
       await editor.getState().bootstrap()
       expect(editor.getState().loadFailed).toBe(false)
-      expect(editor.getState().collection.id).toBe('a')
     })
   })
 
-  describe('when the last collection is not available', () => {
-    async function twoSaved() {
-      await store.saveCollection({ ...stored('old'), updatedAt: 1 })
-      await store.saveCollection({ ...stored('new'), updatedAt: 2 })
-    }
+  it('still opens a collection when remembering it cannot be written', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    await store.saveCollection(stored('a'))
+    vi.spyOn(store, 'setLastCollectionId').mockRejectedValue(new StorageFullError())
+    const editor = createEditorStore(store)
+    await editor.getState().bootstrap()
+    expect(await editor.getState().openCollection('a')).toBe(true)
+    expect(editor.getState().collection.id).toBe('a')
+  })
+})
 
-    it('opens the newest collection if the last one is gone', async () => {
-      await twoSaved()
-      await store.setLastCollectionId('gone')
-      const editor = createEditorStore(store)
-      await editor.getState().bootstrap()
-      expect(editor.getState().collection.id).toBe('new')
-    })
+describe('collections list actions', () => {
+  it('openCollection returns false for a missing id', async () => {
+    const editor = await setup()
+    const id = editor.getState().collection.id
+    expect(await editor.getState().openCollection('nope')).toBe(false)
+    expect(editor.getState().collection.id).toBe(id)
+  })
 
-    it('opens the newest collection if none is recorded', async () => {
-      await twoSaved()
-      const editor = createEditorStore(store)
-      await editor.getState().bootstrap()
-      expect(editor.getState().collection.id).toBe('new')
-    })
+  it('openCollection returns true and opens an existing one', async () => {
+    await store.saveCollection(stored('x'))
+    const editor = createEditorStore(store)
+    await editor.getState().bootstrap()
+    expect(await editor.getState().openCollection('x')).toBe(true)
+    expect(editor.getState().collection.id).toBe('x')
+  })
+
+  it('newCollection saves at once and returns its id', async () => {
+    const editor = createEditorStore(store)
+    await editor.getState().bootstrap()
+    const id = await editor.getState().newCollection()
+    expect(editor.getState().collection.id).toBe(id)
+    expect(await store.getCollection(id)).toBeDefined()
+    expect((await store.listCollections()).map((c) => c.id)).toEqual([id])
+  })
+
+  it('closeCollection saves the open one and leaves an unsaved draft', async () => {
+    const editor = await setup()
+    const id = editor.getState().collection.id
+    await editor.getState().closeCollection()
+    expect((await store.getCollection(id))?.frames).toHaveLength(1)
+    expect(editor.getState().collection.id).not.toBe(id)
+    expect(editor.getState().collection.frames).toEqual([])
+    await advance(1000)
+    expect(await store.listCollections()).toHaveLength(1)
+  })
+
+  it('listCollections includes an edit made just before going back', async () => {
+    const editor = await setup()
+    await editor.getState().flush()
+    editor.getState().renameCollection('Recem editada')
+    expect((await editor.getState().listCollections())[0]?.name).toBe('Recem editada')
+  })
+
+  it('renameCollectionById renames a collection that is not open', async () => {
+    await store.saveCollection(stored('x'))
+    const editor = createEditorStore(store)
+    await editor.getState().bootstrap()
+    await editor.getState().renameCollectionById('x', 'Novo nome')
+    expect((await store.getCollection('x'))?.name).toBe('Novo nome')
+  })
+
+  it('renameCollectionById renames the open collection through the editor', async () => {
+    const editor = await setup()
+    const id = editor.getState().collection.id
+    await editor.getState().renameCollectionById(id, 'Aberta')
+    expect(editor.getState().collection.name).toBe('Aberta')
+    await editor.getState().flush()
+    expect((await store.getCollection(id))?.name).toBe('Aberta')
+  })
+
+  it('duplicateCollection copies frames with new ids and a unique name', async () => {
+    const editor = await setup()
+    editor.getState().renameCollection('Praia')
+    editor.getState().tapPhoto('a')
+    const original = editor.getState().collection
+    await store.saveCollection({ ...stored('other'), name: 'Praia (cópia)' })
+
+    const id = await editor.getState().duplicateCollection(original.id)
+    const copy = await store.getCollection(id)
+    expect(id).not.toBe(original.id)
+    expect(copy?.name).toBe(uniqueName('Praia (cópia)', ['Praia', 'Praia (cópia)']))
+    expect(copy?.name).not.toBe('Praia (cópia)')
+    expect(copy?.frames).toHaveLength(1)
+    expect(copy?.frames[0]?.id).not.toBe(original.frames[0]?.id)
+    expect(copy?.frames[0]?.layers[0]?.id).not.toBe(original.frames[0]?.layers[0]?.id)
+    expect(copy?.frames[0]?.layers[0]?.photoId).toBe('a')
+    expect((await store.getCollection(original.id))?.name).toBe('Praia')
+    expect(editor.getState().collection.id).toBe(original.id)
+  })
+
+  it('duplicateCollection rejects for a missing id', async () => {
+    const editor = createEditorStore(store)
+    await editor.getState().bootstrap()
+    await expect(editor.getState().duplicateCollection('nope')).rejects.toThrow()
+  })
+})
+
+describe('folders and sizes', () => {
+  it('saves, renames and lists folders', async () => {
+    const editor = createEditorStore(store)
+    await editor.getState().bootstrap()
+    const f = await editor.getState().saveFolder('Casamento')
+    expect(editor.getState().folders.map((x) => x.name)).toEqual(['Casamento'])
+    await editor.getState().renameFolder(f.id, 'Festa')
+    expect(editor.getState().folders[0]?.name).toBe('Festa')
+    expect((await store.listFolders())[0]?.name).toBe('Festa')
+  })
+
+  it('deleteFolder moves its sizes to Meus tamanhos', async () => {
+    const editor = createEditorStore(store)
+    await editor.getState().bootstrap()
+    const f = await editor.getState().saveFolder('Pasta')
+    await editor.getState().saveSize('Mini', { widthMm: 50, heightMm: 50 }, f.id)
+    expect(editor.getState().savedSizes[0]?.folderId).toBe(f.id)
+    await editor.getState().deleteFolder(f.id)
+    expect(editor.getState().folders).toEqual([])
+    expect(editor.getState().savedSizes).toHaveLength(1)
+    expect(editor.getState().savedSizes[0]?.folderId).toBeUndefined()
+    expect((await store.listSizes())[0]?.folderId).toBeUndefined()
+  })
+
+  it('updateSize changes name and folder, and can clear the folder', async () => {
+    const editor = createEditorStore(store)
+    await editor.getState().bootstrap()
+    const f = await editor.getState().saveFolder('Pasta')
+    await editor.getState().saveSize('Mini', { widthMm: 50, heightMm: 50 })
+    const id = editor.getState().savedSizes[0]!.id
+    await editor.getState().updateSize(id, { name: 'Maxi', folderId: f.id })
+    expect(editor.getState().savedSizes[0]).toMatchObject({ name: 'Maxi', folderId: f.id })
+    expect((await store.listSizes())[0]).toMatchObject({ name: 'Maxi', folderId: f.id })
+    await editor.getState().updateSize(id, { folderId: undefined })
+    expect(editor.getState().savedSizes[0]?.folderId).toBeUndefined()
+    expect(editor.getState().savedSizes[0]?.name).toBe('Maxi')
+    expect((await store.listSizes())[0]?.folderId).toBeUndefined()
   })
 })
 

@@ -49,7 +49,7 @@ export function CollectionsScreen({ onClose, recovering = false }: CollectionsSc
   }, [listCollections])
 
   /** Runs one action at a time; a failure becomes the message on screen. */
-  const run = async (action: () => Promise<void>, failure: (e: unknown) => MessageKey) => {
+  const run = async (action: () => Promise<unknown>, failure: (e: unknown) => MessageKey) => {
     setBusy(true)
     setError(null)
     setConfirming(null)
@@ -65,7 +65,7 @@ export function CollectionsScreen({ onClose, recovering = false }: CollectionsSc
     }
   }
 
-  const openAndClose = async (action: () => Promise<void>) => {
+  const openAndClose = async (action: () => Promise<unknown>) => {
     if (await run(action, () => 'library.openFailed')) onClose()
   }
 

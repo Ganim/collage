@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  copyCollection,
   createFrame,
   duplicateFrame,
   flipOrientation,
@@ -13,7 +14,7 @@ import {
 import { defaultPaper, FRAME_PRESETS, PAPER_PRESETS } from './presets'
 import { emptyFrames, layerDpi, lowResolutionLayers } from './quality'
 import { clampToCover, coverLayer } from './transform'
-import type { Frame, Layer, Photo } from './types'
+import type { Collection, Frame, Layer, Photo } from './types'
 
 const photo = (id: string, width: number, height: number): Photo => ({
   id,
@@ -202,5 +203,30 @@ describe('presets', () => {
     ])
     expect(PAPER_PRESETS.map((p) => p.label)).toEqual(['A4', 'A3', 'Letter'])
     expect(defaultPaper()).toEqual({ widthMm: 210, heightMm: 297, marginMm: 5, gapMm: 3 })
+  })
+})
+
+describe('copyCollection', () => {
+  it('gives the copy a new id, name, frame ids and layer ids without aliasing', () => {
+    const f = placePhoto(createFrame({ widthMm: 100, heightMm: 150 }), photo('p', 800, 600))
+    const c: Collection = {
+      schemaVersion: 1,
+      id: 'orig',
+      name: 'Praia',
+      photoIds: ['p'],
+      frames: [f],
+      paper: defaultPaper(),
+      updatedAt: 1,
+    }
+    const copy = copyCollection(c, 'Praia (cópia)')
+    expect(copy.id).not.toBe('orig')
+    expect(copy.name).toBe('Praia (cópia)')
+    expect(copy.photoIds).toEqual(['p'])
+    expect(copy.photoIds).not.toBe(c.photoIds)
+    expect(copy.frames[0]?.id).not.toBe(f.id)
+    expect(copy.frames[0]?.layers[0]?.id).not.toBe(f.layers[0]?.id)
+    expect(copy.frames[0]?.layers[0]?.photoId).toBe('p')
+    expect(copy.updatedAt).toBeGreaterThan(1)
+    expect(c.name).toBe('Praia')
   })
 })

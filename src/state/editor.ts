@@ -1,5 +1,6 @@
 import { createStore, useStore, type StoreApi } from 'zustand'
 import {
+  copyCollection,
   createFrame,
   duplicateFrame,
   flipOrientation,
@@ -15,7 +16,16 @@ import {
 } from '../core/frame'
 import { uniqueName } from '../core/names'
 import { defaultPaper } from '../core/presets'
-import type { Collection, Frame, Layer, Paper, Photo, SavedSize, Size } from '../core/types'
+import type {
+  Collection,
+  Frame,
+  Layer,
+  Paper,
+  Photo,
+  SavedSize,
+  Size,
+  SizeFolder,
+} from '../core/types'
 import { importPhotos } from '../photos/import'
 import { exportBundle, importBundle } from '../storage/bundle'
 import { createIdbStore } from '../storage/indexeddb'
@@ -46,9 +56,16 @@ export interface EditorState {
   loadFailed: boolean
   flush(): Promise<void>
   bootstrap(): Promise<void>
-  openCollection(id: string): Promise<void>
-  newCollection(): Promise<void>
+  /** False, changing nothing, if there is no such collection or the open one could not be saved. */
+  openCollection(id: string): Promise<boolean>
+  /** Creates and saves an empty collection, opens it and returns its id. */
+  newCollection(): Promise<string>
+  /** Saves the open collection and leaves an empty draft that is not saved. */
+  closeCollection(): Promise<void>
   renameCollection(name: string): void
+  renameCollectionById(id: string, name: string): Promise<void>
+  /** Saves a copy under a free name and returns its id. The open collection stays open. */
+  duplicateCollection(id: string): Promise<string>
   /** Newest first, with the latest edits of the open collection already saved. */
   listCollections(): Promise<CollectionSummary[]>
   deleteCollection(id: string): Promise<void>
@@ -82,8 +99,14 @@ export interface EditorState {
   removeSelected(): void
   setPaper(p: Partial<Paper>): void
   savedSizes: SavedSize[]
-  saveSize(name: string, size: Size): Promise<void>
+  folders: SizeFolder[]
+  saveSize(name: string, size: Size, folderId?: string): Promise<void>
+  updateSize(id: string, patch: { name?: string; folderId?: string | undefined }): Promise<void>
   deleteSize(id: string): Promise<void>
+  saveFolder(name: string): Promise<SizeFolder>
+  renameFolder(id: string, name: string): Promise<void>
+  /** Its sizes go back to "Meus tamanhos". */
+  deleteFolder(id: string): Promise<void>
 }
 
 function emptyCollection(takenNames: string[]): Collection {
@@ -191,24 +214,24 @@ export function createEditorStore(
       loadToken++
     }
 
-    const startFresh = (takenNames: string[] = []) => {
-      const c = emptyCollection(takenNames)
-      swap(c, {}, true)
-      void store.setLastCollectionId(c.id).catch((e: unknown) => console.error(e))
+    /** An empty collection that is not saved until the first edit. */
+    const startDraft = async () => {
+      swap(emptyCollection((await store.listCollections()).map((c) => c.name)), {}, false)
     }
 
     /** Reads first and swaps only if nothing newer (open, new collection, edit) happened meanwhile. */
-    const load = async (read: () => Promise<Collection | undefined>) => {
+    const load = async (read: () => Promise<Collection | undefined>): Promise<boolean> => {
       const token = loadToken
       const rev = revision
       const c = await read()
-      if (!c) return
+      if (!c) return false
       const photos = c.photoIds.length > 0 ? await store.getPhotosMeta(c.photoIds) : {}
-      if (token !== loadToken || rev !== revision) return
-      // Only a convenience for next time: on a full device it must not stop the work from opening.
+      if (token !== loadToken || rev !== revision) return true
+      // Only a convenience (the e2e helpers read it): on a full device it must not stop the work from opening.
       await store.setLastCollectionId(c.id).catch((e: unknown) => console.error(e))
-      if (token !== loadToken || rev !== revision) return
+      if (token !== loadToken || rev !== revision) return true
       swap(c, photos, false)
+      return true
     }
 
     const importInto = async (files: File[]) => {
@@ -244,41 +267,61 @@ export function createEditorStore(
       replacing: false,
       saveStatus: 'saved',
       savedSizes: [],
+      folders: [],
       loadFailed: false,
 
       async bootstrap() {
         set({ loadFailed: false })
         try {
-          const [sizes, lastId] = await Promise.all([
-            store.listSizes(),
-            store.getLastCollectionId(),
-          ])
-          set({ savedSizes: sizes })
           const token = loadToken
-          const untouched = () => token === loadToken && revision === queuedRevision
-          if (lastId) await load(() => store.getCollection(lastId))
-          if (untouched()) {
-            // The last one is gone or was never recorded: an older work beats an empty screen.
-            const [newest] = newestFirst(await store.listCollections())
-            if (newest) await load(() => store.getCollection(newest.id))
-          }
-          if (untouched()) startFresh()
+          const [sizes, folders] = await Promise.all([store.listSizes(), store.listFolders()])
+          set({ savedSizes: sizes, folders })
+          // Nothing is opened: the app starts on the list. A draft that was not touched gets a free name.
+          if (token === loadToken && revision === queuedRevision) await startDraft()
         } catch (e) {
-          // Starting empty here would make the saved work look lost, and would become the "last" one.
           console.error(e)
           set({ loadFailed: true })
         }
       },
 
       async openCollection(id) {
-        if (!(await flushSave())) return
-        await load(() => store.getCollection(id))
+        if (!(await flushSave())) return false
+        return load(() => store.getCollection(id))
       },
 
       async newCollection() {
         // Leaving a collection that could not be saved would lose it.
-        if (!(await flushSave())) return
-        startFresh((await store.listCollections()).map((c) => c.name))
+        if (!(await flushSave())) throw new Error('The collection could not be saved')
+        const c = emptyCollection((await store.listCollections()).map((x) => x.name))
+        swap(c, {}, true)
+        if (!(await flushSave())) throw new Error('The collection could not be saved')
+        await store.setLastCollectionId(c.id).catch((e: unknown) => console.error(e))
+        return c.id
+      },
+
+      async closeCollection() {
+        if (!(await flushSave())) throw new Error('The collection could not be saved')
+        await startDraft()
+      },
+
+      async renameCollectionById(id, name) {
+        if (get().collection.id === id) {
+          get().renameCollection(name)
+          return
+        }
+        const c = await store.getCollection(id)
+        if (!c) throw new Error('missing')
+        await store.saveCollection({ ...c, name, updatedAt: Date.now() })
+      },
+
+      async duplicateCollection(id) {
+        if (!(await flushSave())) throw new Error('The collection could not be saved')
+        const c = await store.getCollection(id)
+        if (!c) throw new Error('missing')
+        const taken = (await store.listCollections()).map((x) => x.name)
+        const copy = copyCollection(c, uniqueName(t('collection.copyName', { name: c.name }), taken))
+        await store.duplicateCollection(id, copy)
+        return copy.id
       },
 
       flush: async () => {
@@ -305,11 +348,11 @@ export function createEditorStore(
           timer = undefined
           queuedRevision = revision
           await queue
-          const others = (await store.listCollections()).filter((c) => c.id !== id)
-          const next = newestFirst(others)[0]
-          if (next) await load(() => store.getCollection(next.id))
-          else startFresh()
-          if (get().collection.id === id) return
+          swap(
+            emptyCollection((await store.listCollections()).filter((c) => c.id !== id).map((c) => c.name)),
+            {},
+            false,
+          )
         }
         await store.deleteCollection(id)
       },
@@ -466,10 +509,55 @@ export function createEditorStore(
         commit({ collection: { ...collection, paper: { ...collection.paper, ...p } } })
       },
 
-      async saveSize(name, size) {
-        const saved: SavedSize = { id: crypto.randomUUID(), name, ...size }
+      async saveSize(name, size, folderId) {
+        const saved: SavedSize = {
+          id: crypto.randomUUID(),
+          name,
+          ...size,
+          ...(folderId ? { folderId } : {}),
+        }
         await store.saveSize(saved)
         set((s) => ({ savedSizes: [...s.savedSizes, saved] }))
+      },
+
+      async updateSize(id, patch) {
+        const current = get().savedSizes.find((x) => x.id === id)
+        if (!current) throw new Error('missing')
+        const rest: SavedSize = { ...current }
+        delete rest.folderId
+        const folderId = 'folderId' in patch ? patch.folderId : current.folderId
+        const updated: SavedSize = {
+          ...rest,
+          ...(patch.name !== undefined ? { name: patch.name } : {}),
+          ...(folderId ? { folderId } : {}),
+        }
+        await store.saveSize(updated)
+        set((s) => ({ savedSizes: s.savedSizes.map((x) => (x.id === id ? updated : x)) }))
+      },
+
+      async saveFolder(name) {
+        const folder: SizeFolder = { id: crypto.randomUUID(), name, createdAt: Date.now() }
+        await store.saveFolder(folder)
+        set((s) => ({ folders: [...s.folders, folder] }))
+        return folder
+      },
+
+      async renameFolder(id, name) {
+        const current = get().folders.find((f) => f.id === id)
+        if (!current) throw new Error('missing')
+        const updated = { ...current, name }
+        await store.saveFolder(updated)
+        set((s) => ({ folders: s.folders.map((f) => (f.id === id ? updated : f)) }))
+      },
+
+      async deleteFolder(id) {
+        await store.deleteFolder(id)
+        set((s) => ({
+          folders: s.folders.filter((f) => f.id !== id),
+          savedSizes: s.savedSizes.map(({ folderId, ...size }) =>
+            folderId === id ? size : { ...size, ...(folderId ? { folderId } : {}) },
+          ),
+        }))
       },
 
       async deleteSize(id) {

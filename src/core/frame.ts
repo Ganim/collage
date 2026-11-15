@@ -1,5 +1,5 @@
 import { clampToCover, coverLayer } from './transform'
-import type { Frame, Layer, Photo, Size } from './types'
+import type { Collection, Frame, Layer, Photo, Size } from './types'
 import { clampWidth, zoomLimits } from './zoom'
 
 type Photos = Record<string, Photo>
@@ -134,5 +134,17 @@ export function duplicateFrame(frame: Frame): Frame {
     ...frame,
     id: crypto.randomUUID(),
     layers: frame.layers.map((l) => ({ ...l, id: crypto.randomUUID() })),
+  }
+}
+
+/** A copy of the collection with new ids for itself, its frames and their layers. Photos stay shared. */
+export function copyCollection(c: Collection, name: string): Collection {
+  return {
+    ...c,
+    id: crypto.randomUUID(),
+    name,
+    photoIds: [...c.photoIds],
+    frames: c.frames.map(duplicateFrame),
+    updatedAt: Date.now(),
   }
 }

@@ -1,6 +1,9 @@
 /** Flat dictionary. Placeholders look like {name}. */
 export const ptBR = {
   'collection.defaultName': 'Fotos de {day} de {month}',
+  'collection.copyName': '{name} (cópia)',
+  'folders.defaults': 'Tamanhos padrão',
+  'folders.mine': 'Meus tamanhos',
   'size.chip': '{w} × {h} cm',
   'size.list': '{w}×{h} cm',
   'header.collections': 'Coleções: {name}',
