@@ -5,13 +5,14 @@ import {
   type IDBPTransaction,
   type StoreNames,
 } from 'idb'
-import type { Collection, Photo, SavedSize } from '../core/types'
+import type { Collection, Photo, SavedSize, SizeFolder } from '../core/types'
 import { StorageFullError, type Store, type StoredPhoto } from './store'
 
 interface CollageDB extends DBSchema {
   photos: { key: string; value: StoredPhoto }
   collections: { key: string; value: Collection }
   sizes: { key: string; value: SavedSize }
+  folders: { key: string; value: SizeFolder }
   meta: { key: string; value: string }
 }
 
@@ -48,12 +49,15 @@ async function write<S extends Stores>(
 }
 
 export async function createIdbStore(name = 'collage'): Promise<Store> {
-  const db = await openDB<CollageDB>(name, 1, {
-    upgrade(d) {
-      d.createObjectStore('photos', { keyPath: 'id' })
-      d.createObjectStore('collections', { keyPath: 'id' })
-      d.createObjectStore('sizes', { keyPath: 'id' })
-      d.createObjectStore('meta')
+  const db = await openDB<CollageDB>(name, 2, {
+    upgrade(d, oldVersion) {
+      if (oldVersion < 1) {
+        d.createObjectStore('photos', { keyPath: 'id' })
+        d.createObjectStore('collections', { keyPath: 'id' })
+        d.createObjectStore('sizes', { keyPath: 'id' })
+        d.createObjectStore('meta')
+      }
+      if (oldVersion < 2) d.createObjectStore('folders', { keyPath: 'id' })
     },
   })
 
@@ -87,6 +91,9 @@ export async function createIdbStore(name = 'collage'): Promise<Store> {
         name: c.name,
         updatedAt: c.updatedAt,
         frameCount: c.frames.length,
+        coverPhotoId:
+          c.frames.find((f) => f.layers.length > 0)?.layers[0]?.photoId ?? c.photoIds[0] ?? null,
+        photoCount: c.photoIds.length,
       }))
     },
     deleteCollection: (id) =>
@@ -110,6 +117,26 @@ export async function createIdbStore(name = 'collage'): Promise<Store> {
     saveSize: (s) =>
       write(db, ['sizes'], async (tx) => void (await tx.objectStore('sizes').put(s))),
     deleteSize: (id) => write(db, ['sizes'], (tx) => tx.objectStore('sizes').delete(id)),
+    listFolders: () => db.getAll('folders'),
+    saveFolder: (f) =>
+      write(db, ['folders'], async (tx) => void (await tx.objectStore('folders').put(f))),
+    deleteFolder: (id) =>
+      write(db, ['folders', 'sizes'], async (tx) => {
+        await tx.objectStore('folders').delete(id)
+        const sizes = tx.objectStore('sizes')
+        for (const s of await sizes.getAll()) {
+          if (s.folderId === id) {
+            delete s.folderId
+            await sizes.put(s)
+          }
+        }
+      }),
+    duplicateCollection: (id, copy) =>
+      write(db, ['collections'], async (tx) => {
+        const collections = tx.objectStore('collections')
+        if ((await collections.getKey(id)) === undefined) throw new Error('missing')
+        await collections.put(copy)
+      }),
     getLastCollectionId: () => db.get('meta', LAST_COLLECTION_KEY),
     setLastCollectionId: (id) =>
       write(

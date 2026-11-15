@@ -41,4 +41,10 @@ export interface Collection {
   updatedAt: number
 }
 
-export type SavedSize = Size & { id: string; name: string }
+export interface SizeFolder {
+  id: string
+  name: string
+  createdAt: number
+}
+
+export type SavedSize = Size & { id: string; name: string; folderId?: string }

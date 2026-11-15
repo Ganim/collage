@@ -1,4 +1,4 @@
-import type { Collection, Photo, SavedSize } from '../core/types'
+import type { Collection, Photo, SavedSize, SizeFolder } from '../core/types'
 
 export interface StoredPhoto extends Photo {
   original: Blob
@@ -11,6 +11,9 @@ export interface CollectionSummary {
   name: string
   updatedAt: number
   frameCount: number
+  /** First background layer of the first frame that has layers, else the first photo, else null. */
+  coverPhotoId: string | null
+  photoCount: number
 }
 
 export interface Store {
@@ -29,6 +32,12 @@ export interface Store {
   listSizes(): Promise<SavedSize[]>
   saveSize(s: SavedSize): Promise<void>
   deleteSize(id: string): Promise<void>
+  listFolders(): Promise<SizeFolder[]>
+  saveFolder(f: SizeFolder): Promise<void>
+  /** Deletes the folder and moves its sizes out of it (they lose their folderId). */
+  deleteFolder(id: string): Promise<void>
+  /** Writes `copy` (photos are shared by id); rejects with Error('missing') if `id` does not exist. */
+  duplicateCollection(id: string, copy: Collection): Promise<void>
   getLastCollectionId(): Promise<string | undefined>
   setLastCollectionId(id: string): Promise<void>
 }

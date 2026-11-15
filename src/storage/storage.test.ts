@@ -2,6 +2,7 @@
 import 'fake-indexeddb/auto'
 import { createHash } from 'node:crypto'
 import { strToU8, unzipSync, zipSync } from 'fflate'
+import { openDB } from 'idb'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Collection } from '../core/types'
 import { exportBundle, importBundle } from './bundle'
@@ -66,8 +67,85 @@ describe('store', () => {
     await store.saveCollection(c)
     expect(await store.getCollection('c1')).toEqual(c)
     expect(await store.listCollections()).toEqual([
-      { id: 'c1', name: c.name, updatedAt: 1000, frameCount: 1 },
+      {
+        id: 'c1',
+        name: c.name,
+        updatedAt: 1000,
+        frameCount: 1,
+        coverPhotoId: ID.a,
+        photoCount: 1,
+      },
     ])
+  })
+
+  it('migrates a v1 database keeping sizes', async () => {
+    const saved = { id: 's1', name: '3x4', widthMm: 30, heightMm: 40 }
+    const old = await openDB('t-v1', 1, {
+      upgrade(d) {
+        d.createObjectStore('photos', { keyPath: 'id' })
+        d.createObjectStore('collections', { keyPath: 'id' })
+        d.createObjectStore('sizes', { keyPath: 'id' })
+        d.createObjectStore('meta')
+      },
+    })
+    await old.put('sizes', saved)
+    old.close()
+    const migrated = await createIdbStore('t-v1')
+    expect(await migrated.listSizes()).toEqual([saved])
+    expect(await migrated.listFolders()).toEqual([])
+  })
+
+  it('deleteFolder clears folderId of its sizes', async () => {
+    await store.saveFolder({ id: 'f1', name: 'Pasta', createdAt: 1 })
+    await store.saveSize({ id: 'a', name: 'A', widthMm: 30, heightMm: 40, folderId: 'f1' })
+    await store.saveSize({ id: 'b', name: 'B', widthMm: 20, heightMm: 30 })
+    expect(await store.listFolders()).toHaveLength(1)
+    await store.deleteFolder('f1')
+    expect(await store.listFolders()).toEqual([])
+    const sizes = await store.listSizes()
+    expect(sizes.find((s) => s.id === 'a')?.folderId).toBeUndefined()
+    expect(sizes.find((s) => s.id === 'b')).toEqual({
+      id: 'b',
+      name: 'B',
+      widthMm: 20,
+      heightMm: 30,
+    })
+  })
+
+  it('summary has a cover', async () => {
+    const c = collection('c1', [ID.a, ID.b])
+    c.frames = [
+      { id: 'f1', widthMm: 30, heightMm: 40, layers: [] },
+      { id: 'f2', widthMm: 30, heightMm: 40, layers: collection('x', [ID.b]).frames[0]!.layers },
+    ]
+    await store.saveCollection(c)
+    let [s] = await store.listCollections()
+    expect(s).toMatchObject({ coverPhotoId: ID.b, photoCount: 2 })
+    c.frames = [{ id: 'f1', widthMm: 30, heightMm: 40, layers: [] }]
+    await store.saveCollection(c)
+    ;[s] = await store.listCollections()
+    expect(s!.coverPhotoId).toBe(ID.a)
+    c.photoIds = []
+    await store.saveCollection(c)
+    ;[s] = await store.listCollections()
+    expect(s).toMatchObject({ coverPhotoId: null, photoCount: 0 })
+  })
+
+  it('duplicateCollection writes the copy', async () => {
+    await store.putPhoto(photo('a'))
+    await store.saveCollection(collection('c1', [ID.a]))
+    const copy = { ...collection('c2', [ID.a]), name: 'Colecao c1 (copia)' }
+    await store.duplicateCollection('c1', copy)
+    expect(await store.getCollection('c2')).toEqual(copy)
+    await expect(store.duplicateCollection('nope', copy)).rejects.toThrow('missing')
+  })
+
+  it("deleting the original keeps the copy's photos", async () => {
+    await store.putPhoto(photo('a'))
+    await store.saveCollection(collection('c1', [ID.a]))
+    await store.duplicateCollection('c1', collection('c2', [ID.a]))
+    await store.deleteCollection('c1')
+    expect(await store.getPhoto(ID.a)).toBeDefined()
   })
 
   it('stores photos with blobs and returns metadata without them', async () => {
