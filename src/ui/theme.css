@@ -1081,7 +1081,7 @@ h2 {
 }
 
 .photo-grid-hint {
-  margin: 2px 0 14px;
+  margin: 0;
   color: var(--plum-500);
   font-size: var(--text-sm);
 }
@@ -1182,4 +1182,125 @@ h2 {
   border: 1.5px dashed var(--fuchsia-600);
   color: var(--fuchsia-700);
   font-weight: 700;
+}
+
+/* The size of the frame a photo is in, centred at its foot. */
+.photo-size {
+  position: absolute;
+  bottom: 4px;
+  left: 50%;
+  max-width: calc(100% - 8px);
+  padding: 1px 6px;
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  background: rgba(59, 10, 63, 0.72);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 16px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  transform: translateX(-50%);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+}
+
+.photo-grid-item .photo-size {
+  bottom: 6px;
+  padding: 2px 8px;
+  font-size: 12px;
+}
+
+/* Selecting several photos in the grid. */
+.photo-grid-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 12px;
+  margin: 2px 0 12px;
+}
+
+.text-button {
+  min-height: 36px;
+  padding: 0 4px;
+  color: var(--fuchsia-700);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-title);
+}
+
+.photo-grid-item {
+  transition: transform 0.15s ease;
+}
+
+.photo-grid-item--selected {
+  outline: 3px solid var(--fuchsia-600);
+  outline-offset: -3px;
+  transform: scale(0.94);
+}
+
+.photo-select {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: rgba(59, 10, 63, 0.3);
+  color: #fff;
+  box-shadow: 0 2px 6px rgba(59, 10, 63, 0.3);
+}
+
+.photo-grid-item--selected .photo-select {
+  background: var(--main-gradient);
+}
+
+.photo-grid-actions {
+  position: sticky;
+  bottom: 0;
+  margin: 14px -16px calc(-20px - env(safe-area-inset-bottom));
+  padding: 12px 16px calc(14px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--line);
+  background: var(--glass-strong);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+}
+
+.photo-grid-actions > p {
+  margin: 0 0 10px;
+  color: var(--plum-900);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-title);
+  text-align: center;
+}
+
+.photo-grid-buttons {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+}
+
+.photo-grid-buttons button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.photo-grid-delete {
+  color: var(--danger);
+}
+
+.photo-grid-buttons button:disabled {
+  opacity: 0.45;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .photo-grid-item {
+    transition: none;
+  }
 }

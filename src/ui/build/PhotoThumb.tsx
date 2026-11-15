@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import type { Photo } from '../../core/types'
 import { t } from '../i18n'
 import { usePhotoUrl } from '../usePhotoUrl'
+import { usageChipText } from './photoUsage'
 
 /** Long enough to read and tap again, short enough that a stray tap cannot be confirmed later. */
 const CONFIRM_MS = 4000
@@ -11,11 +12,12 @@ interface PhotoThumbProps {
   photo: Photo
   onTap: () => void
   onDelete: () => void
-  /** Already in at least one frame. */
-  used?: boolean
+  /** The sizes of the frames it is in ("10×15"); none when it is in no frame yet. */
+  sizes?: string[]
 }
 
-export function PhotoThumb({ photo, onTap, onDelete, used = false }: PhotoThumbProps) {
+export function PhotoThumb({ photo, onTap, onDelete, sizes = [] }: PhotoThumbProps) {
+  const used = sizes.length > 0
   const url = usePhotoUrl(photo.id, 'thumb')
   // There is no undo, and the photo may be in several finished frames.
   const [confirming, setConfirming] = useState(false)
@@ -36,6 +38,7 @@ export function PhotoThumb({ photo, onTap, onDelete, used = false }: PhotoThumbP
       >
         {url && <img src={url} alt="" draggable={false} />}
         {used && <UsedMark />}
+        {used && <SizeChip sizes={sizes} />}
       </button>
       <button
         type="button"
@@ -54,6 +57,15 @@ export function UsedMark() {
   return (
     <span className="photo-used" aria-hidden="true">
       <Check size={12} strokeWidth={3.5} />
+    </span>
+  )
+}
+
+/** The size of the frame a photo is in, centred at its foot. */
+export function SizeChip({ sizes }: { sizes: string[] }) {
+  return (
+    <span className="photo-size" aria-hidden="true">
+      {usageChipText(sizes)}
     </span>
   )
 }

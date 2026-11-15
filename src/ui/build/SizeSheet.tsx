@@ -10,9 +10,13 @@ import { t } from '../i18n'
 import { sizeListText } from './sizeText'
 
 interface SizeSheetProps {
-  /** 'change' resizes the active frame; 'new' picks the size of a frame to create. */
-  mode: 'change' | 'new'
+  /**
+   * 'change' resizes the active frame; 'new' picks the size of a frame to create; 'pick' only
+   * hands the size to onPick.
+   */
+  mode: 'change' | 'new' | 'pick'
   onClose: () => void
+  onPick?: (size: Size) => void
 }
 
 /** The folder the sheet opened on last time, on this device. */
@@ -40,7 +44,7 @@ const swapped = (s: Size): Size => ({ widthMm: s.heightMm, heightMm: s.widthMm }
  * Picks a size from any folder, or creates one: it is saved in the chosen folder and used
  * right away.
  */
-export function SizeSheet({ mode, onClose }: SizeSheetProps) {
+export function SizeSheet({ mode, onClose, onPick }: SizeSheetProps) {
   const savedSizes = useEditor((s) => s.savedSizes)
   const folders = useEditor((s) => s.folders)
   const addFrame = useEditor((s) => s.addFrame)
@@ -65,13 +69,14 @@ export function SizeSheet({ mode, onClose }: SizeSheetProps) {
   }
 
   const use = (size: Size) => {
-    if (mode === 'new') addFrame({ widthMm: size.widthMm, heightMm: size.heightMm })
+    if (mode === 'pick') onPick?.({ widthMm: size.widthMm, heightMm: size.heightMm })
+    else if (mode === 'new') addFrame({ widthMm: size.widthMm, heightMm: size.heightMm })
     else setActiveSize({ widthMm: size.widthMm, heightMm: size.heightMm })
     onClose()
   }
 
   const flip = () => {
-    if (mode === 'new') {
+    if (mode !== 'change') {
       setFlipped(!flipped)
     } else {
       flipActive()
@@ -95,13 +100,19 @@ export function SizeSheet({ mode, onClose }: SizeSheetProps) {
   return (
     <>
       <BottomSheet
-        title={mode === 'new' ? t('sizeSheet.titleNew') : t('sizeSheet.titleChange')}
+        title={
+          mode === 'pick'
+            ? t('sizeSheet.titlePick')
+            : mode === 'new'
+              ? t('sizeSheet.titleNew')
+              : t('sizeSheet.titleChange')
+        }
         onClose={onClose}
       >
         <button
           type="button"
           className="flip-button"
-          aria-pressed={mode === 'new' ? flipped : undefined}
+          aria-pressed={mode !== 'change' ? flipped : undefined}
           onClick={flip}
         >
           <ArrowLeftRight size={18} />

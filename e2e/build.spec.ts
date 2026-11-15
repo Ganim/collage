@@ -312,3 +312,67 @@ test('a tick marks photos already in a frame, and the grid shows them all', asyn
   await grid.getByRole('button', { name: 'Colocar foto-2.jpg no frame', exact: true }).click()
   await expect(grid).toHaveCount(0)
 })
+
+test('holding a photo in the grid selects several to give each its own frame', async ({ page }) => {
+  await uploadPhotos(page, [
+    await makeJpeg(page, 400, 600, '#a8552f'),
+    await makeJpeg(page, 400, 600, '#2f5fa8'),
+    await makeJpeg(page, 400, 600, '#6a8f3a'),
+  ])
+  await page.getByRole('button', { name: 'Adicionar frame', exact: true }).click()
+  await page.getByRole('button', { name: '10×15 cm', exact: true }).click()
+  await page.getByRole('button', { name: 'Colocar foto-1.jpg no frame', exact: true }).click()
+  // The tray shows the size of the frame each photo is in.
+  await expect(page.locator('.tray .photo-size')).toHaveText(['10×15'])
+
+  await page.getByRole('button', { name: 'Ver todas as fotos', exact: true }).click()
+  const grid = page.getByRole('dialog', { name: 'Suas fotos' })
+  // By position: its name changes once it is selected.
+  const second = grid.locator('.photo-grid-item').nth(1)
+  await expect(second).toHaveAccessibleName('Colocar foto-2.jpg no frame')
+  const box = (await second.boundingBox())!
+  const at = { clientX: box.x + box.width / 2, clientY: box.y + box.height / 2 }
+  await second.dispatchEvent('pointerdown', { pointerType: 'touch', isPrimary: true, ...at })
+  await page.waitForTimeout(700)
+  await second.dispatchEvent('pointerup', { pointerType: 'touch', isPrimary: true, ...at })
+  await second.dispatchEvent('click')
+
+  const toggle = (n: number) =>
+    grid.getByRole('button', { name: `Selecionar foto-${n}.jpg`, exact: true })
+  await expect(toggle(2)).toHaveAttribute('aria-pressed', 'true')
+  await expect(grid.getByText('1 foto selecionada')).toBeVisible()
+
+  await grid.getByRole('button', { name: 'Selecionar as não usadas', exact: true }).click()
+  await expect(toggle(1)).toHaveAttribute('aria-pressed', 'false')
+  await expect(toggle(3)).toHaveAttribute('aria-pressed', 'true')
+  await expect(grid.getByText('2 fotos selecionadas')).toBeVisible()
+
+  await grid.getByRole('button', { name: 'Colocar em frames', exact: true }).click()
+  const sizes = page.getByRole('dialog', { name: 'Tamanho dos frames' })
+  await sizes.getByRole('button', { name: '13×18 cm', exact: true }).click()
+  await expect(grid).toHaveCount(0)
+
+  await expect(page.getByRole('img', { name: 'Frame 2 de 3', exact: true })).toBeAttached()
+  await expect(page.getByRole('button', { name: '13 × 18 cm' })).toBeVisible()
+  await expect.poll(async () => (await savedCollection(page))?.frames.length).toBe(3)
+  await expect(page.locator('.tray .photo-size')).toHaveText(['10×15', '13×18', '13×18'])
+})
+
+test('selected photos are deleted after confirming', async ({ page }) => {
+  await uploadPhotos(page, [
+    await makeJpeg(page, 400, 600, '#a8552f'),
+    await makeJpeg(page, 400, 600, '#2f5fa8'),
+  ])
+  await page.getByRole('button', { name: 'Ver todas as fotos', exact: true }).click()
+  const grid = page.getByRole('dialog', { name: 'Suas fotos' })
+  await grid.getByRole('button', { name: 'Selecionar', exact: true }).click()
+  await grid.getByRole('button', { name: 'Selecionar foto-1.jpg', exact: true }).click()
+  await grid.getByRole('button', { name: 'Excluir', exact: true }).click()
+  await page
+    .getByRole('dialog', { name: 'Excluir 1 foto?' })
+    .getByRole('button', { name: 'Excluir', exact: true })
+    .click()
+  await expect(grid.getByRole('button', { name: /foto-1\.jpg/ })).toHaveCount(0)
+  await expect(grid.getByRole('button', { name: /foto-2\.jpg/ })).toHaveCount(1)
+  await expect(grid.getByText('0 de 1 já estão em frames')).toBeVisible()
+})

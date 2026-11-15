@@ -90,12 +90,16 @@ export interface EditorState {
   addPhotos(files: File[]): Promise<{ failed: string[]; photoIds: string[] }>
   /** Removes the photo from the open collection: its tray entry and every frame showing it. */
   deletePhoto(photoId: string): Promise<void>
+  /** Deletes several photos, one after another. */
+  deletePhotos(photoIds: string[]): Promise<void>
   /**
    * With onlyOnFrameId, for a photo that took a while to read: does nothing unless that frame
    * is still the active one, and does not reopen an edit that was closed in the meantime.
    */
   tapPhoto(photoId: string, onlyOnFrameId?: string): void
   addFrame(size: Size): void
+  /** One new frame of this size per photo, at the end; the first new one becomes active. */
+  framesForPhotos(size: Size, photoIds: string[]): void
   duplicateActive(): void
   removeActive(): void
   setActive(id: string): void
@@ -428,6 +432,10 @@ export function createEditorStore(
         await store.deletePhotoIfUnused(photoId).catch((e: unknown) => console.error(e))
       },
 
+      async deletePhotos(photoIds) {
+        for (const id of photoIds) await get().deletePhoto(id)
+      },
+
       tapPhoto(photoId, onlyOnFrameId) {
         const frame = active()
         const photo = get().photos[photoId]
@@ -455,6 +463,17 @@ export function createEditorStore(
       addFrame(size) {
         const frame = createFrame(size)
         setFrames([...get().collection.frames, frame], frame.id)
+      },
+
+      framesForPhotos(size, photoIds) {
+        const { photos, collection } = get()
+        const added = photoIds
+          .map((id) => photos[id])
+          .filter((p): p is Photo => p !== undefined)
+          .map((photo) => placePhoto(createFrame(size), photo))
+        if (added.length === 0) return
+        commit({ mode: 'browse', selectedLayerId: null, replacing: false })
+        setFrames([...collection.frames, ...added], added[0]!.id)
       },
 
       duplicateActive() {

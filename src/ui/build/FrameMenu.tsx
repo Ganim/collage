@@ -1,18 +1,10 @@
 import { CopyPlus, Trash2 } from 'lucide-react'
-import {
-  useRef,
-  useState,
-  type MouseEvent as ReactMouseEvent,
-  type PointerEvent as ReactPointerEvent,
-} from 'react'
+import { useState } from 'react'
 import { useEditor } from '../../state/editor'
 import { BottomSheet } from '../components/BottomSheet'
 import { ConfirmSheet } from '../components/ConfirmSheet'
 import { t } from '../i18n'
-
-const HOLD_MS = 500
-/** A finger that moves further than this is swiping, not holding. */
-const SLOP_PX = 10
+import { useLongPress } from '../useLongPress'
 
 /**
  * Press and hold (or right-click) the frame on screen to duplicate or remove it.
@@ -22,50 +14,8 @@ export function useFrameMenu(enabled: boolean) {
   const duplicateActive = useEditor((s) => s.duplicateActive)
   const removeActive = useEditor((s) => s.removeActive)
   const [sheet, setSheet] = useState<'menu' | 'remove' | null>(null)
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const start = useRef<{ x: number; y: number } | null>(null)
-  // The click that ends a hold must not also count as a tap on the frame.
-  const held = useRef(false)
-
-  const cancel = () => {
-    if (timer.current) clearTimeout(timer.current)
-    timer.current = null
-    start.current = null
-  }
-
-  const open = () => {
-    cancel()
-    held.current = true
-    setSheet('menu')
-  }
-
-  const handlers = enabled
-    ? {
-        onPointerDown: (e: ReactPointerEvent) => {
-          held.current = false
-          if (e.pointerType === 'mouse') return
-          start.current = { x: e.clientX, y: e.clientY }
-          timer.current = setTimeout(open, HOLD_MS)
-        },
-        onPointerMove: (e: ReactPointerEvent) => {
-          const from = start.current
-          if (from && Math.hypot(e.clientX - from.x, e.clientY - from.y) > SLOP_PX) cancel()
-        },
-        onPointerUp: cancel,
-        onPointerCancel: cancel,
-        onPointerLeave: cancel,
-        onContextMenu: (e: ReactMouseEvent) => {
-          e.preventDefault()
-          open()
-        },
-        onClickCapture: (e: ReactMouseEvent) => {
-          if (held.current) {
-            held.current = false
-            e.stopPropagation()
-          }
-        },
-      }
-    : {}
+  const press = useLongPress(() => setSheet('menu'))
+  const handlers = enabled ? press : {}
 
   const close = () => setSheet(null)
 

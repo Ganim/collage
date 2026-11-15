@@ -861,3 +861,41 @@ describe('deletePhoto', () => {
     expect(editor.getState().selectedLayerId).toBeNull()
   })
 })
+
+describe('framesForPhotos', () => {
+  it('gives each photo its own new frame of the size, after the others, and shows the first', async () => {
+    const editor = await setup()
+    const before = editor.getState().collection.frames[0]!.id
+    editor.getState().framesForPhotos({ widthMm: 130, heightMm: 180 }, ['a', 'b', 'gone'])
+    const s = editor.getState()
+    expect(s.collection.frames).toHaveLength(3)
+    expect(s.collection.frames[0]!.id).toBe(before)
+    const added = s.collection.frames.slice(1)
+    expect(added.map((f) => f.layers.map((l) => l.photoId))).toEqual([['a'], ['b']])
+    // Landscape photos turn the frame, as a tap on an empty frame does.
+    expect(added.map((f) => [f.widthMm, f.heightMm])).toEqual([
+      [180, 130],
+      [180, 130],
+    ])
+    expect(s.activeFrameId).toBe(added[0]!.id)
+    expect(s.mode).toBe('browse')
+  })
+
+  it('does nothing without photos it knows', async () => {
+    const editor = await setup()
+    editor.getState().framesForPhotos({ widthMm: 130, heightMm: 180 }, ['gone'])
+    expect(editor.getState().collection.frames).toHaveLength(1)
+  })
+})
+
+describe('deletePhotos', () => {
+  it('removes every photo given from the tray and from the frames', async () => {
+    const editor = await setup()
+    editor.setState({ collection: { ...editor.getState().collection, photoIds: ['a', 'b'] } })
+    editor.getState().tapPhoto('a')
+    await editor.getState().deletePhotos(['a', 'b'])
+    const s = editor.getState()
+    expect(s.collection.photoIds).toEqual([])
+    expect(s.collection.frames[0]!.layers).toHaveLength(0)
+  })
+})

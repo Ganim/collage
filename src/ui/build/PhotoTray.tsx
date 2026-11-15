@@ -5,6 +5,7 @@ import { useEditor } from '../../state/editor'
 import { t } from '../i18n'
 import { PhotoGrid } from './PhotoGrid'
 import { PhotoThumb } from './PhotoThumb'
+import { photoUsage } from './photoUsage'
 
 /** How far up a finger must go on the tray to open the grid. */
 const SWIPE_UP_PX = 40
@@ -23,10 +24,7 @@ export function PhotoTray({ onUpload, onPhotoTap }: PhotoTrayProps) {
   const swipeStart = useRef<{ x: number; y: number } | null>(null)
   const empty = photoIds.length === 0
 
-  const used = useMemo(
-    () => new Set(frames.flatMap((f) => f.layers.map((l) => l.photoId))),
-    [frames],
-  )
+  const usage = useMemo(() => photoUsage(frames), [frames])
 
   return (
     <>
@@ -69,7 +67,7 @@ export function PhotoTray({ onUpload, onPhotoTap }: PhotoTrayProps) {
             <PhotoThumb
               key={id}
               photo={photo}
-              used={used.has(id)}
+              sizes={usage.get(id)}
               onTap={() => onPhotoTap(id)}
               onDelete={() => void deletePhoto(id)}
             />
@@ -88,7 +86,7 @@ export function PhotoTray({ onUpload, onPhotoTap }: PhotoTrayProps) {
       </div>
       {gridOpen && (
         <PhotoGrid
-          used={used}
+          usage={usage}
           onPick={(id) => {
             setGridOpen(false)
             onPhotoTap(id)

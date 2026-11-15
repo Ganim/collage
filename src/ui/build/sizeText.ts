@@ -13,6 +13,9 @@ export const sizeChipText = (s: Size) => t('size.chip', { w: cm(s.widthMm), h: c
 /** "10×15 cm", the way the ready-made sizes are written. */
 export const sizeListText = (s: Size) => t('size.list', { w: cm(s.widthMm), h: cm(s.heightMm) })
 
+/** "10×15", short enough for a chip on a photo. */
+export const sizeShortText = (s: Size) => t('size.short', { w: cm(s.widthMm), h: cm(s.heightMm) })
+
 /** Reads a length typed in cm, with comma or period, as whole millimetres; null if unusable. */
 export function parseCm(value: string): number | null {
   const text = value.trim()
