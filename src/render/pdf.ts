@@ -1,7 +1,7 @@
 import { degrees, PDFDocument, PDFPage, PrintScaling, rgb } from 'pdf-lib'
 import type { Collection, Paper, Size } from '../core/types'
 import type { PlacedFrame, SheetLayout } from '../packing/pack'
-import type { Store } from '../storage/store'
+import type { PhotoReader } from '../storage/store'
 import { browserRaster, composeFrame, MissingPhotoError, type Raster } from './compose'
 
 export interface GenerateRequest {
@@ -130,7 +130,7 @@ export async function buildPdf(
 
 /** Renders the laid-out frames to a PDF. The canvas work goes through `raster`. */
 export async function generatePdfWith(
-  store: Store,
+  store: PhotoReader,
   { collection, layout }: GenerateRequest,
   onProgress: (done: number, total: number) => void,
   raster: Raster = browserRaster,

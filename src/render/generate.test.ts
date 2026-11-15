@@ -3,7 +3,7 @@ import { PDFDocument } from 'pdf-lib'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Collection, Frame, Layer } from '../core/types'
 import type { SheetLayout } from '../packing/pack'
-import type { Store, StoredPhoto } from '../storage/store'
+import type { PhotoReader, StoredPhoto } from '../storage/store'
 import { MissingPhotoError, type Raster } from './compose'
 import { generatePdfWith } from './pdf'
 
@@ -40,7 +40,7 @@ function layoutOf(...frameIds: string[]): SheetLayout {
   }
 }
 
-function storeWith(...ids: string[]): Store {
+function storeWith(...ids: string[]): PhotoReader {
   const photo = (id: string): StoredPhoto => ({
     id,
     width: 2,
@@ -54,7 +54,7 @@ function storeWith(...ids: string[]): Store {
     getPhoto: async (id: string) => (ids.includes(id) ? photo(id) : undefined),
     getPhotosMeta: async (wanted: string[]) =>
       Object.fromEntries(wanted.filter((id) => ids.includes(id)).map((id) => [id, photo(id)])),
-  } as unknown as Store
+  } as unknown as PhotoReader
 }
 
 function fakeRaster(decoded: Blob[] = []) {
@@ -277,9 +277,9 @@ describe('generatePdf', () => {
   })
 })
 
-const { mockGeneratePdf, createIdbStore } = vi.hoisted(() => ({
+const { mockGeneratePdf, openPhotoReader } = vi.hoisted(() => ({
   mockGeneratePdf: vi.fn(),
-  createIdbStore: vi.fn(),
+  openPhotoReader: vi.fn(),
 }))
 
 describe('generatePdf without OffscreenCanvas', () => {
@@ -288,9 +288,9 @@ describe('generatePdf without OffscreenCanvas', () => {
   async function load() {
     vi.resetModules()
     vi.doMock('./pdf', () => ({ generatePdfWith: mockGeneratePdf }))
-    vi.doMock('../storage/indexeddb', () => ({ createIdbStore }))
-    createIdbStore.mockReset()
-    createIdbStore.mockResolvedValue({ store: true })
+    vi.doMock('../storage/indexeddb', () => ({ openPhotoReader }))
+    openPhotoReader.mockReset()
+    openPhotoReader.mockResolvedValue({ store: true })
     mockGeneratePdf.mockReset()
     return import('./generate')
   }
@@ -350,7 +350,7 @@ describe('generatePdf without OffscreenCanvas', () => {
 
   it('tries the storage again after it could not be opened', async () => {
     const { generatePdf } = await load()
-    createIdbStore.mockRejectedValueOnce(new Error('blocked'))
+    openPhotoReader.mockRejectedValueOnce(new Error('blocked'))
     const pdf = new Blob(['p'])
     mockGeneratePdf.mockResolvedValue(pdf)
     await expect(generatePdf(req, () => {})).rejects.toThrow('blocked')

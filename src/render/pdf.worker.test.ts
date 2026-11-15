@@ -3,7 +3,7 @@ import type { GenerateRequest } from './pdf'
 
 const generatePdfWith = vi.hoisted(() => vi.fn())
 vi.mock('./pdf', () => ({ generatePdfWith }))
-vi.mock('../storage/indexeddb', () => ({ createIdbStore: async () => ({}) }))
+vi.mock('../storage/indexeddb', () => ({ openPhotoReader: async () => ({}) }))
 
 interface FakeSelf {
   onmessage: ((event: { data: { id: number; req: GenerateRequest } }) => void) | null

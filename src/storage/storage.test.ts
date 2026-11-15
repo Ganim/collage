@@ -6,7 +6,7 @@ import { openDB } from 'idb'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Collection } from '../core/types'
 import { exportBundle, importBundle } from './bundle'
-import { createIdbStore } from './indexeddb'
+import { createIdbStore, openPhotoReader } from './indexeddb'
 import { StorageFullError, type Store, type StoredPhoto } from './store'
 
 const ID = {
@@ -108,8 +108,8 @@ describe('store', () => {
   it('closes its connection when a newer version needs the database', async () => {
     const name = 't-blocking'
     const current = await createIdbStore(name)
-    const newer = await openDB(name, 3)
-    expect(newer.version).toBe(3)
+    const newer = await openDB(name, 4)
+    expect(newer.version).toBe(4)
     newer.close()
     await expect(current.listSizes()).rejects.toMatchObject({ name: 'InvalidStateError' })
   })
@@ -146,6 +146,7 @@ describe('store', () => {
       name: 'B',
       widthMm: 20,
       heightMm: 30,
+      updatedAt: expect.any(Number),
     })
   })
 
@@ -251,6 +252,313 @@ describe('store', () => {
     await expect(store.saveCollection(collection('c1', []))).rejects.toBeInstanceOf(
       StorageFullError,
     )
+  })
+})
+
+const ANA = { id: 'ana', email: 'ana@example.com' }
+const BIA = { id: 'bia', email: 'bia@example.com' }
+
+const ids = async (s: Store = store) => (await s.listCollections()).map((c) => c.id).sort()
+
+describe('sync bookkeeping', () => {
+  it('opens a v2 database with data at v3, keeping everything unowned', async () => {
+    const name = 't-v2'
+    const old = await openDB(name, 2, {
+      upgrade(d) {
+        d.createObjectStore('photos', { keyPath: 'id' })
+        d.createObjectStore('collections', { keyPath: 'id' })
+        d.createObjectStore('sizes', { keyPath: 'id' })
+        d.createObjectStore('meta')
+        d.createObjectStore('folders', { keyPath: 'id' })
+      },
+    })
+    const c = collection('c1', [ID.a])
+    const size = { id: 's1', name: '3x4', widthMm: 30, heightMm: 40, folderId: 'f1' }
+    const folder = { id: 'f1', name: 'Pasta', createdAt: 1 }
+    await old.put('photos', photo('a'))
+    await old.put('collections', c)
+    await old.put('sizes', size)
+    await old.put('folders', folder)
+    await old.put('meta', 'c1', 'lastCollectionId')
+    old.close()
+
+    const migrated = await createIdbStore(name)
+    expect(await migrated.getCollection('c1')).toEqual(c)
+    expect(await (await migrated.getPhoto(ID.a))?.original.text()).toBe('orig-a')
+    expect(await migrated.listSizes()).toEqual([size])
+    expect(await migrated.listFolders()).toEqual([folder])
+    expect(await migrated.getLastCollectionId()).toBe('c1')
+    expect(await migrated.getSyncStates()).toEqual({})
+    expect(await migrated.listTombstones()).toEqual([])
+    expect(await migrated.isLibraryDirty()).toBe(false)
+    await migrated.setOwner(ANA)
+    expect(await ids(migrated)).toEqual(['c1'])
+    expect(await migrated.getLastCollectionId()).toBe('c1')
+    const raw = await openDB(name)
+    expect(raw.version).toBe(3)
+    raw.close()
+  })
+
+  it('saveCollection marks the collection dirty; without an owner it stays unowned', async () => {
+    await store.saveCollection(collection('c1', []))
+    expect(await store.getSyncStates()).toEqual({ c1: { dirty: true } })
+  })
+
+  it('saveCollection gives an unowned collection the current owner, and keeps an existing one', async () => {
+    await store.setOwner(ANA)
+    await store.saveCollection(collection('c1', []))
+    expect((await store.getSyncStates()).c1).toEqual({
+      ownerId: 'ana',
+      ownerEmail: 'ana@example.com',
+      dirty: true,
+    })
+    await store.setSyncState('c1', { dirty: false, remoteFileId: 'r1' })
+    await store.setOwner(BIA)
+    await store.saveCollection(collection('c1', []))
+    expect((await store.getSyncStates()).c1).toEqual({
+      ownerId: 'ana',
+      ownerEmail: 'ana@example.com',
+      remoteFileId: 'r1',
+      dirty: true,
+    })
+  })
+
+  it('a failed save leaves no dirty mark behind', async () => {
+    vi.spyOn(IDBObjectStore.prototype, 'put').mockImplementation(function (this: IDBObjectStore) {
+      throw new DOMException('full', 'QuotaExceededError')
+    })
+    await expect(store.saveCollection(collection('c1', []))).rejects.toBeInstanceOf(
+      StorageFullError,
+    )
+    vi.restoreAllMocks()
+    expect(await store.getSyncStates()).toEqual({})
+  })
+
+  it('importCollection and duplicateCollection mark the new collection dirty with the owner', async () => {
+    await store.setOwner(ANA)
+    await store.importCollection([photo('a')], collection('c1', [ID.a]))
+    await store.setSyncState('c1', { dirty: false, remoteFileId: 'r1' })
+    await store.duplicateCollection('c1', collection('c2', [ID.a]))
+    const states = await store.getSyncStates()
+    expect(states.c1).toEqual({
+      ownerId: 'ana',
+      ownerEmail: ANA.email,
+      remoteFileId: 'r1',
+      dirty: false,
+    })
+    expect(states.c2).toEqual({ ownerId: 'ana', ownerEmail: ANA.email, dirty: true })
+  })
+
+  it('listCollections shows the current owner and unowned ones; without an owner, all', async () => {
+    await store.setOwner(ANA)
+    await store.saveCollection(collection('mine', []))
+    await store.setOwner(BIA)
+    await store.saveCollection(collection('hers', []))
+    await store.setOwner(null)
+    await store.saveCollection(collection('nobody', []))
+    expect(await ids()).toEqual(['hers', 'mine', 'nobody'])
+    await store.setOwner(ANA)
+    expect(await ids()).toEqual(['mine', 'nobody'])
+    expect(await store.getCollection('hers')).toBeDefined()
+  })
+
+  it('getLastCollectionId hides a collection of another owner', async () => {
+    await store.setOwner(BIA)
+    await store.saveCollection(collection('hers', []))
+    await store.setLastCollectionId('hers')
+    expect(await store.getLastCollectionId()).toBe('hers')
+    await store.setOwner(ANA)
+    expect(await store.getLastCollectionId()).toBeUndefined()
+    await store.setOwner(null)
+    expect(await store.getLastCollectionId()).toBe('hers')
+  })
+
+  it('setSyncState merges into the existing state', async () => {
+    await store.setSyncState('c1', { remoteFileId: 'r1' })
+    expect((await store.getSyncStates()).c1).toEqual({ remoteFileId: 'r1', dirty: false })
+    await store.setSyncState('c1', { remoteVersion: '7', dirty: true })
+    expect((await store.getSyncStates()).c1).toEqual({
+      remoteFileId: 'r1',
+      remoteVersion: '7',
+      dirty: true,
+    })
+  })
+
+  it('deleteCollection of an uploaded collection leaves a tombstone and drops its state', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(5000)
+    await store.saveCollection(collection('c1', []))
+    await store.setSyncState('c1', { remoteFileId: 'r1', dirty: false })
+    await store.deleteCollection('c1')
+    expect(await store.listTombstones()).toEqual([
+      { kind: 'collection', id: 'c1', at: 5000, remoteFileId: 'r1' },
+    ])
+    expect(await store.getSyncStates()).toEqual({})
+  })
+
+  it('deleteCollection of a never uploaded collection leaves no tombstone', async () => {
+    await store.saveCollection(collection('c1', []))
+    await store.deleteCollection('c1')
+    expect(await store.listTombstones()).toEqual([])
+    expect(await store.getSyncStates()).toEqual({})
+  })
+
+  it('clearTombstones removes only the given ones', async () => {
+    await store.saveSize({ id: 's1', name: 'A', widthMm: 1, heightMm: 1 })
+    await store.saveFolder({ id: 'f1', name: 'P', createdAt: 1 })
+    await store.deleteSize('s1')
+    await store.deleteFolder('f1')
+    await store.clearTombstones([{ kind: 'size', id: 's1' }])
+    expect((await store.listTombstones()).map((t) => `${t.kind}:${t.id}`)).toEqual(['folder:f1'])
+  })
+
+  it('putRemoteCollection writes the collection and the given state without marking it dirty', async () => {
+    await store.setOwner(ANA)
+    const state = {
+      ownerId: 'ana',
+      ownerEmail: ANA.email,
+      remoteFileId: 'r1',
+      remoteVersion: '3',
+      dirty: false,
+    }
+    await store.putRemoteCollection(collection('c1', []), state)
+    expect(await store.getCollection('c1')).toEqual(collection('c1', []))
+    expect((await store.getSyncStates()).c1).toEqual(state)
+  })
+
+  it('removeLocalCollection deletes without a tombstone and frees unused photos', async () => {
+    await store.putPhoto(photo('a'))
+    await store.putPhoto(photo('b'))
+    await store.saveCollection(collection('c1', [ID.a, ID.b]))
+    await store.saveCollection(collection('c2', [ID.a]))
+    await store.setSyncState('c1', { remoteFileId: 'r1' })
+    await store.removeLocalCollection('c1')
+    expect(await store.getCollection('c1')).toBeUndefined()
+    expect(await store.getPhoto(ID.a)).toBeDefined()
+    expect(await store.getPhoto(ID.b)).toBeUndefined()
+    expect(await store.listTombstones()).toEqual([])
+    expect((await store.getSyncStates()).c1).toBeUndefined()
+  })
+
+  it('saveSize and saveFolder stamp updatedAt and mark the library dirty', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(7000)
+    expect(await store.isLibraryDirty()).toBe(false)
+    await store.saveSize({ id: 's1', name: 'A', widthMm: 1, heightMm: 1, updatedAt: 1 })
+    expect(await store.listSizes()).toEqual([
+      { id: 's1', name: 'A', widthMm: 1, heightMm: 1, updatedAt: 7000 },
+    ])
+    expect(await store.isLibraryDirty()).toBe(true)
+    await store.setLibraryDirty(false)
+    expect(await store.isLibraryDirty()).toBe(false)
+    await store.saveFolder({ id: 'f1', name: 'P', createdAt: 1 })
+    expect(await store.listFolders()).toEqual([
+      { id: 'f1', name: 'P', createdAt: 1, updatedAt: 7000 },
+    ])
+    expect(await store.isLibraryDirty()).toBe(true)
+  })
+
+  it('deleteSize marks the library dirty and leaves a tombstone', async () => {
+    await store.saveSize({ id: 's1', name: 'A', widthMm: 1, heightMm: 1 })
+    await store.setLibraryDirty(false)
+    vi.spyOn(Date, 'now').mockReturnValue(8000)
+    await store.deleteSize('s1')
+    expect(await store.isLibraryDirty()).toBe(true)
+    expect(await store.listTombstones()).toEqual([{ kind: 'size', id: 's1', at: 8000 }])
+  })
+
+  it('deleteFolder marks the library dirty, leaves a tombstone and restamps the sizes it moves out', async () => {
+    await store.saveFolder({ id: 'f1', name: 'P', createdAt: 1 })
+    await store.saveSize({ id: 's1', name: 'A', widthMm: 1, heightMm: 1, folderId: 'f1' })
+    await store.setLibraryDirty(false)
+    vi.spyOn(Date, 'now').mockReturnValue(9000)
+    await store.deleteFolder('f1')
+    expect(await store.isLibraryDirty()).toBe(true)
+    expect(await store.listTombstones()).toEqual([{ kind: 'folder', id: 'f1', at: 9000 }])
+    expect(await store.listSizes()).toEqual([
+      { id: 's1', name: 'A', widthMm: 1, heightMm: 1, updatedAt: 9000 },
+    ])
+  })
+
+  it('putRemoteLibrary replaces sizes and folders without marking the library dirty', async () => {
+    await store.saveSize({ id: 'old', name: 'Old', widthMm: 1, heightMm: 1 })
+    await store.saveFolder({ id: 'oldf', name: 'Old', createdAt: 1 })
+    await store.setLibraryDirty(false)
+    const sizes = [{ id: 's1', name: 'A', widthMm: 1, heightMm: 1, updatedAt: 3 }]
+    const folders = [{ id: 'f1', name: 'P', createdAt: 1, updatedAt: 4 }]
+    await store.putRemoteLibrary(sizes, folders)
+    expect(await store.listSizes()).toEqual(sizes)
+    expect(await store.listFolders()).toEqual(folders)
+    expect(await store.isLibraryDirty()).toBe(false)
+  })
+
+  it('listOtherOwners counts the collections of each other owner', async () => {
+    await store.setOwner(BIA)
+    await store.saveCollection(collection('b1', []))
+    await store.saveCollection(collection('b2', []))
+    await store.setOwner(ANA)
+    await store.saveCollection(collection('a1', []))
+    await store.setOwner(null)
+    await store.saveCollection(collection('n1', []))
+    await store.setOwner(ANA)
+    expect(await store.listOtherOwners()).toEqual([{ id: 'bia', email: BIA.email, count: 2 }])
+  })
+
+  it('claimCollections moves them to the current owner as new, dirty uploads', async () => {
+    await store.setOwner(BIA)
+    await store.saveCollection(collection('b1', []))
+    await store.setSyncState('b1', { remoteFileId: 'r1', remoteVersion: '2', dirty: false })
+    await store.setOwner(ANA)
+    expect(await ids()).toEqual([])
+    await store.claimCollections('bia')
+    expect(await ids()).toEqual(['b1'])
+    expect((await store.getSyncStates()).b1).toEqual({
+      ownerId: 'ana',
+      ownerEmail: ANA.email,
+      dirty: true,
+    })
+    expect(await store.listOtherOwners()).toEqual([])
+  })
+})
+
+describe('photo reader', () => {
+  it('reads photos from the database without asking for a version', async () => {
+    await store.putPhoto(photo('a'))
+    const name = `test-${dbCount - 1}`
+    const reader = await openPhotoReader(name)
+    expect(await (await reader.getPhoto(ID.a))?.original.text()).toBe('orig-a')
+    expect(await reader.getPhotosMeta([ID.a])).toEqual({
+      [ID.a]: { id: ID.a, width: 400, height: 300, name: photo('a').name },
+    })
+  })
+
+  it('opens a database newer than this app without VersionError', async () => {
+    const name = 't-reader-newer'
+    const newer = await openDB(name, 9, {
+      upgrade(d) {
+        d.createObjectStore('photos', { keyPath: 'id' })
+      },
+    })
+    await newer.put('photos', photo('a'))
+    newer.close()
+    const reader = await openPhotoReader(name)
+    expect(await reader.getPhoto(ID.a)).toBeDefined()
+  })
+
+  it('steps aside for an upgrade and reads again afterwards', async () => {
+    const name = 't-reader-upgrade'
+    const s = await createIdbStore(name)
+    await s.putPhoto(photo('a'))
+    const reader = await openPhotoReader(name)
+    await reader.getPhoto(ID.a)
+    const upgraded = await openDB(name, 4)
+    upgraded.close()
+    expect(await reader.getPhoto(ID.a)).toBeDefined()
+  })
+
+  it('never creates an empty database', async () => {
+    const name = 't-reader-missing'
+    await expect(openPhotoReader(name)).rejects.toThrow()
+    const s = await createIdbStore(name)
+    expect(await s.listSizes()).toEqual([])
   })
 })
 

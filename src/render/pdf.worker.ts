@@ -1,13 +1,13 @@
-import { createIdbStore } from '../storage/indexeddb'
-import type { Store } from '../storage/store'
+import { openPhotoReader } from '../storage/indexeddb'
+import type { PhotoReader } from '../storage/store'
 import { MissingPhotoError } from './compose'
 import type { PdfWorkerReply } from './generate'
 import { generatePdfWith, type GenerateRequest } from './pdf'
 
-let store: Promise<Store> | undefined
+let store: Promise<PhotoReader> | undefined
 
-function getStore(): Promise<Store> {
-  store ??= createIdbStore().catch((error: unknown) => {
+function getStore(): Promise<PhotoReader> {
+  store ??= openPhotoReader().catch((error: unknown) => {
     store = undefined
     throw error
   })

@@ -1,4 +1,4 @@
-import type { Store } from '../storage/store'
+import type { PhotoReader } from '../storage/store'
 import { MissingPhotoError } from './compose'
 import type { GenerateRequest } from './pdf'
 
@@ -66,12 +66,12 @@ function generateInWorker(req: GenerateRequest, onProgress: OnProgress): Promise
   })
 }
 
-let store: Promise<Store> | undefined
+let store: Promise<PhotoReader> | undefined
 let mainQueue: Promise<unknown> = Promise.resolve()
 
-function getStore(): Promise<Store> {
+function getStore(): Promise<PhotoReader> {
   store ??= import('../storage/indexeddb')
-    .then(({ createIdbStore }) => createIdbStore())
+    .then(({ openPhotoReader }) => openPhotoReader())
     .catch((error: unknown) => {
       store = undefined
       throw error
