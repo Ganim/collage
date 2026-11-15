@@ -224,6 +224,40 @@ describe('sync engine between two devices', () => {
     expect((await b.getCollection('c1'))?.name).toBe('Editada 2')
   })
 
+  it('on a Drive that bumps versions, a pulled collection edited here is no conflict', async () => {
+    drive = createFakeDrive({ bumpVersionAfterWrite: true })
+    await a.importCollection([photo('p1')], collection('c1', ['p1']))
+    await engineFor(a, drive).run()
+    await engineFor(b, drive).run()
+    expect((await b.getSyncStates()).c1?.remoteMd5).toBe(
+      md5(JSON.stringify(collection('c1', ['p1']))),
+    )
+    // Google moves the version again on its own side: same content, new version.
+    const [file] = filesOf(drive, 'collection')
+    file!.version = String(Number(file!.version) + 1)
+    await b.saveCollection(collection('c1', ['p1'], { name: 'De B', updatedAt: 2000 }))
+
+    await engineFor(b, drive).run()
+    expect(status().state).toBe('idle')
+    expect((await b.listCollections()).map((c) => c.name)).toEqual(['De B'])
+    expect(filesOf(drive, 'collection')).toHaveLength(1)
+    expect((await b.getSyncStates()).c1?.dirty).toBe(false)
+    await engineFor(a, drive).run()
+    expect((await a.listCollections()).map((c) => c.name)).toEqual(['De B'])
+  })
+
+  it('a pull without a Drive checksum records the MD5 of the text it downloaded', async () => {
+    await a.saveCollection(collection('c1', []))
+    await engineFor(a, drive).run()
+    const noChecksum: Drive = {
+      ...drive,
+      list: async (folder) =>
+        (await drive.list(folder)).map((f) => ({ ...f, md5Checksum: undefined })),
+    }
+    await engineFor(b, noChecksum).run()
+    expect((await b.getSyncStates()).c1?.remoteMd5).toBe(md5(JSON.stringify(collection('c1', []))))
+  })
+
   it('a conflict with identical content adopts the remote file without a copy', async () => {
     await a.saveCollection(collection('c1', []))
     // The upload landed but the device never recorded it.

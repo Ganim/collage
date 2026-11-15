@@ -138,14 +138,17 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
       return indexListing(folder, await drive.list(folder))
     }
 
-    async function readJson(fileId: string): Promise<unknown> {
+    /** The file's text and its JSON value (undefined when it is not JSON). */
+    async function readFile(fileId: string): Promise<{ text: string; value: unknown }> {
       const text = await (await drive.download(fileId)).text()
       try {
-        return JSON.parse(text) as unknown
+        return { text, value: JSON.parse(text) as unknown }
       } catch {
-        return undefined
+        return { text, value: undefined }
       }
     }
+
+    const readJson = async (fileId: string): Promise<unknown> => (await readFile(fileId)).value
 
     /** Uploads the photos the Drive does not have yet; a photo missing here is skipped. */
     async function uploadPhotos(photoIds: string[], listing: Listing): Promise<void> {
@@ -211,12 +214,14 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
       }
     }
 
+    /** `md5Checksum` is the Drive's checksum of the file in the listing, when it gave one. */
     async function pull(
       action: Extract<Action, { kind: 'pull' }>,
+      md5Checksum: string | undefined,
       owner: Owner,
       changed: Set<string>,
     ): Promise<void> {
-      const c = await readJson(action.fileId)
+      const { text, value: c } = await readFile(action.fileId)
       if (!isCollection(c, action.id)) return
       // The store skips a collection edited here since the plan: the next pass sees a conflict.
       const wrote = await store.putRemoteCollection(c, {
@@ -224,6 +229,8 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
         ownerEmail: owner.email,
         remoteFileId: action.fileId,
         remoteVersion: action.version,
+        // Names this content, so a later version the Drive bumps on its own is no conflict.
+        remoteMd5: md5Checksum ?? md5(text),
         dirty: false,
       })
       if (wrote) changed.add(action.id)
@@ -349,7 +356,7 @@ export function createSyncEngine(deps: SyncEngineDeps): SyncEngine {
             await push(action.id, owner, listing, remote)
             break
           case 'pull':
-            await pull(action, owner, changed)
+            await pull(action, remote.get(action.id)?.md5Checksum, owner, changed)
             break
           case 'conflict':
             await resolveConflict(action, owner, listing, remote, changed)
