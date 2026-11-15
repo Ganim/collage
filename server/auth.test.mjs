@@ -12,6 +12,11 @@ const idToken = (claims) =>
     .map((p) => Buffer.from(p).toString('base64url'))
     .join('.')
 
+// The scope string Google answers with when every permission was granted.
+const GRANTED_ALL =
+  'openid https://www.googleapis.com/auth/userinfo.email ' +
+  'https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/drive.file'
+
 const profile = {
   sub: '42',
   email: 'ana@example.com',
@@ -22,7 +27,14 @@ const profile = {
 
 function setup(
   googleClaims,
-  { tokenStatus = 200, tokenError, refreshToken, refreshStatus = 200, refreshBody } = {},
+  {
+    tokenStatus = 200,
+    tokenError,
+    refreshToken,
+    refreshStatus = 200,
+    refreshBody,
+    scope = GRANTED_ALL,
+  } = {},
 ) {
   const googleCalls = []
   const json = (status, body) =>
@@ -39,6 +51,7 @@ function setup(
     }
     return json(tokenStatus, {
       id_token: idToken({ aud: CLIENT_ID, ...googleClaims }),
+      ...(scope ? { scope } : {}),
       ...(refreshToken ? { refresh_token: refreshToken } : {}),
     })
   }
@@ -320,6 +333,31 @@ describe('collage auth: Drive access', () => {
     assert.equal((await me.json()).drive, false)
   })
 
+  it('callback drops the refresh token when Drive was left unchecked', async () => {
+    const session = await signIn({
+      refreshToken: 'rt-secret',
+      scope: 'openid https://www.googleapis.com/auth/userinfo.email',
+    })
+    const me = await call('/api/auth/me', { headers: { cookie: session } })
+    assert.equal((await me.json()).drive, false)
+    const res = await driveToken(session)
+    assert.equal(res.status, 403)
+    assert.deepEqual(await res.json(), { error: 'no_drive' })
+  })
+
+  it('callback does not keep the old refresh token when Drive is now unchecked', async () => {
+    const first = await signIn({ refreshToken: 'rt-old' })
+    const second = await signIn({ scope: 'openid email profile' }, profile, first)
+    const me = await call('/api/auth/me', { headers: { cookie: second } })
+    assert.equal((await me.json()).drive, false)
+  })
+
+  it('callback with no scope in the answer keeps no Drive access', async () => {
+    const session = await signIn({ refreshToken: 'rt-secret', scope: null })
+    const me = await call('/api/auth/me', { headers: { cookie: session } })
+    assert.equal((await me.json()).drive, false)
+  })
+
   it('me renews the cookie with a year of life', async () => {
     const session = await signIn({ refreshToken: 'rt-secret' })
     const me = await call('/api/auth/me', { headers: { cookie: session } })
@@ -363,6 +401,16 @@ describe('collage auth: Drive access', () => {
     assert.equal(form.get('refresh_token'), 'rt-secret')
     assert.equal(form.get('client_id'), CLIENT_ID)
     assert.equal(form.get('client_secret'), 'secret')
+  })
+
+  it('drive-token falls back to an hour when Google sends no usable expires_in', async () => {
+    const session = await signIn({
+      refreshToken: 'rt-secret',
+      refreshBody: { access_token: 'access-2' },
+    })
+    const res = await driveToken(session)
+    assert.equal(res.status, 200)
+    assert.deepEqual(await res.json(), { accessToken: 'access-2', expiresIn: 3600 })
   })
 
   it('drive-token without a cookie is 401', async () => {

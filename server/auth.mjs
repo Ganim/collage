@@ -3,7 +3,8 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:
 import { createServer } from 'node:http'
 import { pathToFileURL } from 'node:url'
 
-const SCOPES = 'openid email profile https://www.googleapis.com/auth/drive.file'
+const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file'
+const SCOPES = `openid email profile ${DRIVE_SCOPE}`
 const YEAR = 365 * 24 * 60 * 60
 const ERROR_PAGE = '/#/entrar?erro=1'
 
@@ -106,7 +107,7 @@ export function createHandler({ clientId, clientSecret, cookieKey, publicOrigin,
       }),
     })
     if (!r.ok) throw new AuthFailure(`token endpoint answered ${r.status}`)
-    const { id_token: idToken, refresh_token: newRt } = await r.json()
+    const { id_token: idToken, refresh_token: newRt, scope: granted } = await r.json()
 
     // The token came straight from Google over TLS in answer to our own request, so
     // reading its payload without checking the signature is acceptable here.
@@ -115,9 +116,15 @@ export function createHandler({ clientId, clientSecret, cookieKey, publicOrigin,
     if (claims.email_verified !== true) throw new AuthFailure('email not verified')
 
     const { sub, email, name, picture } = claims
+    // The consent screen lets the person leave Drive unchecked: without that permission
+    // no refresh token is kept, so the app shows the account as not connected to Drive.
+    const driveGranted = String(granted ?? '')
+      .split(' ')
+      .includes(DRIVE_SCOPE)
     // Google may omit the refresh token on a repeat grant: keep ours if it is the same account.
     const previous = readSession(req)
-    const keep = newRt ? newRt : previous?.sub === sub ? previous.rt : undefined
+    const sameAccountRt = previous?.sub === sub ? previous.rt : undefined
+    const keep = driveGranted ? newRt || sameAccountRt : undefined
     redirect(res, '/#/colecoes', [
       cookie('collage_oauth', '', 0),
       cookie('collage_session', sealSession({ sub, email, name, picture, rt: keep }), YEAR),
@@ -186,7 +193,7 @@ export function createHandler({ clientId, clientSecret, cookieKey, publicOrigin,
       console.error('/api/auth/drive-token', `token endpoint answered ${r.status}`)
       return send(502, { error: 'google' })
     }
-    send(200, { accessToken: body.access_token, expiresIn: Number(body.expires_in) })
+    send(200, { accessToken: body.access_token, expiresIn: Number(body.expires_in) || 3600 })
   }
 
   function logout(res) {
