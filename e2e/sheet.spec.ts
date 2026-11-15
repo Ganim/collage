@@ -269,6 +269,54 @@ test('margin and gap accept a comma; an unusable value blocks generation', async
   expect((await savedPaper(page))?.marginMm).toBe(12.5)
 })
 
+const reorganizeButton = (page: Page) =>
+  page.getByRole('button', { name: 'Reorganizar encaixe', exact: true })
+
+test('three 13×18 and a 15×21 share one A3 sheet', async ({ page }) => {
+  // The first packer needed two sheets here; the second phase finds the single one.
+  await uploadSized(page, 4, 1200, 1600)
+  for (let i = 1; i <= 3; i++) await addFrameWithPhoto(page, '13×18 cm', i, i)
+  await addFrameWithPhoto(page, '15×21 cm', 4, 4)
+  await openSheet(page)
+  await chooseOption(page, 'Papel', 'A3')
+  await expect(page.getByText(/^1 folha · \d+%$/)).toBeVisible()
+  await expect(sheets(page)).toHaveCount(1)
+})
+
+test('"Reorganizar encaixe" runs a deeper search and says what it found', async ({ page }) => {
+  await photoFrames(page, 3)
+  await openSheet(page)
+  await expect(page.getByText(/^2 folhas · \d+%$/)).toBeVisible()
+  await expect(reorganizeButton(page)).toBeEnabled()
+
+  await reorganizeButton(page).click()
+  await expect(
+    page.getByRole('status').filter({
+      hasText:
+        /^(Agora em 1 folha|Agora em \d+ folhas|Este já é o melhor encaixe que encontrei\.)$/,
+    }),
+  ).toBeVisible({ timeout: 15_000 })
+  await expect(reorganizeButton(page)).toBeEnabled()
+  // Three 10×15 cannot share one A4: the layout stays at two sheets.
+  await expect(page.getByText('Este já é o melhor encaixe que encontrei.')).toBeVisible()
+  await expect(sheets(page)).toHaveCount(2)
+  await generated(page)
+})
+
+test('changing the paper after a reorganize lays out again and drops the message', async ({
+  page,
+}) => {
+  await photoFrames(page, 2)
+  await openSheet(page)
+  await reorganizeButton(page).click()
+  await expect(page.getByText('Este já é o melhor encaixe que encontrei.')).toBeVisible({
+    timeout: 15_000,
+  })
+  await chooseOption(page, 'Papel', 'A3')
+  await expect(page.getByText('Este já é o melhor encaixe que encontrei.')).toHaveCount(0)
+  await expect(page.getByText(/^1 folha · \d+%$/)).toBeVisible()
+})
+
 test('changing the paper after generating asks to generate again', async ({ page }) => {
   await photoFrames(page, 1)
   await openSheet(page)

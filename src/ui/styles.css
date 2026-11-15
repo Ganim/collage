@@ -842,6 +842,38 @@ p {
   font-variant-numeric: tabular-nums;
 }
 
+.print-reorganize {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px 10px;
+  padding: 0 16px 8px;
+}
+
+.print-reorganize-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--fuchsia-700);
+  font-size: 14px;
+}
+
+.print-reorganize-button:disabled {
+  opacity: 0.6;
+}
+
+.print-reorganize-status {
+  flex-basis: 100%;
+  color: var(--plum-500);
+  font-size: 13px;
+  text-align: right;
+}
+
+.print-reorganize-status:empty {
+  display: none;
+}
+
 .print-scroll {
   flex: 1 1 0;
   min-height: 0;

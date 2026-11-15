@@ -7,6 +7,7 @@ import { useMissingPhotos } from '../useMissingPhotos'
 import { deliverPdf, pdfFileName } from './deliver'
 import { PaperControls } from './PaperControls'
 import { PdfLinkSection } from './PdfLinkSection'
+import { ReorganizeSection } from './ReorganizeSection'
 import { SaveFileSection } from './SaveFileSection'
 import { SheetPreview } from './SheetPreview'
 import { useSheetLayout } from './useSheetLayout'
@@ -16,7 +17,15 @@ export function SheetScreen({ onBack }: { onBack: () => void }) {
   const collection = useEditor((s) => s.collection)
   const photos = useEditor((s) => s.photos)
   const { frames, paper } = collection
-  const { layout, paper: layoutPaper, current, failed } = useSheetLayout(frames, paper)
+  const {
+    layout,
+    paper: layoutPaper,
+    current,
+    failed,
+    reorganizing,
+    reorganized,
+    reorganize,
+  } = useSheetLayout(frames, paper)
   const { missing, recheck } = useMissingPhotos(frames)
   const [inputsValid, setInputsValid] = useState(true)
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
@@ -25,8 +34,8 @@ export function SheetScreen({ onBack }: { onBack: () => void }) {
   const generating = useRef(false)
   const saving = useRef(false)
 
-  // A PDF only stands for the exact frames, photos and paper it was built from.
-  const contentKey = JSON.stringify({ frames, paper })
+  // A PDF only stands for the exact frames, photos, paper and layout it was built from.
+  const contentKey = JSON.stringify({ frames, paper, sheets: layout?.sheets })
   const placed = layout ? layout.sheets.flat().length : 0
   const unplacedIds = layout ? layout.unplaced : []
   const missingFrameIds = missing
@@ -122,6 +131,14 @@ export function SheetScreen({ onBack }: { onBack: () => void }) {
         <h1 className="print-title">{t('print.title')}</h1>
         <span className="print-summary">{summary}</span>
       </header>
+      {placed > 0 && (
+        <ReorganizeSection
+          disabled={!current || progress !== null}
+          reorganizing={reorganizing}
+          reorganized={reorganized}
+          onReorganize={reorganize}
+        />
+      )}
       <div className="print-scroll">
         <PaperControls paper={paper} onValidityChange={setInputsValid} />
         {layout && layoutPaper && (
