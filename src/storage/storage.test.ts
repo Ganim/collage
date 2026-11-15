@@ -88,11 +88,48 @@ describe('store', () => {
         d.createObjectStore('meta')
       },
     })
+    const c = collection('c1', [ID.a])
     await old.put('sizes', saved)
+    await old.put('photos', photo('a'))
+    await old.put('collections', c)
+    await old.put('meta', 'c1', 'lastCollectionId')
     old.close()
     const migrated = await createIdbStore('t-v1')
     expect(await migrated.listSizes()).toEqual([saved])
     expect(await migrated.listFolders()).toEqual([])
+    expect(await migrated.getCollection('c1')).toEqual(c)
+    expect(await migrated.getPhotosMeta([ID.a])).toEqual({
+      [ID.a]: { id: ID.a, width: 400, height: 300, name: photo('a').name },
+    })
+    expect(await (await migrated.getPhoto(ID.a))?.original.text()).toBe('orig-a')
+    expect(await migrated.getLastCollectionId()).toBe('c1')
+  })
+
+  it('closes its connection when a newer version needs the database', async () => {
+    const name = 't-blocking'
+    const current = await createIdbStore(name)
+    const newer = await openDB(name, 3)
+    expect(newer.version).toBe(3)
+    newer.close()
+    await expect(current.listSizes()).rejects.toMatchObject({ name: 'InvalidStateError' })
+  })
+
+  it('says when an older open connection blocks the upgrade, then opens once it closes', async () => {
+    const name = 't-blocked'
+    const old = await openDB(name, 1, {
+      upgrade(d) {
+        d.createObjectStore('photos', { keyPath: 'id' })
+        d.createObjectStore('collections', { keyPath: 'id' })
+        d.createObjectStore('sizes', { keyPath: 'id' })
+        d.createObjectStore('meta')
+      },
+    })
+    const onBlocked = vi.fn()
+    const opening = createIdbStore(name, { onBlocked })
+    await vi.waitFor(() => expect(onBlocked).toHaveBeenCalled())
+    old.close()
+    const opened = await opening
+    expect(await opened.listFolders()).toEqual([])
   })
 
   it('deleteFolder clears folderId of its sizes', async () => {

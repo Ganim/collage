@@ -48,8 +48,19 @@ async function write<S extends Stores>(
   }
 }
 
-export async function createIdbStore(name = 'collage'): Promise<Store> {
-  const db = await openDB<CollageDB>(name, 2, {
+export interface IdbStoreEvents {
+  /**
+   * Another connection (an older tab of the app) keeps the database at an older version, so
+   * opening waits until it closes. Opening goes on by itself once it does.
+   */
+  onBlocked?: () => void
+}
+
+export async function createIdbStore(
+  name = 'collage',
+  { onBlocked }: IdbStoreEvents = {},
+): Promise<Store> {
+  const db: Db = await openDB<CollageDB>(name, 2, {
     upgrade(d, oldVersion) {
       if (oldVersion < 1) {
         d.createObjectStore('photos', { keyPath: 'id' })
@@ -58,6 +69,14 @@ export async function createIdbStore(name = 'collage'): Promise<Store> {
         d.createObjectStore('meta')
       }
       if (oldVersion < 2) d.createObjectStore('folders', { keyPath: 'id' })
+    },
+    blocked() {
+      onBlocked?.()
+    },
+    // A newer version of the app wants to upgrade: this connection steps aside. Its next call
+    // fails as a lost connection, which reopeningStore answers by opening again.
+    blocking() {
+      db.close()
     },
   })
 
