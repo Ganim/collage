@@ -9,6 +9,7 @@ import {
   canonical,
   deletionTimes,
   failureStatus,
+  fitAppProperties,
   indexListing,
   isCollection,
   isEmptyLibrary,
@@ -81,13 +82,18 @@ export function createSyncEngine({
       if (listing.photos.has(photoId)) continue
       const p = await store.getPhoto(photoId)
       if (!p) continue
-      const file = await drive.create(listing.folder, `photo-${photoId}`, p.original, {
-        kind: 'photo',
-        photoId,
-        name: p.name,
-        width: String(p.width),
-        height: String(p.height),
-      })
+      const file = await drive.create(
+        listing.folder,
+        `photo-${photoId}`,
+        p.original,
+        fitAppProperties({
+          kind: 'photo',
+          photoId,
+          name: p.name,
+          width: String(p.width),
+          height: String(p.height),
+        }),
+      )
       listing.photos.set(photoId, file)
     }
   }
@@ -116,10 +122,12 @@ export function createSyncEngine({
     const existing = remote.get(id)
     const file = existing
       ? await drive.update(existing.id, jsonBlob(c))
-      : await drive.create(listing.folder, `collection-${id}.json`, jsonBlob(c), {
-          kind: 'collection',
-          collectionId: id,
-        })
+      : await drive.create(
+          listing.folder,
+          `collection-${id}.json`,
+          jsonBlob(c),
+          fitAppProperties({ kind: 'collection', collectionId: id }),
+        )
     remote.set(id, file)
     await store.markPushed(id, c.updatedAt, file.id, file.version)
     // Deleted during its first upload: no tombstone knows this file, so it goes now.

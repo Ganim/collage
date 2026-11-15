@@ -62,6 +62,15 @@ function reply(route: Route, status: number, json?: unknown, headers: Record<str
   })
 }
 
+/** Google caps key + value of each appProperty at 124 UTF-8 bytes and refuses the request. */
+const tooLongProperty = (metadata: Metadata) =>
+  Object.entries(metadata.appProperties ?? {}).some(
+    ([key, value]) => Buffer.byteLength(key + value, 'utf8') > 124,
+  )
+
+const badRequest = (route: Route) =>
+  reply(route, 400, { error: { code: 400, errors: [{ reason: 'badRequest' }] } })
+
 const notFound = (route: Route) =>
   reply(route, 404, { error: { errors: [{ reason: 'notFound' }] } })
 
@@ -141,6 +150,7 @@ export async function routeFakeDrive(
       const fileId = path.split('/')[5]
       if (fileId && !state.files.has(fileId)) return notFound(route)
       const metadata = (request.postDataJSON() ?? {}) as Metadata
+      if (tooLongProperty(metadata)) return badRequest(route)
       const sentType = await request.headerValue('x-upload-content-type')
       const sessionId = String(state.nextId++)
       uploads.set(sessionId, {
@@ -170,6 +180,7 @@ export async function routeFakeDrive(
 
     if (path === '/drive/v3/files' && method === 'POST') {
       const metadata = (request.postDataJSON() ?? {}) as Metadata
+      if (tooLongProperty(metadata)) return badRequest(route)
       return reply(route, 200, view(newFile(metadata, Buffer.alloc(0))))
     }
 

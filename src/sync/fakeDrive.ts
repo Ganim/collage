@@ -1,4 +1,5 @@
 import { DriveError, type Drive, type RemoteFile } from './drive'
+import { APP_PROPERTY_BYTES } from './remote'
 
 export interface FakeFile {
   id: string
@@ -44,6 +45,12 @@ export function createFakeDrive(): FakeDrive {
       return get(fileId).body
     },
     async create(folderId, name, body, appProperties) {
+      // Like Google: key + value of each appProperty is capped in UTF-8 bytes.
+      for (const [key, value] of Object.entries(appProperties)) {
+        if (new TextEncoder().encode(key + value).length > APP_PROPERTY_BYTES) {
+          throw new DriveError('other', 'Google Drive request failed (400)', 400, 'badRequest')
+        }
+      }
       const file: FakeFile = {
         id: `file-${nextId++}`,
         name,

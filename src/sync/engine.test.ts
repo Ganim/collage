@@ -9,6 +9,7 @@ import { DriveAuthError } from '../ui/account/account'
 import { DriveError, type Drive } from './drive'
 import { createSyncEngine } from './engine'
 import { createFakeDrive, type FakeDrive } from './fakeDrive'
+import { fitAppProperties } from './remote'
 import { useSyncStatus } from './status'
 
 const ANA = { id: 'ana', email: 'ana@example.com' }
@@ -377,6 +378,36 @@ describe('sync engine between two devices', () => {
     expect(status().state).toBe('offline')
   })
 
+  it('a photo with a very long accented name still goes up and comes down', async () => {
+    const name = ('Fotografia de família à beira-mar em São João — ' + 'çãé'.repeat(60)).slice(
+      0,
+      200,
+    )
+    expect(name.length).toBe(200)
+    await a.importCollection([{ ...photo('p1'), name }], collection('c1', ['p1']))
+    await engineFor(a, drive).run()
+    expect(status().state).toBe('idle')
+    const file = filesOf(drive, 'photo')[0]!
+    for (const [key, value] of Object.entries(file.appProperties)) {
+      expect(new TextEncoder().encode(key + value).length).toBeLessThanOrEqual(124)
+    }
+    expect(name.startsWith(file.appProperties.name!)).toBe(true)
+    expect(file.appProperties.name!.length).toBeGreaterThan(50)
+    await engineFor(b, drive).run()
+    expect(status().state).toBe('idle')
+    expect(await b.getPhoto('p1')).toMatchObject({ name: file.appProperties.name })
+  })
+
+  it('the fake Drive refuses an appProperty over 124 bytes, as Google does', async () => {
+    const folder = await drive.ensureFolder()
+    await expect(
+      drive.create(folder, 'x', new Blob(['x']), { name: 'é'.repeat(61) }),
+    ).rejects.toMatchObject({ kind: 'other', status: 400 })
+    await expect(
+      drive.create(folder, 'x', new Blob(['x']), { name: 'é'.repeat(60) }),
+    ).resolves.toBeDefined()
+  })
+
   it('a photo whose file the fake Drive no longer has is skipped as a 404', async () => {
     await a.importCollection([photo('p1')], collection('c1', ['p1']))
     await engineFor(a, drive).run()
@@ -489,5 +520,26 @@ describe('sync status', () => {
     await engineFor(a, drive).run()
     expect(status().state).toBe('off')
     expect(drive.files.size).toBe(0)
+  })
+})
+
+describe('fitAppProperties', () => {
+  const bytes = (text: string) => new TextEncoder().encode(text).length
+
+  it('keeps short values as they are', () => {
+    expect(fitAppProperties({ kind: 'photo', width: '400' })).toEqual({
+      kind: 'photo',
+      width: '400',
+    })
+  })
+
+  it('cuts on a code-point boundary, never inside an emoji', () => {
+    const value = 'a'.repeat(118) + '😀😀'
+    const { name } = fitAppProperties({ name: value })
+    expect(bytes('name' + name!)).toBeLessThanOrEqual(124)
+    expect(name).toBe('a'.repeat(118))
+    const fits = fitAppProperties({ name: 'a'.repeat(116) + '😀😀' }).name!
+    expect(fits).toBe('a'.repeat(116) + '😀')
+    expect(bytes('name' + fits)).toBe(124)
   })
 })

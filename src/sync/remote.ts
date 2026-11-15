@@ -16,6 +16,30 @@ export interface Listing {
   photos: Map<string, RemoteFile>
 }
 
+/** Google Drive refuses an appProperty whose key and value together pass this many UTF-8 bytes. */
+export const APP_PROPERTY_BYTES = 124
+
+const utf8Bytes = (text: string) => new TextEncoder().encode(text).length
+
+/**
+ * The properties with every value cut, on a code-point boundary, so that key + value fits the
+ * Drive's limit; a longer value would make the Drive refuse the whole file.
+ */
+export function fitAppProperties(props: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(props).map(([key, value]) => {
+      let room = APP_PROPERTY_BYTES - utf8Bytes(key)
+      let out = ''
+      for (const ch of value) {
+        room -= utf8Bytes(ch)
+        if (room < 0) break
+        out += ch
+      }
+      return [key, out]
+    }),
+  )
+}
+
 /** JSON with object keys sorted, to compare content regardless of key order. */
 export function canonical(value: unknown): string {
   return JSON.stringify(value, (_key, v: unknown) =>
