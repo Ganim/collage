@@ -79,9 +79,14 @@ export function PdfLinkSection({ pdf, collectionName }: { pdf: Blob; collectionN
   if (!link && (phase === 'needsDrive' || (statusMissing && phase !== 'creating'))) {
     return (
       <section className="pdf-link">
-        <p className="pdf-link-hint">{t('pdfLink.needsDrive')}</p>
-        <button type="button" className="secondary-button pdf-link-button" onClick={signIn}>
-          {t('sync.connectYes')}
+        <p className="pdf-link-hint print-row">{t('pdfLink.needsDrive')}</p>
+        <button
+          type="button"
+          className="secondary-button print-action pdf-link-button"
+          onClick={signIn}
+        >
+          <Link2 size={20} aria-hidden="true" />
+          {t('pdfLink.connect')}
         </button>
       </section>
     )
@@ -91,7 +96,7 @@ export function PdfLinkSection({ pdf, collectionName }: { pdf: Blob; collectionN
     <section className="pdf-link">
       <button
         type="button"
-        className="secondary-button pdf-link-button"
+        className="secondary-button print-action pdf-link-button"
         disabled={phase === 'creating'}
         onClick={() => void share()}
       >
@@ -99,7 +104,7 @@ export function PdfLinkSection({ pdf, collectionName }: { pdf: Blob; collectionN
         {phase === 'creating' ? t('pdfLink.creating') : t('pdfLink.share')}
       </button>
       {link && (
-        <>
+        <div className="pdf-link-result print-row">
           <label className="pdf-link-field">
             <span>{t('pdfLink.ready')}</span>
             <input
@@ -111,7 +116,7 @@ export function PdfLinkSection({ pdf, collectionName }: { pdf: Blob; collectionN
             />
           </label>
           {tapAgain && (
-            <p className="pdf-link-hint" role="status">
+            <p className="pdf-link-hint pdf-link-wide" role="status">
               {t('pdfLink.tapAgain')}
             </p>
           )}
@@ -124,15 +129,15 @@ export function PdfLinkSection({ pdf, collectionName }: { pdf: Blob; collectionN
             {t('pdfLink.copy')}
           </button>
           {copied && (
-            <p className="pdf-link-hint" role="status">
+            <p className="pdf-link-hint pdf-link-wide" role="status">
               {t('pdfLink.copied')}
             </p>
           )}
-          <p className="pdf-link-hint">{t('pdfLink.note')}</p>
-        </>
+          <p className="pdf-link-hint pdf-link-wide">{t('pdfLink.note')}</p>
+        </div>
       )}
       {phase === 'failed' && (
-        <p className="print-warning print-warning--error" role="alert">
+        <p className="print-warning print-warning--error print-row" role="alert">
           {t('pdfLink.failed')}
         </p>
       )}

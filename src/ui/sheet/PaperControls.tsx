@@ -80,7 +80,7 @@ export function PaperControls({ paper, onValidityChange }: PaperControlsProps) {
 
   return (
     <div className="print-controls">
-      <div className="print-field print-field--wide">
+      <div className="print-field">
         <span id={paperLabelId}>{t('print.paper')}</span>
         <Select
           labelledBy={paperLabelId}
@@ -144,7 +144,7 @@ export function PaperControls({ paper, onValidityChange }: PaperControlsProps) {
         />
       </label>
       {(cmInvalid || mmInvalid) && (
-        <p className="print-invalid print-field--wide" role="status">
+        <p className="print-invalid" role="status">
           {cmInvalid ? t('sizeSheet.invalid') : t('print.invalidMm')}
         </p>
       )}

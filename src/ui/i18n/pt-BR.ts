@@ -256,6 +256,7 @@ export const ptBR = {
   'print.save': 'Salvar PDF',
   'print.share': 'Compartilhar PDF',
   'print.print': 'Imprimir',
+  'pdfLink.connect': 'Conectar o Drive',
   'print.printFailed': 'Não foi possível abrir a impressão. Salve o PDF e imprima por ele.',
   'print.zoom': 'Zoom da folha',
   'print.zoomIn': 'Aumentar zoom',

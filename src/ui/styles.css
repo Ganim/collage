@@ -811,6 +811,8 @@ p {
   text-align: center;
 }
 
+/* Sheet (Compartilhar) */
+
 .print-screen {
   flex: 1 1 0;
   min-height: 0;
@@ -822,7 +824,7 @@ p {
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 6px 16px 6px 4px;
+  padding: 6px 16px 2px 4px;
 }
 
 .print-header .icon-button {
@@ -848,7 +850,7 @@ p {
   align-items: center;
   justify-content: flex-end;
   gap: 4px 10px;
-  padding: 0 16px 8px;
+  padding: 0 16px 6px;
 }
 
 .print-reorganize-button {
@@ -874,29 +876,29 @@ p {
   display: none;
 }
 
-.print-scroll {
-  flex: 1 1 0;
-  min-height: 0;
-  padding: 0 16px 16px;
-  overflow-y: auto;
-  overscroll-behavior: contain;
+/* Paper fields, then zoom: one row on a wide screen, two on a phone. */
+.print-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 8px 16px;
+  padding: 4px 16px 10px;
 }
 
 .print-controls {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
+  grid-template-columns: minmax(0, 1.5fr) repeat(auto-fit, minmax(0, 1fr));
+  gap: 8px;
+  flex: 1 1 100%;
 }
 
 .print-field {
   display: grid;
-  gap: 4px;
-  font-size: 13px;
+  gap: 3px;
+  min-width: 0;
+  font-size: 12px;
   color: var(--plum-500);
-}
-
-.print-field--wide {
-  grid-column: 1 / -1;
 }
 
 .print-field input {
@@ -916,22 +918,21 @@ p {
 }
 
 .print-invalid {
+  grid-column: 1 / -1;
   font-size: 13px;
   color: var(--warning-ink);
 }
 
 .print-zoom {
-  position: sticky;
-  top: 0;
-  z-index: 1;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 2px;
-  margin-top: 8px;
-  padding: 4px 0;
-  background: rgba(255, 255, 255, 0.72);
-  backdrop-filter: blur(8px);
+  flex: 1 1 100%;
+  padding: 2px 4px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.7);
 }
 
 .print-zoom-button {
@@ -955,30 +956,36 @@ p {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  min-height: var(--touch);
-  margin-left: 6px;
+  min-height: 36px;
+  margin-left: 4px;
   padding: 0 12px;
   border-radius: var(--radius-pill);
   color: var(--fuchsia-700);
   font-size: 14px;
+  white-space: nowrap;
 }
 
 .print-zoom-fit[aria-pressed='true'] {
-  background: rgba(192, 38, 211, 0.1);
+  background: rgba(192, 38, 211, 0.12);
 }
 
-/* Scrolls sideways once the zoom makes a page wider than the screen. */
-.print-zoom-area {
-  overflow-x: auto;
-  padding-bottom: 4px;
+/* The stage: the pages on a tinted table, scrolling both ways once zoomed in. */
+.print-scroll {
+  flex: 1 1 0;
+  min-height: 0;
+  margin: 0 16px;
+  padding: 16px;
+  border-radius: 16px;
+  background: rgba(59, 10, 63, 0.06);
+  overflow: auto;
+  overscroll-behavior: contain;
 }
 
 .print-sheets {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 14px;
-  margin-top: 8px;
+  gap: 16px;
   transition: opacity 0.15s;
 }
 
@@ -1017,7 +1024,6 @@ p {
   flex-direction: column;
   gap: 8px;
   padding: 10px 16px 12px;
-  border-top: 1px solid var(--line);
 }
 
 .print-warnings {
@@ -1045,20 +1051,30 @@ p {
   color: var(--fuchsia-50);
 }
 
+.print-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 .print-real-size {
   color: var(--plum-500);
   font-size: 13px;
   text-align: center;
 }
 
-.print-actions {
-  display: flex;
+/*
+ * Every action is a cell of one grid: the main one spans the row, the rest go two by two. The
+ * link and file sections lend their buttons to it (display: contents); their notes take a row.
+ */
+.print-buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 8px;
 }
 
-.print-actions .print-action {
-  flex: 1 1 0;
-  min-width: 0;
+.print-buttons > section {
+  display: contents;
 }
 
 .print-action {
@@ -1066,14 +1082,30 @@ p {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  width: 100%;
+  min-width: 0;
   min-height: 48px;
-  font-size: 16px;
+  padding: 0 14px;
+  font-size: 15px;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
-.print-action--secondary {
+.secondary-button.print-action {
   color: var(--fuchsia-700);
+}
+
+.print-action:disabled {
+  opacity: 0.5;
+}
+
+.print-action--main,
+.print-buttons--idle .save-file-button,
+.print-row {
+  grid-column: 1 / -1;
+}
+
+.print-row {
+  order: 1;
 }
 
 /* Off screen rather than display: none, which keeps some browsers from loading the PDF. */
@@ -1088,31 +1120,92 @@ p {
   pointer-events: none;
 }
 
-.save-file {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding-top: 8px;
-  border-top: 1px solid var(--line);
-}
+/* PDF link */
 
-.save-file-hint {
+.pdf-link-hint {
   color: var(--plum-500);
   font-size: var(--text-xs);
   text-align: center;
 }
 
-.save-file-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  width: 100%;
-  color: var(--fuchsia-700);
+.pdf-link-result {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 6px 8px;
 }
 
-.save-file-button:disabled {
-  opacity: 0.6;
+.pdf-link-result .pdf-link-field {
+  flex: 1 1 220px;
+}
+
+.pdf-link-wide {
+  flex-basis: 100%;
+}
+
+.pdf-link-field {
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--plum-500);
+}
+
+.pdf-link-field input {
+  width: 100%;
+  min-height: var(--touch);
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-field);
+  background: #fff;
+  /* Below 16px, iOS zooms the page on focus. */
+  font-size: 16px;
+  color: var(--plum-900);
+}
+
+@media (min-width: 760px) {
+  .print-controls {
+    display: flex;
+    flex-wrap: wrap;
+    flex: 0 1 auto;
+  }
+
+  .print-field {
+    width: 96px;
+  }
+
+  .print-field:first-child {
+    width: 180px;
+  }
+
+  .print-invalid {
+    flex-basis: 100%;
+  }
+
+  .print-zoom {
+    flex: 0 0 auto;
+  }
+
+  .print-bar {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+  }
+
+  .print-real-size {
+    text-align: left;
+  }
+
+  /* On a computer the actions sit in one line, in order, at the right. */
+  .print-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .print-row {
+    flex-basis: 100%;
+  }
 }
 
 /* Menu and library */
@@ -1162,50 +1255,4 @@ p {
 
 .install-dismiss {
   width: 100%;
-}
-
-/* PDF link */
-
-.pdf-link {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.pdf-link-hint {
-  color: var(--plum-500);
-  font-size: var(--text-xs);
-  text-align: center;
-}
-
-.pdf-link-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  width: 100%;
-  color: var(--fuchsia-700);
-}
-
-.pdf-link-button:disabled {
-  opacity: 0.6;
-}
-
-.pdf-link-field {
-  display: grid;
-  gap: 4px;
-  font-size: 13px;
-  color: var(--plum-500);
-}
-
-.pdf-link-field input {
-  width: 100%;
-  min-height: var(--touch);
-  padding: 0 10px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-field);
-  background: #fff;
-  /* Below 16px, iOS zooms the page on focus. */
-  font-size: 16px;
-  color: var(--plum-900);
 }

@@ -343,7 +343,7 @@ test('without Drive access the PDF link asks to connect it, and the PDF still sa
   await button(page, 'Gerar PDF').click()
   await expect(button(page, 'Salvar PDF')).toBeVisible({ timeout: 25_000 })
   await expect(page.getByText('Conecte o Google Drive para compartilhar por link.')).toBeVisible()
-  await expect(button(page, 'Conectar')).toBeVisible()
+  await expect(button(page, 'Conectar o Drive')).toBeVisible()
   await expect(button(page, 'Compartilhar link do PDF')).toHaveCount(0)
   await expect(button(page, 'Salvar PDF')).toBeEnabled()
 })

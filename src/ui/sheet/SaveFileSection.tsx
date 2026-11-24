@@ -60,11 +60,11 @@ export function SaveFileSection() {
 
   return (
     <section className="save-file">
-      <p className="save-file-hint">{t('saveFile.hint')}</p>
       {bundle ? (
         <button
           type="button"
-          className="secondary-button save-file-button"
+          className="secondary-button print-action save-file-button"
+          title={t('saveFile.hint')}
           onClick={() => void deliver(bundle)}
         >
           <FileDown size={20} aria-hidden="true" />
@@ -73,7 +73,8 @@ export function SaveFileSection() {
       ) : (
         <button
           type="button"
-          className="secondary-button save-file-button"
+          className="secondary-button print-action save-file-button"
+          title={t('saveFile.hint')}
           disabled={building}
           onClick={() => void build()}
         >
@@ -82,7 +83,7 @@ export function SaveFileSection() {
         </button>
       )}
       {failed && (
-        <p className="print-warning print-warning--error" role="alert">
+        <p className="print-warning print-warning--error print-row" role="alert">
           {t('saveFile.failed')}
         </p>
       )}

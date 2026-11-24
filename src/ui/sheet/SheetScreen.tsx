@@ -9,7 +9,7 @@ import { PaperControls } from './PaperControls'
 import { PdfLinkSection } from './PdfLinkSection'
 import { ReorganizeSection } from './ReorganizeSection'
 import { SaveFileSection } from './SaveFileSection'
-import { SheetPreview } from './SheetPreview'
+import { SheetPreview, useSheetZoom, ZoomControls } from './SheetPreview'
 import { useSheetLayout } from './useSheetLayout'
 import { Warnings } from './Warnings'
 
@@ -34,6 +34,7 @@ export function SheetScreen({ onBack }: { onBack: () => void }) {
   const generating = useRef(false)
   const saving = useRef(false)
   const [shareSheet] = useState(prefersShareSheet)
+  const { stage, ...zoom } = useSheetZoom(layoutPaper ?? paper)
 
   // A PDF only stands for the exact frames, photos, paper and layout it was built from.
   const contentKey = JSON.stringify({ frames, paper, sheets: layout?.sheets })
@@ -114,68 +115,42 @@ export function SheetScreen({ onBack }: { onBack: () => void }) {
         })
     : ''
 
-  let action = (
-    <button
-      type="button"
-      className="primary-button print-action"
-      disabled={!canGenerate}
-      onClick={() => void generate()}
-    >
+  const main = 'primary-button print-action print-action--main'
+  const secondary = 'secondary-button print-action'
+  let actions = (
+    <button type="button" className={main} disabled={!canGenerate} onClick={() => void generate()}>
       {t('print.generate')}
     </button>
   )
   if (progress) {
-    action = (
-      <button type="button" className="primary-button print-action" disabled>
+    actions = (
+      <button type="button" className={main} disabled>
         {t('print.progress', { done: progress.done, total: progress.total })}
       </button>
     )
   } else if (ready) {
-    const saveButton = (
-      <button
-        type="button"
-        className={
-          shareSheet
-            ? 'secondary-button print-action print-action--secondary'
-            : 'primary-button print-action'
-        }
-        onClick={() => void save('download')}
-      >
-        <Download size={20} aria-hidden="true" />
-        {t('print.save')}
-      </button>
-    )
-    const printButton = (
-      <button
-        type="button"
-        className="secondary-button print-action print-action--secondary"
-        onClick={print}
-      >
-        <Printer size={20} aria-hidden="true" />
-        {t('print.print')}
-      </button>
-    )
     // Phones and tablets share first; a computer saves. Saving and printing stay one tap away.
-    action = shareSheet ? (
+    actions = (
       <>
+        {shareSheet && (
+          <button type="button" className={main} onClick={() => void save('share')}>
+            <Share2 size={20} aria-hidden="true" />
+            {t('print.share')}
+          </button>
+        )}
         <button
           type="button"
-          className="primary-button print-action"
-          onClick={() => void save('share')}
+          className={shareSheet ? secondary : main}
+          onClick={() => void save('download')}
         >
-          <Share2 size={20} aria-hidden="true" />
-          {t('print.share')}
+          <Download size={20} aria-hidden="true" />
+          {t('print.save')}
         </button>
-        <div className="print-actions">
-          {saveButton}
-          {printButton}
-        </div>
+        <button type="button" className={secondary} onClick={print}>
+          <Printer size={20} aria-hidden="true" />
+          {t('print.print')}
+        </button>
       </>
-    ) : (
-      <div className="print-actions">
-        {saveButton}
-        {printButton}
-      </div>
     )
   }
 
@@ -197,10 +172,19 @@ export function SheetScreen({ onBack }: { onBack: () => void }) {
           onReorganize={reorganize}
         />
       )}
-      <div className="print-scroll">
+      <div className="print-toolbar">
         <PaperControls paper={paper} onValidityChange={setInputsValid} />
+        <ZoomControls zoom={zoom} />
+      </div>
+      <div ref={stage} className="print-scroll">
         {layout && layoutPaper && (
-          <SheetPreview layout={layout} paper={layoutPaper} frames={frames} stale={!current} />
+          <SheetPreview
+            layout={layout}
+            paper={layoutPaper}
+            frames={frames}
+            stale={!current}
+            pageWidth={zoom.pageWidth}
+          />
         )}
       </div>
       <div className="print-footer">
@@ -221,12 +205,20 @@ export function SheetScreen({ onBack }: { onBack: () => void }) {
             {error.text}
           </p>
         )}
-        <p className="print-real-size">{t('print.realSize')}</p>
-        {action}
-        {ready && (
-          <PdfLinkSection key={contentKey} pdf={generated.pdf} collectionName={collection.name} />
-        )}
-        <SaveFileSection />
+        <div className="print-bar">
+          <p className="print-real-size">{t('print.realSize')}</p>
+          <div className={ready ? 'print-buttons' : 'print-buttons print-buttons--idle'}>
+            {actions}
+            {ready && (
+              <PdfLinkSection
+                key={contentKey}
+                pdf={generated.pdf}
+                collectionName={collection.name}
+              />
+            )}
+            <SaveFileSection />
+          </div>
+        </div>
       </div>
     </div>
   )

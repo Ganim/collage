@@ -580,7 +580,9 @@ test.describe('sharing', () => {
     expect(downloads).toHaveLength(0)
   })
 
-  test('cancelling the share sheet downloads nothing and keeps Compartilhar PDF', async ({ page }) => {
+  test('cancelling the share sheet downloads nothing and keeps Compartilhar PDF', async ({
+    page,
+  }) => {
     await photoFrames(page, 1)
     await openSheet(page)
     await generated(page)
@@ -654,4 +656,26 @@ test('a file built before the paper changes is not delivered: it is built again'
   await chooseOption(page, 'Papel', 'A3')
   await expect(page.getByRole('button', { name: 'Baixar arquivo', exact: true })).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Salvar em arquivo', exact: true })).toBeVisible()
+})
+
+test('Página inteira fits a whole A4 on a wide, short screen, below 25%', async ({ page }) => {
+  await photoFrames(page, 1)
+  await page.setViewportSize({ width: 1600, height: 740 })
+  await openSheet(page)
+  const sheet = page.getByRole('group', { name: 'Folha 1 de 1' })
+  await expect(sheet).toBeVisible()
+
+  await page.getByRole('button', { name: 'Aumentar zoom' }).click()
+  await page.getByRole('button', { name: 'Aumentar zoom' }).click()
+  await page.getByRole('button', { name: 'Página inteira' }).click()
+
+  const stage = (await page.locator('.print-scroll').boundingBox())!
+  await expect
+    .poll(async () => {
+      const b = (await sheet.boundingBox())!
+      return b.y >= stage.y && b.y + b.height <= stage.y + stage.height
+    })
+    .toBe(true)
+  const level = Number((await page.locator('.print-zoom-level').textContent())!.replace('%', ''))
+  expect(level).toBeLessThan(25)
 })
