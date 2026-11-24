@@ -619,6 +619,30 @@ test.describe('sharing', () => {
   })
 })
 
+test('Imprimir opens the PDF in a new tab on a phone', async ({ page }) => {
+  await photoFrames(page, 1)
+  await openSheet(page)
+  await generated(page)
+
+  // WebKit under test reports no URL for a blob tab, so the call itself is checked.
+  await page.evaluate(() => {
+    const opened: string[] = []
+    ;(window as unknown as { opened: string[] }).opened = opened
+    window.open = (url?: string | URL) => {
+      opened.push(String(url))
+      return window
+    }
+  })
+  const downloads: Download[] = []
+  page.on('download', (d) => downloads.push(d))
+
+  await page.getByRole('button', { name: 'Imprimir', exact: true }).click()
+  await expect
+    .poll(() => page.evaluate(() => (window as unknown as { opened: string[] }).opened))
+    .toEqual([expect.stringMatching(/^blob:/)])
+  expect(downloads).toHaveLength(0)
+})
+
 test('a file built before the paper changes is not delivered: it is built again', async ({
   page,
 }) => {

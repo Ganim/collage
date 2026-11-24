@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { createFrame, placePhoto, rotateLayer90, zoomLayer } from './frame'
+import {
+  createFrame,
+  placePhoto,
+  resizeFrame,
+  rotateLayer90,
+  updateLayer,
+  zoomLayer,
+} from './frame'
 import type { Frame, Layer, Photo } from './types'
-import { freeAxes } from './transform'
+import { clampBackground, containWidthFrac, coverLayer, coversFrame, freeAxes } from './transform'
 import { SLIDER_MAX, sliderToWidth, widthToSlider, zoomLimits } from './zoom'
 
 const portrait: Photo = { id: 'p', width: 400, height: 600, name: 'p' }
@@ -18,17 +25,24 @@ const withBackground = () => placePhoto(createFrame({ widthMm: 100, heightMm: 15
 const withOverlay = () => placePhoto(withBackground(), portrait)
 
 describe('zoomLimits', () => {
-  it('runs the background from covering the frame to four times that', () => {
+  it('runs the background from 10% of the frame to four times covering it', () => {
     const frame = withBackground()
-    expect(zoomLimits(frame, at(frame, 0), portrait)).toEqual({ min: 1, max: 4 })
+    expect(zoomLimits(frame, at(frame, 0), portrait)).toEqual({ min: 0.1, max: 4 })
   })
 
   it('follows the cover width of the background once it is rotated', () => {
     const frame = placePhoto(createFrame({ widthMm: 150, heightMm: 100 }), wide)
     const turned = rotateLayer90(frame, at(frame, 0).id, photos)
-    const { min, max } = zoomLimits(turned, at(turned, 0), wide)
-    expect(min).toBeCloseTo(at(turned, 0).widthFrac)
-    expect(max).toBeCloseTo(min * 4)
+    const { max } = zoomLimits(turned, at(turned, 0), wide)
+    expect(max).toBeCloseTo(at(turned, 0).widthFrac * 4)
+  })
+
+  it('lets a very narrow background go down to fitting whole, even below 10%', () => {
+    const sliver: Photo = { id: 'n', width: 100, height: 10000, name: 'n' }
+    const frame = placePhoto(createFrame({ widthMm: 150, heightMm: 100 }), sliver)
+    const fit = containWidthFrac(sliver, frame, at(frame, 0).rotationDeg)
+    expect(fit).toBeLessThan(0.1)
+    expect(zoomLimits(frame, at(frame, 0), sliver).min).toBeCloseTo(fit)
   })
 
   it('runs a photo on top from 10% to 300% of the frame width', () => {
@@ -78,21 +92,81 @@ describe('zoomLayer', () => {
     expect(at(zoomLayer(frame, id, 1e-9, photos), 1).widthFrac).toBe(0.1)
   })
 
-  it('never lets the background uncover the frame', () => {
+  it('shrinks the background below the frame, down to its limit', () => {
     const frame = withBackground()
     const id = at(frame, 0).id
     const big = zoomLayer(frame, id, 3, photos)
     const back = at(zoomLayer(big, id, 1e-9, photos), 0)
     expect(at(big, 0).widthFrac).toBeCloseTo(3)
-    expect(back.widthFrac).toBe(1)
+    expect(back.widthFrac).toBe(0.1)
     expect(back.cx).toBeCloseTo(0.5)
     expect(back.cy).toBeCloseTo(0.5)
+  })
+
+  it('keeps a background that covers the frame from leaving a gap at an edge', () => {
+    const frame = withBackground()
+    const id = at(frame, 0).id
+    const zoomed = zoomLayer(frame, id, 2, photos)
+    const moved = at(updateLayer(zoomed, id, { cx: 5, cy: -5 }, photos), 0)
+    expect(coversFrame(moved, portrait, zoomed)).toBe(true)
+    expect(moved.cx).toBeCloseTo(1)
+    expect(moved.cy).toBeCloseTo(0)
   })
 
   it('leaves the frame alone when the layer or its photo is unknown', () => {
     const frame = withOverlay()
     expect(zoomLayer(frame, 'nope', 2, photos)).toBe(frame)
     expect(zoomLayer(frame, at(frame, 1).id, 2, {})).toBe(frame)
+  })
+})
+
+describe('clampBackground', () => {
+  const frame = createFrame({ widthMm: 100, heightMm: 150 })
+  const square: Photo = { id: 's', width: 1000, height: 1000, name: 's' }
+  const layer = (patch: Partial<Layer>): Layer => ({
+    id: 'l',
+    photoId: 's',
+    cx: 0.5,
+    cy: 0.5,
+    widthFrac: 1,
+    rotationDeg: 0,
+    ...patch,
+  })
+
+  it('keeps a background smaller than the frame wholly inside it', () => {
+    const small = clampBackground(layer({ widthFrac: 0.5, cx: 0, cy: 1 }), square, frame)
+    expect(small.cx).toBeCloseTo(0.25)
+    expect(small.cy).toBeCloseTo(1 - 25 / 150)
+  })
+
+  it('keeps the side a background still overflows covered', () => {
+    // 100 mm wide, 100 mm tall: fills the width exactly, leaves room above and below.
+    const fits = clampBackground(layer({ cx: 0.9, cy: 0.9 }), square, frame)
+    expect(fits.cx).toBeCloseTo(0.5)
+    expect(fits.cy).toBeCloseTo(1 - 50 / 150)
+    const wider = clampBackground(layer({ widthFrac: 1.2, cx: 0, cy: 0 }), square, frame)
+    expect(wider.cx).toBeCloseTo(0.4)
+    expect(wider.cy).toBeCloseTo(60 / 150)
+  })
+
+  it('never makes the background smaller than asked', () => {
+    expect(clampBackground(layer({ widthFrac: 0.05 }), square, frame, 0.1).widthFrac).toBe(0.1)
+  })
+})
+
+describe('resizing with a shrunk background', () => {
+  it('keeps a covering background covering a frame of other proportions', () => {
+    const frame = withBackground()
+    const resized = resizeFrame(frame, { widthMm: 150, heightMm: 100 }, photos)
+    expect(coversFrame(at(resized, 0), portrait, resized)).toBe(true)
+  })
+
+  it('leaves a shrunk background shrunk', () => {
+    const frame = withBackground()
+    const small = zoomLayer(frame, at(frame, 0).id, 0.5, photos)
+    const resized = resizeFrame(small, { widthMm: 120, heightMm: 150 }, photos)
+    expect(at(resized, 0).widthFrac).toBeCloseTo(0.5)
+    expect(coverLayer(portrait, resized).widthFrac).toBeGreaterThan(0.5)
   })
 })
 
@@ -106,6 +180,12 @@ describe('freeAxes', () => {
     const frame = withBackground()
     const zoomed = zoomLayer(frame, at(frame, 0).id, 2, photos)
     expect(freeAxes(at(zoomed, 0), portrait, zoomed)).toEqual({ x: true, y: true })
+  })
+
+  it('finds room to move a background smaller than the frame', () => {
+    const frame = withBackground()
+    const small = zoomLayer(frame, at(frame, 0).id, 0.5, photos)
+    expect(freeAxes(at(small, 0), portrait, small)).toEqual({ x: true, y: true })
   })
 
   it('finds room only along the side the photo overflows', () => {

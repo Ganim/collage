@@ -91,6 +91,12 @@ describe('composeFrame', () => {
     layers: [layer(), layer({ id: 'l2', cx: 0.25, cy: 0.5, widthFrac: 0.5, rotationDeg: 90 })],
   }
 
+  it('paints the frame background colour when it has one', async () => {
+    const log: unknown[][] = []
+    await composeFrame({ ...frame, background: '#1c1917' }, async () => stored, fakeRaster(log))
+    expect(log[1]).toEqual(['fillStyle', '#1c1917'])
+  })
+
   it('paints white, then each layer in order, closing each bitmap before the next', async () => {
     const log: unknown[][] = []
     const jpeg = await composeFrame(frame, async () => stored, fakeRaster(log))

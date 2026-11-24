@@ -1,4 +1,10 @@
-import type { Frame, Layer, Photo, Size } from '../core/types'
+import {
+  DEFAULT_FRAME_BACKGROUND,
+  type Frame,
+  type Layer,
+  type Photo,
+  type Size,
+} from '../core/types'
 import type { StoredPhoto } from '../storage/store'
 
 const DPI = 300
@@ -114,7 +120,7 @@ export function layerDrawRect(
   }
 }
 
-/** Paints a frame on white from its layers' originals; each bitmap is closed before the next is decoded. */
+/** Paints a frame on its background colour from its layers' originals; each bitmap is closed before the next is decoded. */
 export async function composeFrame(
   frame: Frame,
   loadPhoto: (photoId: string) => Promise<StoredPhoto>,
@@ -126,7 +132,7 @@ export async function composeFrame(
     const { context } = canvas
     context.imageSmoothingEnabled = true
     context.imageSmoothingQuality = 'high'
-    context.fillStyle = '#ffffff'
+    context.fillStyle = frame.background ?? DEFAULT_FRAME_BACKGROUND
     context.fillRect(0, 0, size.width, size.height)
 
     for (const layer of frame.layers) {

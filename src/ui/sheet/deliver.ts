@@ -30,6 +30,42 @@ function download(blob: Blob, fileName: string): void {
   setTimeout(() => URL.revokeObjectURL(url), REVOKE_DELAY_MS)
 }
 
+let printFrame: HTMLIFrameElement | null = null
+
+/**
+ * Prints the PDF. 'dialog' loads it in a hidden frame and opens the browser's print dialog
+ * straight away; 'open' shows it in a new tab, where phones offer printing from their own viewer.
+ * Call straight from a tap, or the browser blocks the new tab.
+ */
+export function printPdf(blob: Blob, fileName: string, how: 'dialog' | 'open'): void {
+  const url = URL.createObjectURL(blob)
+  if (how === 'open') {
+    // A blocked tab leaves only the download.
+    if (!window.open(url, '_blank')) download(blob, fileName)
+    setTimeout(() => URL.revokeObjectURL(url), REVOKE_DELAY_MS)
+    return
+  }
+  // The dialog keeps reading the frame while it is open, so it stays until the next print.
+  printFrame?.remove()
+  const frame = document.createElement('iframe')
+  frame.className = 'print-frame'
+  frame.setAttribute('aria-hidden', 'true')
+  frame.tabIndex = -1
+  frame.addEventListener('load', () => {
+    try {
+      frame.contentWindow?.focus()
+      frame.contentWindow?.print()
+    } catch (e) {
+      // A browser that will not print a PDF from a frame still shows it in a tab.
+      console.error(e)
+      window.open(url, '_blank')
+    }
+  })
+  frame.src = url
+  document.body.append(frame)
+  printFrame = frame
+}
+
 /**
  * Phones and tablets hand files on through the share sheet; a computer saves them, where the
  * share sheet is only in the way.

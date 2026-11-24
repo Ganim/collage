@@ -156,6 +156,9 @@ async function releaseImport(page: Page) {
   await page.evaluate(() => (window as unknown as { releaseImport: () => void }).releaseImport())
 }
 
+/** A background that just covers the frame, on a log scale from 10% to four times covering it. */
+const COVER_SLIDER = String(Math.round((Math.log(10) / Math.log(40)) * 1000))
+
 const zoom = (page: Page) => page.getByRole('slider', { name: 'Zoom da foto' })
 
 /** Presses the mouse on the slider's thumb area and drags it to a fraction of the track. */
@@ -263,7 +266,7 @@ test('the bar lists every action with an icon and a label, big enough to touch',
   await expect(toolbar(page)).toBeVisible()
 
   const items = toolbar(page).locator(':scope > *')
-  const labels = ['Trocar', 'Tamanho', 'Girar', 'Adicionar', 'Frente', 'Trás', 'Remover']
+  const labels = ['Trocar', 'Tamanho', 'Girar', 'Fundo', 'Adicionar', 'Frente', 'Trás', 'Remover']
   await expect(items).toHaveCount(labels.length)
   for (const [i, label] of labels.entries()) {
     await expect(items.nth(i)).toHaveText(label)
@@ -272,7 +275,6 @@ test('the bar lists every action with an icon and a label, big enough to touch',
     expect(b.width).toBeGreaterThanOrEqual(44)
     expect(b.height).toBeGreaterThanOrEqual(44)
   }
-  await expect(page.getByRole('button', { name: /fundo/i })).toHaveCount(0)
 })
 
 test('tapping a layer selects it; the background has an outline and no handles', async ({
@@ -347,11 +349,12 @@ test('moving the slider enlarges the background and it still covers the frame', 
 }) => {
   await frameWithBackground(page, 1)
   await theFrame(page).click()
-  await expect(zoom(page)).toHaveValue('0')
+  await expect(zoom(page)).toHaveValue(COVER_SLIDER)
   const image = theFrame(page).locator('img')
   const before = (await image.boundingBox())!
 
-  await dragZoomTo(page, 0.5)
+  // Width 2 on a log scale from 0.1 to 4.
+  await dragZoomTo(page, Math.log(20) / Math.log(40))
 
   await expect.poll(async () => (await image.boundingBox())!.width).toBeGreaterThan(before.width)
   const [layer] = await layersWhen(page, (l) => (l[0]?.widthFrac ?? 0) > 1.5)
@@ -360,24 +363,50 @@ test('moving the slider enlarges the background and it still covers the frame', 
   await expect(handles(page)).toHaveCount(0)
 })
 
-test('the slider at its minimum leaves the photo covering the frame exactly', async ({ page }) => {
+test('the slider shrinks the background inside the frame, over its fill colour', async ({
+  page,
+}) => {
   await frameWithBackground(page, 1)
   await theFrame(page).click()
-  await dragZoomTo(page, 0.6)
-  await layersWhen(page, (l) => (l[0]?.widthFrac ?? 0) > 1.5)
-
   await zoom(page).focus()
   await page.keyboard.press('Home')
 
   await expect(zoom(page)).toHaveValue('0')
-  const [layer] = await layersWhen(page, (l) => l[0]?.widthFrac === 1)
-  expect(layer!.widthFrac).toBe(1)
+  const [layer] = await layersWhen(page, (l) => (l[0]?.widthFrac ?? 1) < 0.2)
+  expect(layer!.widthFrac).toBeCloseTo(0.1)
   const f = await box(page)
   const i = (await theFrame(page).locator('img').boundingBox())!
-  expect(Math.abs(i.x - f.x)).toBeLessThanOrEqual(1)
-  expect(Math.abs(i.y - f.y)).toBeLessThanOrEqual(1)
-  expect(Math.abs(i.width - f.width)).toBeLessThanOrEqual(1)
-  expect(Math.abs(i.height - f.height)).toBeLessThanOrEqual(1)
+  expect(i.x).toBeGreaterThanOrEqual(f.x - 1)
+  expect(i.y).toBeGreaterThanOrEqual(f.y - 1)
+  expect(i.x + i.width).toBeLessThanOrEqual(f.x + f.width + 1)
+  expect(i.y + i.height).toBeLessThanOrEqual(f.y + f.height + 1)
+  // A shrunk background shows its own edges, with handles to resize it.
+  await expect(handles(page)).toHaveCount(4)
+})
+
+test('the frame background colour shows around a shrunk photo and is saved', async ({ page }) => {
+  await frameWithBackground(page, 1)
+  await theFrame(page).click()
+  await zoom(page).focus()
+  await page.keyboard.press('Home')
+  await action(page, 'Fundo').click()
+
+  const sheet = page.getByRole('dialog', { name: 'Cor de fundo' })
+  await expect(sheet).toBeVisible()
+  await expect(sheet.getByRole('radio', { name: '#ffffff' })).toHaveAttribute(
+    'aria-checked',
+    'true',
+  )
+  await sheet.getByRole('radio', { name: '#000000' }).click()
+  await expect(sheet.getByRole('radio', { name: '#000000' })).toHaveAttribute(
+    'aria-checked',
+    'true',
+  )
+
+  await expect(theFrame(page)).toHaveCSS('background-color', 'rgb(0, 0, 0)')
+  await expect
+    .poll(async () => (await savedCollection(page))?.frames[0]?.background)
+    .toBe('#000000')
 })
 
 test('the slider stops at four times the cover width on the background', async ({ page }) => {
@@ -409,10 +438,10 @@ test('the slider follows the selection and the layer', async ({ page }) => {
 
   await tapInFrame(page, 0.05, 0.05)
   await expect(handles(page)).toHaveCount(0)
-  await expect(zoom(page)).toHaveValue('0')
+  await expect(zoom(page)).toHaveValue(COVER_SLIDER)
 
   await wheel(page, -300)
-  await expect(zoom(page)).not.toHaveValue('0')
+  await expect(zoom(page)).not.toHaveValue(COVER_SLIDER)
 })
 
 test('the slider sits just above the action bar, with an icon at each end', async ({ page }) => {
@@ -425,7 +454,7 @@ test('the slider sits just above the action bar, with an icon at each end', asyn
   expect(row.height).toBeGreaterThanOrEqual(44)
 })
 
-test('the mouse wheel zooms the background, covers the frame, and does not scroll', async ({
+test('the mouse wheel zooms the background in and out, and does not scroll', async ({
   page,
 }) => {
   await frameWithBackground(page, 1)
@@ -438,9 +467,10 @@ test('the mouse wheel zooms the background, covers the frame, and does not scrol
   await expectCovered(page, 0)
 
   await wheel(page, 100000)
-  const [back] = await layersWhen(page, (l) => l[0]?.widthFrac === 1)
-  expect(back!.widthFrac).toBe(1)
-  await expectCovered(page, 0)
+  const [back] = await layersWhen(page, (l) => (l[0]?.widthFrac ?? 1) < 0.2)
+  expect(back!.widthFrac).toBeCloseTo(0.1)
+  expect(back!.cx).toBeCloseTo(0.5)
+  expect(back!.cy).toBeCloseTo(0.5)
 })
 
 test('the mouse wheel keeps a photo on top within its limits, around its centre', async ({

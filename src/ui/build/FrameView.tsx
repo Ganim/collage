@@ -20,7 +20,11 @@ export function FrameView({ frame, interactive, onTap, label, showImages = true 
   const photos = useEditor((s) => s.photos)
   const { missing } = useMissingPhotos([frame])
   const photoMissing = frame.layers.some((l) => missing?.has(l.photoId))
-  const style = { '--frame-ratio': frame.widthMm / frame.heightMm } as CSSProperties
+  const style = {
+    '--frame-ratio': frame.widthMm / frame.heightMm,
+    // An empty frame keeps the plain look; the colour belongs to what gets printed.
+    ...(frame.layers.length > 0 && frame.background ? { background: frame.background } : {}),
+  } as CSSProperties
   return (
     <div
       role="img"

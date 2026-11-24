@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { deliverPdf, pdfFileName } from './deliver'
+import { deliverPdf, pdfFileName, printPdf } from './deliver'
 
 const pdf = new Blob(['%PDF'], { type: 'application/pdf' })
 
@@ -114,5 +114,40 @@ describe('pdfFileName', () => {
 
   it('keeps very long names at a size file systems accept', () => {
     expect(pdfFileName('x'.repeat(500)).length).toBeLessThanOrEqual(124)
+  })
+})
+
+describe('printPdf', () => {
+  beforeEach(() => {
+    URL.createObjectURL = vi.fn(() => 'blob:collage')
+    URL.revokeObjectURL = vi.fn()
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+    document.querySelectorAll('iframe').forEach((f) => f.remove())
+  })
+
+  it('loads the PDF in a hidden frame and opens the print dialog once it loads', () => {
+    printPdf(pdf, 'Maio.pdf', 'dialog')
+    const frame = document.querySelector('iframe')!
+    expect(frame.getAttribute('src')).toBe('blob:collage')
+    const print = vi.fn()
+    Object.defineProperty(frame, 'contentWindow', { value: { focus: vi.fn(), print } })
+    frame.dispatchEvent(new Event('load'))
+    expect(print).toHaveBeenCalledOnce()
+  })
+
+  it('keeps one print frame at a time', () => {
+    printPdf(pdf, 'Maio.pdf', 'dialog')
+    printPdf(pdf, 'Maio.pdf', 'dialog')
+    expect(document.querySelectorAll('iframe')).toHaveLength(1)
+  })
+
+  it('opens the PDF in a new tab on a phone', () => {
+    const open = vi.spyOn(window, 'open').mockReturnValue({} as Window)
+    printPdf(pdf, 'Maio.pdf', 'open')
+    expect(open).toHaveBeenCalledWith('blob:collage', '_blank')
+    expect(document.querySelector('iframe')).toBeNull()
   })
 })

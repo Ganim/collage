@@ -1,6 +1,6 @@
-import { clampToCover, coverLayer } from './transform'
+import { clampBackground, clampToCover, coverLayer, coversFrame } from './transform'
 import type { Collection, Frame, Layer, Photo, Size } from './types'
-import { clampWidth, zoomLimits } from './zoom'
+import { backgroundMinWidth, clampWidth, zoomLimits } from './zoom'
 
 type Photos = Record<string, Photo>
 
@@ -8,11 +8,21 @@ export function createFrame(size: Size): Frame {
   return { id: crypto.randomUUID(), widthMm: size.widthMm, heightMm: size.heightMm, layers: [] }
 }
 
-function fitBackground(frame: Frame, photos: Photos): Frame {
+/** With keepCover, a background that covered the frame before a change covers it after it too. */
+function fitBackground(frame: Frame, photos: Photos, keepCover = false): Frame {
   const bg = frame.layers[0]
   const photo = bg && photos[bg.photoId]
   if (!bg || !photo) return frame
-  return { ...frame, layers: [clampToCover(bg, photo, frame), ...frame.layers.slice(1)] }
+  const fitted = keepCover
+    ? clampToCover(bg, photo, frame)
+    : clampBackground(bg, photo, frame, backgroundMinWidth(photo, frame, bg.rotationDeg))
+  return { ...frame, layers: [fitted, ...frame.layers.slice(1)] }
+}
+
+function backgroundCovers(frame: Frame, photos: Photos): boolean {
+  const bg = frame.layers[0]
+  const photo = bg && photos[bg.photoId]
+  return !bg || !photo || coversFrame(bg, photo, frame)
 }
 
 export function placePhoto(frame: Frame, photo: Photo): Frame {
@@ -43,16 +53,28 @@ export function placePhoto(frame: Frame, photo: Photo): Frame {
   return { ...next, layers: [layer] }
 }
 
-export function replaceLayerPhoto(frame: Frame, layerId: string, photo: Photo): Frame {
+export function replaceLayerPhoto(
+  frame: Frame,
+  layerId: string,
+  photo: Photo,
+  photos: Photos = {},
+): Frame {
+  const covered = frame.layers[0]?.id !== layerId || backgroundCovers(frame, photos)
   const layers = frame.layers.map((l) => (l.id === layerId ? { ...l, photoId: photo.id } : l))
-  return fitBackground({ ...frame, layers }, { [photo.id]: photo })
+  return fitBackground({ ...frame, layers }, { ...photos, [photo.id]: photo }, covered)
 }
 
 export function resizeFrame(frame: Frame, size: Size, photos: Photos): Frame {
   return fitBackground(
     { ...frame, widthMm: size.widthMm, heightMm: size.heightMm, layers: [...frame.layers] },
     photos,
+    backgroundCovers(frame, photos),
   )
+}
+
+/** The colour that shows where a shrunk background leaves the frame uncovered. */
+export function setFrameBackground(frame: Frame, color: string): Frame {
+  return { ...frame, layers: [...frame.layers], background: color }
 }
 
 export function flipOrientation(frame: Frame, photos: Photos): Frame {

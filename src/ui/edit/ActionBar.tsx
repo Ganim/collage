@@ -1,6 +1,7 @@
 import {
   BringToFront,
   ImagePlus,
+  PaintBucket,
   Replace,
   RotateCw,
   Ruler,
@@ -8,9 +9,11 @@ import {
   Trash2,
   type LucideIcon,
 } from 'lucide-react'
+import { useState } from 'react'
 import { ACCEPT } from '../../photos/import'
 import { useEditor } from '../../state/editor'
 import { t } from '../i18n'
+import { BackgroundSheet } from './BackgroundSheet'
 
 interface ActionProps {
   icon: LucideIcon
@@ -44,12 +47,18 @@ export function ActionBar({ busy, onSize, onAdd }: ActionBarProps) {
   const moveSelected = useEditor((s) => s.moveSelected)
   const removeSelected = useEditor((s) => s.removeSelected)
   const index = layers.findIndex((l) => l.id === selectedId)
+  const [backgroundOpen, setBackgroundOpen] = useState(false)
 
   return (
     <div className="action-bar" role="toolbar" aria-label={t('actions.label')}>
       <Action icon={Replace} label={t('action.replace')} onClick={startReplace} disabled={busy} />
       <Action icon={Ruler} label={t('action.size')} onClick={onSize} />
       <Action icon={RotateCw} label={t('action.rotate')} onClick={rotateSelected} />
+      <Action
+        icon={PaintBucket}
+        label={t('action.background')}
+        onClick={() => setBackgroundOpen(true)}
+      />
       <label className={busy ? 'action action--disabled' : 'action'}>
         <input
           type="file"
@@ -82,6 +91,7 @@ export function ActionBar({ busy, onSize, onAdd }: ActionBarProps) {
         </>
       )}
       <Action icon={Trash2} label={t('action.remove')} onClick={removeSelected} />
+      {backgroundOpen && <BackgroundSheet onClose={() => setBackgroundOpen(false)} />}
     </div>
   )
 }

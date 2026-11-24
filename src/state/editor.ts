@@ -9,6 +9,7 @@ import {
   removeLayer,
   removePhotoLayers,
   replaceLayerPhoto,
+  setFrameBackground,
   resizeFrame,
   rotateLayer90,
   updateLayer,
@@ -119,6 +120,8 @@ export interface EditorState {
   transformSelected(patch: Partial<Pick<Layer, 'cx' | 'cy' | 'widthFrac' | 'rotationDeg'>>): void
   zoomSelected(factor: number): void
   rotateSelected(): void
+  /** The colour behind the open frame's photos. */
+  setActiveBackground(color: string): void
   moveSelected(d: 'forward' | 'back'): void
   removeSelected(): void
   setPaper(p: Partial<Paper>): void
@@ -466,7 +469,7 @@ export function createEditorStore(
         if (onlyOnFrameId !== undefined && frame.id !== onlyOnFrameId) return
         const { selectedLayerId, replacing, mode } = get()
         if (replacing && selectedLayerId) {
-          updateActive((f) => replaceLayerPhoto(f, selectedLayerId, photo))
+          updateActive((f, photos) => replaceLayerPhoto(f, selectedLayerId, photo, photos))
           commit({ replacing: false })
           return
         }
@@ -602,6 +605,11 @@ export function createEditorStore(
       rotateSelected() {
         const id = get().selectedLayerId
         if (id) updateActive((f, photos) => rotateLayer90(f, id, photos))
+      },
+
+      setActiveBackground(color) {
+        if (active()?.background === color) return
+        updateActive((f) => setFrameBackground(f, color))
       },
 
       moveSelected(d) {

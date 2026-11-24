@@ -24,7 +24,11 @@ export interface Layer {
 export interface Frame extends Size {
   id: string
   layers: Layer[]
+  /** '#rrggbb' behind the photos, where a shrunk background leaves room; white when absent. */
+  background?: string
 }
+
+export const DEFAULT_FRAME_BACKGROUND = '#ffffff'
 
 export interface Paper extends Size {
   marginMm: number

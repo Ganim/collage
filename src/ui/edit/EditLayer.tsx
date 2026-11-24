@@ -1,4 +1,5 @@
 import { useRef, type CSSProperties } from 'react'
+import { coversFrame } from '../../core/transform'
 import type { Frame, Layer } from '../../core/types'
 import { useEditor } from '../../state/editor'
 import { layerPlacement } from '../build/LayerImage'
@@ -19,6 +20,8 @@ export function EditLayer({ frame, selected }: { frame: Frame; selected: Layer }
     selected,
   })
   const isBackground = frame.layers[0]?.id === selected.id
+  // A background that covers the frame shows as the frame itself; a shrunk one has its own edges.
+  const coveringBackground = isBackground && (!photo || coversFrame(selected, photo, frame))
   const style = { '--frame-ratio': frame.widthMm / frame.heightMm } as CSSProperties
 
   return (
@@ -37,8 +40,7 @@ export function EditLayer({ frame, selected }: { frame: Frame; selected: Layer }
       {guides.y !== null && (
         <div className="edit-guide edit-guide--y" style={{ top: `${guides.y * 100}%` }} />
       )}
-      {isBackground ? (
-        // The background always covers the frame, so what shows of it is the frame itself.
+      {coveringBackground ? (
         <div className="edit-outline edit-outline--background" />
       ) : (
         photo && (

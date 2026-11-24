@@ -58,6 +58,8 @@ const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object
 const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
 const isStr = (v: unknown): v is string => typeof v === 'string'
 
+const HEX_COLOR = /^#[0-9a-f]{6}$/i
+
 function invalid(): never {
   throw new Error('Invalid collection file')
 }
@@ -76,7 +78,8 @@ function validateCollection(c: unknown, photoIds: Set<string>): Collection {
       !isStr(f.id) ||
       !isNum(f.widthMm) ||
       !isNum(f.heightMm) ||
-      !Array.isArray(f.layers)
+      !Array.isArray(f.layers) ||
+      (f.background !== undefined && !(isStr(f.background) && HEX_COLOR.test(f.background)))
     ) {
       invalid()
     }

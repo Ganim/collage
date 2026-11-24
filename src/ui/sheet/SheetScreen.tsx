@@ -1,10 +1,10 @@
-import { ChevronLeft, Download, Share2 } from 'lucide-react'
+import { ChevronLeft, Download, Printer, Share2 } from 'lucide-react'
 import { useRef, useState } from 'react'
 import { useEditor } from '../../state/editor'
 import { generatePdf, MissingPhotoError } from '../../render/generate'
 import { t } from '../i18n'
 import { useMissingPhotos } from '../useMissingPhotos'
-import { deliverPdf, pdfFileName, prefersShareSheet, type DeliverMode } from './deliver'
+import { deliverPdf, pdfFileName, prefersShareSheet, printPdf, type DeliverMode } from './deliver'
 import { PaperControls } from './PaperControls'
 import { PdfLinkSection } from './PdfLinkSection'
 import { ReorganizeSection } from './ReorganizeSection'
@@ -90,6 +90,17 @@ export function SheetScreen({ onBack }: { onBack: () => void }) {
     }
   }
 
+  const print = () => {
+    if (!ready) return
+    setError(null)
+    try {
+      printPdf(generated.pdf, pdfFileName(collection.name), shareSheet ? 'open' : 'dialog')
+    } catch (e) {
+      console.error(e)
+      setError({ key: contentKey, text: t('print.printFailed') })
+    }
+  }
+
   // One sheet, or as few as the frames' area allows, cannot be improved on.
   const offerReorganize =
     layout !== null && layout.sheets.length > 1 && layout.sheets.length > layout.lowerBound
@@ -119,10 +130,34 @@ export function SheetScreen({ onBack }: { onBack: () => void }) {
         {t('print.progress', { done: progress.done, total: progress.total })}
       </button>
     )
-  } else if (ready && shareSheet) {
-    // Phones and tablets share; saving stays one tap away.
-    action = (
-      <div className="print-actions">
+  } else if (ready) {
+    const saveButton = (
+      <button
+        type="button"
+        className={
+          shareSheet
+            ? 'secondary-button print-action print-action--secondary'
+            : 'primary-button print-action'
+        }
+        onClick={() => void save('download')}
+      >
+        <Download size={20} aria-hidden="true" />
+        {t('print.save')}
+      </button>
+    )
+    const printButton = (
+      <button
+        type="button"
+        className="secondary-button print-action print-action--secondary"
+        onClick={print}
+      >
+        <Printer size={20} aria-hidden="true" />
+        {t('print.print')}
+      </button>
+    )
+    // Phones and tablets share first; a computer saves. Saving and printing stay one tap away.
+    action = shareSheet ? (
+      <>
         <button
           type="button"
           className="primary-button print-action"
@@ -131,26 +166,16 @@ export function SheetScreen({ onBack }: { onBack: () => void }) {
           <Share2 size={20} aria-hidden="true" />
           {t('print.share')}
         </button>
-        <button
-          type="button"
-          className="secondary-button print-action print-action--save"
-          onClick={() => void save('download')}
-        >
-          <Download size={20} aria-hidden="true" />
-          {t('print.save')}
-        </button>
+        <div className="print-actions">
+          {saveButton}
+          {printButton}
+        </div>
+      </>
+    ) : (
+      <div className="print-actions">
+        {saveButton}
+        {printButton}
       </div>
-    )
-  } else if (ready) {
-    action = (
-      <button
-        type="button"
-        className="primary-button print-action"
-        onClick={() => void save('download')}
-      >
-        <Download size={20} aria-hidden="true" />
-        {t('print.save')}
-      </button>
     )
   }
 

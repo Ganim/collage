@@ -867,6 +867,24 @@ describe('bundle', () => {
     await expectRejectsWithoutWriting(new Blob([zipSync(files) as BlobPart]))
   })
 
+  it('rejects a frame background that is not a colour, writing nothing', async () => {
+    const files = await unzipExport()
+    const manifest = JSON.parse(new TextDecoder().decode(files['manifest.json']))
+    manifest.collection.frames[0].background = 'url(evil)'
+    files['manifest.json'] = strToU8(JSON.stringify(manifest))
+    await expectRejectsWithoutWriting(new Blob([zipSync(files) as BlobPart]))
+  })
+
+  it('keeps a frame background colour through export and import', async () => {
+    const files = await unzipExport()
+    const manifest = JSON.parse(new TextDecoder().decode(files['manifest.json']))
+    manifest.collection.frames[0].background = '#1c1917'
+    files['manifest.json'] = strToU8(JSON.stringify(manifest))
+    const target = await createIdbStore(`test-${dbCount++}`)
+    const imported = await importBundle(target, new Blob([zipSync(files) as BlobPart]))
+    expect(imported.frames[0]!.background).toBe('#1c1917')
+  })
+
   it('rejects a bundle missing a photo file without writing anything', async () => {
     const files = await unzipExport()
     delete files[`photos/${ID.b}/thumb`]

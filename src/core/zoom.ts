@@ -1,4 +1,4 @@
-import { coverLayer } from './transform'
+import { containWidthFrac, coverLayer } from './transform'
 import type { Frame, Layer, Photo } from './types'
 
 export interface ZoomLimits {
@@ -13,10 +13,18 @@ export const MIN_WIDTH_FRAC = 0.1
 const MAX_WIDTH_FRAC = 3
 const MAX_BACKGROUND_ZOOM = 4
 
+/** A background shrinks past fitting whole in the frame, down to what any photo can shrink to. */
+export function backgroundMinWidth(photo: Photo, frame: Frame, rotationDeg: number): number {
+  return Math.min(MIN_WIDTH_FRAC, containWidthFrac(photo, frame, rotationDeg))
+}
+
 export function zoomLimits(frame: Frame, layer: Layer, photo: Photo): ZoomLimits {
   if (frame.layers[0]?.id !== layer.id) return { min: MIN_WIDTH_FRAC, max: MAX_WIDTH_FRAC }
-  const min = coverLayer(photo, frame, layer.rotationDeg).widthFrac
-  return { min, max: min * MAX_BACKGROUND_ZOOM }
+  const cover = coverLayer(photo, frame, layer.rotationDeg).widthFrac
+  return {
+    min: backgroundMinWidth(photo, frame, layer.rotationDeg),
+    max: cover * MAX_BACKGROUND_ZOOM,
+  }
 }
 
 export function clampWidth(width: number, { min, max }: ZoomLimits): number {
