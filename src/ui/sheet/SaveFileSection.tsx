@@ -3,7 +3,7 @@ import { useState } from 'react'
 import type { Collection } from '../../core/types'
 import { getEditorState, useEditor } from '../../state/editor'
 import { t } from '../i18n'
-import { deliverFile, safeFileName } from './deliver'
+import { deliverFile, prefersShareSheet, safeFileName } from './deliver'
 
 const COLLECTION_TYPE = 'application/octet-stream'
 
@@ -48,6 +48,7 @@ export function SaveFileSection() {
         blob,
         safeFileName(collection.name, 'collage'),
         COLLECTION_TYPE,
+        prefersShareSheet() ? 'share' : 'download',
       )
       // A file that went out stands for the collection as it was: the next one is built again.
       if (result !== 'cancelled') setBundle(null)

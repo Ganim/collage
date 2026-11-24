@@ -30,7 +30,7 @@ describe('deliverPdf', () => {
 
   it('uses the share sheet when the device can share the file', async () => {
     stubNavigator(async () => {})
-    await expect(deliverPdf(pdf, 'Maio.pdf')).resolves.toBe('shared')
+    await expect(deliverPdf(pdf, 'Maio.pdf', 'share')).resolves.toBe('shared')
 
     const [{ files }] = vi.mocked(navigator.share).mock.calls[0] as [{ files: File[] }]
     expect(files).toHaveLength(1)
@@ -41,7 +41,7 @@ describe('deliverPdf', () => {
 
   it('asks canShare about the actual file', async () => {
     stubNavigator(async () => {})
-    await deliverPdf(pdf, 'Maio.pdf')
+    await deliverPdf(pdf, 'Maio.pdf', 'share')
     const [data] = vi.mocked(navigator.canShare).mock.calls[0] as [{ files: File[] }]
     expect(data.files[0]!.name).toBe('Maio.pdf')
   })
@@ -50,7 +50,7 @@ describe('deliverPdf', () => {
     stubNavigator(async () => {
       throw new DOMException('dismissed', 'AbortError')
     })
-    await expect(deliverPdf(pdf, 'Maio.pdf')).resolves.toBe('cancelled')
+    await expect(deliverPdf(pdf, 'Maio.pdf', 'share')).resolves.toBe('cancelled')
     expect(clicks).toHaveLength(0)
   })
 
@@ -58,26 +58,34 @@ describe('deliverPdf', () => {
     stubNavigator(async () => {
       throw new DOMException('no activation', 'NotAllowedError')
     })
-    await expect(deliverPdf(pdf, 'Maio.pdf')).resolves.toBe('downloaded')
+    await expect(deliverPdf(pdf, 'Maio.pdf', 'share')).resolves.toBe('downloaded')
     expect(clicks).toEqual([{ download: 'Maio.pdf', href: 'blob:collage', connected: true }])
   })
 
   it('downloads through an anchor when the device cannot share files', async () => {
     stubNavigator(async () => {}, false)
-    await expect(deliverPdf(pdf, 'Maio.pdf')).resolves.toBe('downloaded')
+    await expect(deliverPdf(pdf, 'Maio.pdf', 'share')).resolves.toBe('downloaded')
     expect(navigator.share).not.toHaveBeenCalled()
     expect(clicks).toHaveLength(1)
   })
 
   it('downloads when the browser has no share api at all', async () => {
     vi.stubGlobal('navigator', {})
-    await expect(deliverPdf(pdf, 'Maio.pdf')).resolves.toBe('downloaded')
+    await expect(deliverPdf(pdf, 'Maio.pdf', 'share')).resolves.toBe('downloaded')
     expect(clicks).toHaveLength(1)
+  })
+
+  it('downloads without opening the share sheet when asked to download', async () => {
+    stubNavigator(async () => {})
+    await expect(deliverPdf(pdf, 'Maio.pdf', 'download')).resolves.toBe('downloaded')
+    expect(navigator.canShare).not.toHaveBeenCalled()
+    expect(navigator.share).not.toHaveBeenCalled()
+    expect(clicks).toEqual([{ download: 'Maio.pdf', href: 'blob:collage', connected: true }])
   })
 
   it('revokes the object url only later, and removes the anchor', async () => {
     stubNavigator(async () => {}, false)
-    await deliverPdf(pdf, 'Maio.pdf')
+    await deliverPdf(pdf, 'Maio.pdf', 'share')
     expect(URL.revokeObjectURL).not.toHaveBeenCalled()
     expect(document.querySelector('a[download]')).toBeNull()
     vi.runAllTimers()

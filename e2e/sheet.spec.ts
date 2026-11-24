@@ -18,6 +18,8 @@ const trayPhoto = (page: Page, position: number) =>
   page.getByRole('button', { name: `Colocar foto-${position}.jpg no frame` })
 const generateButton = (page: Page) => page.getByRole('button', { name: 'Gerar PDF', exact: true })
 const saveButton = (page: Page) => page.getByRole('button', { name: 'Salvar PDF', exact: true })
+const shareButton = (page: Page) =>
+  page.getByRole('button', { name: 'Compartilhar PDF', exact: true })
 const sheets = (page: Page) => page.getByRole('group', { name: /^Folha \d+ de \d+$/ })
 
 async function uploadSized(page: Page, count: number, w: number, h: number) {
@@ -570,7 +572,7 @@ test.describe('sharing', () => {
     const downloads: Download[] = []
     page.on('download', (d) => downloads.push(d))
 
-    await saveButton(page).click()
+    await shareButton(page).click()
     await expect.poll(async () => (await sharedFiles(page)).length).toBe(1)
     const [file] = await sharedFiles(page)
     expect(file!.name).toMatch(/\.pdf$/)
@@ -578,7 +580,7 @@ test.describe('sharing', () => {
     expect(downloads).toHaveLength(0)
   })
 
-  test('cancelling the share sheet downloads nothing and keeps Salvar PDF', async ({ page }) => {
+  test('cancelling the share sheet downloads nothing and keeps Compartilhar PDF', async ({ page }) => {
     await photoFrames(page, 1)
     await openSheet(page)
     await generated(page)
@@ -586,9 +588,9 @@ test.describe('sharing', () => {
     const downloads: Download[] = []
     page.on('download', (d) => downloads.push(d))
 
-    await saveButton(page).click()
+    await shareButton(page).click()
     await expect.poll(async () => (await sharedFiles(page)).length).toBe(1)
-    await expect(saveButton(page)).toBeEnabled()
+    await expect(shareButton(page)).toBeEnabled()
     expect(downloads).toHaveLength(0)
     await expect(page.getByText('Não foi possível')).toHaveCount(0)
   })
@@ -600,8 +602,20 @@ test.describe('sharing', () => {
     await mockShare(page, 'fail')
 
     const downloading = page.waitForEvent('download')
-    await saveButton(page).click()
+    await shareButton(page).click()
     expect((await downloading).suggestedFilename()).toMatch(/\.pdf$/)
+  })
+
+  test('Salvar PDF downloads on a phone without opening the share sheet', async ({ page }) => {
+    await photoFrames(page, 1)
+    await openSheet(page)
+    await generated(page)
+    await mockShare(page, 'ok')
+
+    const downloading = page.waitForEvent('download')
+    await saveButton(page).click()
+    expect((await downloading).suggestedFilename()).toMatch(/.pdf$/)
+    expect(await sharedFiles(page)).toHaveLength(0)
   })
 })
 

@@ -30,14 +30,24 @@ function download(blob: Blob, fileName: string): void {
   setTimeout(() => URL.revokeObjectURL(url), REVOKE_DELAY_MS)
 }
 
+/**
+ * Phones and tablets hand files on through the share sheet; a computer saves them, where the
+ * share sheet is only in the way.
+ */
+export const prefersShareSheet = (): boolean =>
+  typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches
+
+export type DeliverMode = 'share' | 'download'
+
 /** Call straight from a tap: iOS only opens the share sheet right after one. */
 export async function deliverFile(
   blob: Blob,
   fileName: string,
   type: string,
+  mode: DeliverMode,
 ): Promise<'shared' | 'downloaded' | 'cancelled'> {
   const file = new File([blob], fileName, { type })
-  if (navigator.canShare?.({ files: [file] })) {
+  if (mode === 'share' && navigator.canShare?.({ files: [file] })) {
     try {
       await navigator.share({ files: [file] })
       return 'shared'
@@ -50,5 +60,5 @@ export async function deliverFile(
   return 'downloaded'
 }
 
-export const deliverPdf = (blob: Blob, fileName: string) =>
-  deliverFile(blob, fileName, 'application/pdf')
+export const deliverPdf = (blob: Blob, fileName: string, mode: DeliverMode) =>
+  deliverFile(blob, fileName, 'application/pdf', mode)

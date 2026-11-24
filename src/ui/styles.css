@@ -920,11 +920,65 @@ p {
   color: var(--warning-ink);
 }
 
+.print-zoom {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  margin-top: 8px;
+  padding: 4px 0;
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(8px);
+}
+
+.print-zoom-button {
+  color: var(--fuchsia-700);
+}
+
+.print-zoom-button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.print-zoom-level {
+  min-width: 4.5ch;
+  font-size: 14px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.print-zoom-fit {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--touch);
+  margin-left: 6px;
+  padding: 0 12px;
+  border-radius: var(--radius-pill);
+  color: var(--fuchsia-700);
+  font-size: 14px;
+}
+
+.print-zoom-fit[aria-pressed='true'] {
+  background: rgba(192, 38, 211, 0.1);
+}
+
+/* Scrolls sideways once the zoom makes a page wider than the screen. */
+.print-zoom-area {
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
 .print-sheets {
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
   gap: 14px;
-  margin-top: 16px;
+  margin-top: 8px;
   transition: opacity 0.15s;
 }
 
@@ -934,7 +988,10 @@ p {
 
 .print-page {
   position: relative;
+  flex: none;
   width: 100%;
+  /* Auto margins centre a narrow page without cutting off a wide one. */
+  margin-inline: auto;
   background: #fff;
   box-shadow: 0 2px 14px rgba(59, 10, 63, 0.18);
 }
@@ -994,11 +1051,29 @@ p {
   text-align: center;
 }
 
+.print-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.print-actions .print-action {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
 .print-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   width: 100%;
   min-height: 48px;
   font-size: 16px;
   font-variant-numeric: tabular-nums;
+}
+
+.print-action--save {
+  color: var(--fuchsia-700);
 }
 
 .save-file {
